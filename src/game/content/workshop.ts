@@ -33,7 +33,7 @@ export const WORKSHOP: WorkshopDef[] = [
     apply: (s, l) => { s.xpGain *= 1 + 0.06 * l; },
   },
   {
-    id: 'greed', name: 'Greed', icon: '$', text: '+10% cores earned', maxLevel: 5, baseCost: 55, growth: 1.65,
+    id: 'greed', name: 'Greed', icon: '$', text: '+10% cores from score and pickups', maxLevel: 5, baseCost: 55, growth: 1.65,
     apply: (s, l) => { s.coreGain *= 1 + 0.1 * l; },
   },
   {

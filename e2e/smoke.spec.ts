@@ -102,7 +102,8 @@ test('pause, resume and ending a run show the results screen', async ({ page }) 
   // Progress is saved.
   const runs = await page.evaluate(() => JSON.parse(localStorage.getItem('shardstorm.save') ?? '{}').stats?.runs);
   expect(runs).toBe(1);
-  // Instant restart.
+  // Restart (after the short grace period that stops mashed keys from skipping results).
+  await page.waitForTimeout(1000);
   await page.locator('#screen-results [data-act="again"]').click();
   await expect.poll(async () => (await snapshot(page)).state).toBe('playing');
   expect(errors).toEqual([]);
@@ -117,5 +118,32 @@ test('menus open and close', async ({ page }) => {
     await page.locator(`#screen-${screen} [data-act="back"]`).click();
     await expect(page.locator('#screen-title')).toBeVisible();
   }
+  expect(errors).toEqual([]);
+});
+
+test('mashing the dash key never picks a level-up card, and held keys keep working', async ({ page, isMobile }) => {
+  test.skip(!!isMobile, 'keyboard flow is desktop-only');
+  const errors = trackErrors(page);
+  await page.goto('/');
+  await startRun(page);
+  await page.keyboard.down('KeyD');
+  await page.evaluate(() => {
+    const w = (window as unknown as { shardstorm: { world: { addXp(n: number): void; xpNext: number } } }).shardstorm.world;
+    w.addXp(w.xpNext);
+  });
+  await expect(page.locator('#screen-levelup')).toBeVisible();
+  for (let i = 0; i < 8; i++) {
+    await page.keyboard.press('Space');
+    await page.waitForTimeout(80);
+  }
+  await expect(page.locator('#screen-levelup')).toBeVisible();
+  await page.keyboard.press('Digit2');
+  await expect.poll(async () => (await snapshot(page)).state).toBe('playing');
+  // KeyD is still held: the ship should keep moving right.
+  const x0 = await page.evaluate(() => (window as unknown as { shardstorm: { world: { player: { x: number } } } }).shardstorm.world.player.x);
+  await page.waitForTimeout(600);
+  const x1 = await page.evaluate(() => (window as unknown as { shardstorm: { world: { player: { x: number } } } }).shardstorm.world.player.x);
+  await page.keyboard.up('KeyD');
+  expect(x1 - x0).toBeGreaterThan(40);
   expect(errors).toEqual([]);
 });

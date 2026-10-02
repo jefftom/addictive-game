@@ -120,12 +120,13 @@ export class Director {
     this.surgeT -= dt;
     if (this.surgeT <= 0) {
       this.surgeT = 45;
+      // Draw from the seeded stream unconditionally so the sequence never depends on play.
+      const kind: EnemyKind = t > 150 && rng.chance(0.5) ? 'swarmling' : 'drifter';
+      const offset = rng.next() * TAU;
       if (!world.boss) {
-        const kind: EnemyKind = t > 150 && rng.chance(0.5) ? 'swarmling' : 'drifter';
-        const n = Math.round(12 + t / 10) * (this.cfg.daily === 'giants' ? 0.5 : 1);
+        const n = Math.round((12 + t / 10) * (this.cfg.daily === 'giants' ? 0.5 : 1));
         const radius = Math.max(world.viewHalfW, world.viewHalfH) * 0.95 + 40;
         const p = world.player;
-        const offset = rng.next() * TAU;
         for (let i = 0; i < n; i++) {
           const a = offset + (i / n) * TAU;
           world.spawnEnemy(kind, p.x + Math.cos(a) * radius, p.y + Math.sin(a) * radius);

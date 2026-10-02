@@ -84,11 +84,11 @@ export function applyRun(save: SaveData, r: RunResult, rng: Rng = new Rng(Date.n
   // Cores.
   const rewards: RewardLine[] = [];
   rewards.push({ label: 'Score & survival', amount: baseCores(r.score, r.time, r.coreGain) });
-  if (r.coresCollected > 0) rewards.push({ label: 'Cores collected', amount: Math.round(r.coresCollected) });
+  if (r.coresCollected > 0) rewards.push({ label: 'Cores collected', amount: Math.round(r.coresCollected * r.coreGain) });
 
   let daily: RunSummary['daily'] = null;
   if (r.daily) {
-    const d = recordDaily(save, r.score, today);
+    const d = recordDaily(save, r.score, r.dailyDate ?? today);
     const bonus = d.first ? dailyBonus(d.streak) : 0;
     daily = { ...d, bonus };
     if (bonus > 0) rewards.push({ label: `Daily streak ×${d.streak}`, amount: bonus });

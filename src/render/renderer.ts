@@ -348,6 +348,7 @@ export class Renderer {
       if (!visible(m.x, m.y, m.radius)) continue;
       const pulse = 1 + Math.sin(this.time * 10) * 0.15;
       if (m.triggered && m.pull) {
+        world2();
         ctx.globalAlpha = 0.5;
         ctx.strokeStyle = '#b4ff6a';
         ctx.lineWidth = 2;

@@ -225,3 +225,24 @@ describe('daily run', () => {
     expect(second.daily?.bonus).toBe(0);
   });
 });
+
+describe('regressions from code review', () => {
+  it('resets an unknown ship id instead of crashing', () => {
+    expect(migrate({ ship: 'deleted-ship' }).ship).toBe('spark');
+    expect(migrate({ ship: 'phantom' }).ship).toBe('phantom');
+  });
+
+  it('credits a Daily Run to the day it started, even if it ends after midnight', () => {
+    const s = defaultSave();
+    applyRun(s, run({ daily: true, dailyDate: '2026-10-01', score: 777 }), new Rng(1), '2026-10-02');
+    expect(s.daily.last).toBe('2026-10-01');
+    expect(s.daily.best['2026-10-01']).toBe(777);
+    expect(s.daily.best['2026-10-02']).toBeUndefined();
+  });
+
+  it('applies core bonuses to collected cores', () => {
+    const s = defaultSave();
+    const sum = applyRun(s, run({ coresCollected: 10, coreGain: 1.5 }), new Rng(1), '2026-10-02');
+    expect(sum.rewards.find((r) => r.label === 'Cores collected')?.amount).toBe(15);
+  });
+});

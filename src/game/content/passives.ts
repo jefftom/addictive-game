@@ -125,7 +125,7 @@ export const RELICS: Record<RelicId, RelicDef> = {
   },
   bounty: {
     id: 'bounty', name: 'Bounty Hunter', icon: '$', rarity: 'rare',
-    text: '+25% cores; elites drop double cores',
+    text: '+25% cores from score and pickups; elites drop double cores',
     apply: (s) => { s.coreGain *= 1.25; },
   },
 };

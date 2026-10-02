@@ -7,7 +7,7 @@ import { makeRunConfig, weaponPoolForRank } from '../src/game/runconfig';
 import { computeStats, xpForLevel } from '../src/game/stats';
 import type { ControlInput, PassiveId } from '../src/game/types';
 import { applyOffer, availableEvolutions, generateOffers, offerKey } from '../src/game/upgrades';
-import { DASH_TIME, World } from '../src/game/world';
+import { DASH_TIME, MAX_ENEMIES, World } from '../src/game/world';
 
 const DT = 1 / 60;
 const still: ControlInput = { mx: 0, my: 0, dash: false };
@@ -202,5 +202,102 @@ describe('world simulation', () => {
     w.update(DT, still);
     expect(w.boss?.kind).toBe('warden');
     expect(w.events.some((e) => e.t === 'boss')).toBe(true);
+  });
+});
+
+/** Stops the director so a test controls every enemy. */
+function quiet(w: World): void {
+  const d = w.director as unknown as Record<string, unknown>;
+  d.openingDone = true;
+  d.surgeT = 1e9;
+  d.eliteT = 1e9;
+  d.budget = -1e9;
+  d.bossIdx = 99;
+  d.nextOvertimeBoss = 1e9;
+}
+
+describe('regressions from code review', () => {
+  it('a perfect-dash refund never delays a nearly ready charge (multi-charge ships)', () => {
+    const w = new World(makeRunConfig({ seed: 5, ship: 'phantom' }));
+    quiet(w);
+    w.player.invuln = 0;
+    w.update(DT, { mx: 1, my: 0, dash: true });
+    while (w.player.dashRecharge > 0.2) w.update(DT, still);
+    const remaining = w.player.dashRecharge;
+    const e = w.spawnEnemy('drifter', w.player.x + 30, w.player.y)!;
+    e.spawnT = 0;
+    e.hp = e.maxHp = 1e9;
+    w.update(DT, { mx: 1, my: 0, dash: true });
+    expect(w.runStats.perfects).toBeGreaterThan(0);
+    let ticks = 0;
+    while (w.player.dashCharges < 1 && ticks < 600) {
+      w.update(DT, still);
+      ticks++;
+    }
+    expect(ticks * DT).toBeLessThan(remaining + 0.05);
+  });
+
+  it('each evolved lance beam hits an enemy at most once', () => {
+    const w = new World(makeRunConfig({ seed: 7, rank: 10 }));
+    quiet(w);
+    w.build.weapons = [{ id: 'lance', level: 5, evolved: true, timer: 0, phase: 0 }];
+    w.refreshStats();
+    w.player.invuln = 1e9;
+    const e = w.spawnEnemy('brute', w.player.x + 25, w.player.y + 25)!;
+    e.spawnT = 0;
+    e.hp = e.maxHp = 1e9;
+    e.speed = 0;
+    e.mass = 1e9;
+    let hits = 0;
+    for (let i = 0; i < 30; i++) {
+      w.update(DT, still);
+      hits += w.events.filter((ev) => ev.t === 'hit').length;
+      w.events.length = 0;
+      e.x = w.player.x + 25;
+      e.y = w.player.y + 25;
+      w.build.weapons[0]!.timer = 99;
+    }
+    expect(hits).toBeGreaterThan(0);
+    expect(hits).toBeLessThanOrEqual(4);
+  });
+
+  it('keeps tracking a living boss when a newer one dies', () => {
+    const w = newWorld(9);
+    quiet(w);
+    const warden = w.spawnEnemy('warden', 300, 0)!;
+    const hydra = w.spawnEnemy('hydra', -300, 0)!;
+    expect(w.boss).toBe(hydra);
+    w.killEnemy(hydra);
+    expect(w.boss).toBe(warden);
+    w.killEnemy(warden);
+    expect(w.boss).toBeNull();
+  });
+
+  it('the Daily Run spawn sequence does not depend on how the player moves', () => {
+    const kinds = (input: ControlInput): string[] => {
+      const w = new World(makeRunConfig({ seed: 1234, daily: 'swarm' }));
+      const out: string[] = [];
+      const seen = new Set<number>();
+      // The enemy cap legitimately drops spawns, so only compare until it is reached.
+      for (let i = 0; i < 60 * 90 && w.enemies.length < MAX_ENEMIES - 20; i++) {
+        w.player.invuln = 99;
+        w.player.hp = 1e6;
+        w.update(DT, input);
+        w.pendingLevelUps = 0;
+        w.pendingCaches = 0;
+        for (const e of w.enemies) {
+          if (seen.has(e.id) || e.kind === 'splitling') continue;
+          seen.add(e.id);
+          out.push(e.kind);
+        }
+        w.events.length = 0;
+      }
+      return out;
+    };
+    const a = kinds(still);
+    const b = kinds({ mx: 1, my: 0, dash: false });
+    const n = Math.min(a.length, b.length);
+    expect(n).toBeGreaterThan(100);
+    expect(b.slice(0, n)).toEqual(a.slice(0, n));
   });
 });

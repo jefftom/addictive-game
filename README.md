@@ -83,13 +83,15 @@ The simulation in `src/game/` never touches the DOM or canvas. It runs at a fixe
 
 `npm run sim` plays batches of runs with a steering bot for three profiles (fresh save, clumsy fresh save, veteran save) and prints survival times, level pacing, enemy density and boss kills. The current tuning targets:
 
-| Metric | Target | Fresh-save bot |
+| Metric | Target | Bot result (16 runs per profile) |
 | --- | --- | --- |
 | First level-up | ≤ 8 s | ~3.5 s |
-| Level at 1:00 | 4–6 | 6 |
-| Median survival | 2:30–5:00 | ~4:30 (16 runs) |
-| Enemies on screen at 3:00 | 80–250 | ~85 |
-| Veteran save (rank 8, half workshop) | usually reaches 10:00 | median 10:00+, 15/16 beat a boss |
+| Level at 1:00 | 4–6 | 6–7 |
+| Fresh save beats the Warden (3:00) | roughly 30–60% | 31% (clumsy bot) – 62% (competent bot) |
+| Fresh-save median survival | 2:30–6:30 | 3:46 (clumsy) – 6:16 (competent) |
+| Veteran save (rank 8, half workshop) | usually reaches 10:00 | median 10:00+, 14/16 beat a boss |
+
+Outcomes are bimodal: a fresh run either falls to the Warden or snowballs past it. So the Warden win rate is a steadier measure than the median.
 
 The bot is not a human. These numbers are a baseline for tuning, not a substitute for playtesting.
 

@@ -286,10 +286,6 @@ export class AudioEngine {
             this.tone(440, 0.28, { type: 'sawtooth', vol: 0.09, delay: i * 0.6 });
             this.tone(330, 0.28, { type: 'sawtooth', vol: 0.09, delay: i * 0.6 + 0.3 });
           }
-          this.music?.setBoss(true);
-          break;
-        case 'bossdead':
-          this.music?.setBoss(false);
           break;
         case 'death':
           this.tone(440, 1.2, { type: 'sawtooth', vol: 0.15, to: 40 });

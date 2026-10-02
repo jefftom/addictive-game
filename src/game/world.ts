@@ -71,6 +71,8 @@ export class World {
   readonly lootRng: Rng;
   /** Combat randomness (crits, drops, spread). */
   readonly rng: Rng;
+  /** Spawn positions (player-relative, so kept apart from the seeded timeline). */
+  readonly posRng: Rng;
 
   time = 0;
   player: Player;
@@ -147,6 +149,7 @@ export class World {
     this.spawnRng = root.fork(1);
     this.lootRng = root.fork(2);
     this.rng = root.fork(3);
+    this.posRng = root.fork(4);
     this.bestScore = opts.bestScore ?? 0;
     this.director = new Director(cfg);
     this.player = {
@@ -270,13 +273,9 @@ export class World {
 
     // Dash recharge.
     if (p.dashCharges < st.dashCharges) {
-      if (p.dashRecharge <= 0) p.dashRecharge = st.dashCooldown;
+      if (p.dashRecharge === 0) p.dashRecharge = st.dashCooldown;
       p.dashRecharge -= dt;
-      if (p.dashRecharge <= 0) {
-        p.dashCharges++;
-        this.events.push({ t: 'dashready' });
-        p.dashRecharge = p.dashCharges < st.dashCharges ? st.dashCooldown + p.dashRecharge : 0;
-      }
+      this.settleDashRecharge();
     } else {
       p.dashRecharge = 0;
     }
@@ -357,10 +356,24 @@ export class World {
     if (p.perfectThisDash) return;
     p.perfectThisDash = true;
     this.runStats.perfects++;
-    if (p.dashCharges < this.stats.dashCharges) p.dashRecharge -= this.stats.dashCooldown * 0.5;
+    if (p.dashCharges < this.stats.dashCharges) {
+      p.dashRecharge -= this.stats.dashCooldown * 0.5;
+      this.settleDashRecharge();
+    }
     this.addCombo(3);
     this.slowmo(0.35, 0.22);
     this.events.push({ t: 'perfect', x: p.x, y: p.y });
+  }
+
+  /** Converts a non-positive recharge timer into charges, carrying any remainder. */
+  private settleDashRecharge(): void {
+    const p = this.player;
+    const st = this.stats;
+    while (p.dashRecharge <= 0 && p.dashCharges < st.dashCharges) {
+      p.dashCharges++;
+      this.events.push({ t: 'dashready' });
+      p.dashRecharge = p.dashCharges < st.dashCharges ? p.dashRecharge + st.dashCooldown : 0;
+    }
   }
 
   private playerContacts(): void {
@@ -504,7 +517,6 @@ export class World {
       fireT: this.rng.range(1, 2.5),
       summonT: 6,
       orbitHitT: -99,
-      lanceId: -1,
       dashHitId: -1,
       spawnT: isBoss ? 0.8 : 0.35,
       dead: false,
@@ -553,7 +565,7 @@ export class World {
 
     if (e.boss) {
       this.runStats.bossesKilled.push(e.kind);
-      if (this.boss === e) this.boss = null;
+      if (this.boss === e) this.boss = this.enemies.find((x) => x.boss && !x.dead) ?? null;
       for (let i = 0; i < 10; i++) this.dropXp(e.x + this.rng.range(-60, 60), e.y + this.rng.range(-60, 60), e.xp / 10);
       const cores = this.hasRelic('bounty') ? 50 : 25;
       for (let i = 0; i < 5; i++) this.dropPickup('core', e.x, e.y, cores / 5);
@@ -624,7 +636,7 @@ export class World {
   /** A point just outside the visible area, biased toward where the player is heading. */
   spawnPoint(margin = 70): { x: number; y: number } {
     const p = this.player;
-    const rng = this.spawnRng;
+    const rng = this.posRng;
     let a = rng.next() * TAU;
     const speed = Math.hypot(p.vx, p.vy);
     if (speed > 40 && rng.chance(0.35)) {
@@ -883,7 +895,7 @@ export class World {
       const victims: Enemy[] = [];
       for (let k = 0; k < n; k++) {
         const e = this.enemies[buf[k]!]!;
-        if (e.dead || e.lanceId === b.id) continue;
+        if (e.dead || b.hit.has(e.id)) continue;
         const rx = e.x - b.x;
         const ry = e.y - b.y;
         const along = rx * ux + ry * uy;
@@ -892,7 +904,7 @@ export class World {
         if (perp <= b.width / 2 + e.r) victims.push(e);
       }
       for (const e of victims) {
-        e.lanceId = b.id;
+        b.hit.add(e.id);
         const [dmg, crit] = this.rollDamage(b.damage);
         this.damageEnemy(e, dmg, crit, ux, uy, 140);
       }

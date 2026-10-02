@@ -1,3 +1,4 @@
+import { SHIPS } from '../game/content/ships';
 import type { ShipId } from '../game/types';
 
 export type TrailId = 'default' | 'ember' | 'aurora' | 'prism';
@@ -143,6 +144,8 @@ export function migrate(raw: unknown): SaveData {
   };
   if (!Number.isFinite(out.cores) || out.cores < 0) out.cores = 0;
   if (!Number.isFinite(out.rank) || out.rank < 1) out.rank = 1;
+  if (!(out.ship in SHIPS)) out.ship = 'spark';
+  if (!['default', 'ember', 'aurora', 'prism'].includes(out.settings.trail)) out.settings.trail = 'default';
   return out;
 }
 

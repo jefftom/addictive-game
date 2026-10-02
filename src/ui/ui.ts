@@ -57,7 +57,8 @@ export class UI {
   private toasts: HTMLElement;
   private tutorialEl: HTMLElement;
   private resultTimers: number[] = [];
-  private offersShownAt = 0;
+  private shownAt = 0;
+  private lastRunDaily = false;
 
   constructor(root: HTMLElement, cb: UiCallbacks) {
     this.cb = cb;
@@ -85,12 +86,17 @@ export class UI {
     });
 
     window.addEventListener('keydown', (e) => this.onKey(e));
+    // Space is the dash key: on screens that appear mid-action it must never activate a button.
+    window.addEventListener('keyup', (e) => {
+      if (e.code === 'Space' && (this.current === 'levelup' || this.current === 'results')) e.preventDefault();
+    });
   }
 
   // ───────────────────────── plumbing ─────────────────────────
 
   private show(id: ScreenId | 'hud'): void {
     for (const [sid, s] of this.screens) s.hidden = sid !== id;
+    if (this.current !== id) this.shownAt = performance.now();
     this.current = id;
     this.pauseBtn.hidden = id !== 'hud';
     this.tutorialEl.style.visibility = id === 'hud' ? 'visible' : 'hidden';
@@ -128,10 +134,28 @@ export class UI {
     this.pauseBtn.hidden = true;
   }
 
+  /**
+   * True right after a screen that pops up during play appears, so a held or
+   * mashed key/button cannot pick a card or skip the results by accident.
+   */
+  private inGrace(): boolean {
+    const grace = this.current === 'levelup' ? 350 : this.current === 'results' ? 900 : 0;
+    return performance.now() - this.shownAt < grace;
+  }
+
   private onKey(e: KeyboardEvent): void {
     const id = this.current;
     if (id === 'hud') return;
     const s = this.screen(id as ScreenId);
+    const activates = e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space';
+    if ((id === 'levelup' || id === 'results') && (e.code === 'Space' || (activates && (e.repeat || this.inGrace())))) {
+      e.preventDefault();
+      return;
+    }
+    if (e.repeat && (activates || e.code.startsWith('Digit') || e.code.startsWith('Numpad'))) {
+      e.preventDefault();
+      return;
+    }
     if (e.code === 'ArrowDown' || e.code === 'ArrowUp' || e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
       const tag = (document.activeElement as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' && (document.activeElement as HTMLInputElement).type === 'range' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) return;
@@ -142,8 +166,7 @@ export class UI {
       return;
     }
     if (id === 'levelup') {
-      // Ignore accidental key-mashing right as the cards appear.
-      if (performance.now() - this.offersShownAt < 280) return;
+      if (this.inGrace()) return;
       const n = ['Digit1', 'Digit2', 'Digit3', 'Numpad1', 'Numpad2', 'Numpad3'].indexOf(e.code);
       if (n >= 0) {
         e.preventDefault();
@@ -156,7 +179,7 @@ export class UI {
       }
       return;
     }
-    if (e.code === 'Escape') {
+    if (e.code === 'Escape' || (e.code === 'KeyP' && id === 'pause')) {
       if (id === 'pause') this.cb.resume();
       else if (id === 'settings') this.back();
       else if (id === 'hangar' || id === 'workshop' || id === 'records') this.cb.toTitle();
@@ -167,9 +190,9 @@ export class UI {
       this.cb.play(false);
       return;
     }
-    if (id === 'results' && (e.code === 'Enter' || e.code === 'Space') && document.activeElement === document.body) {
+    if (id === 'results' && e.code === 'Enter' && document.activeElement === document.body) {
       e.preventDefault();
-      this.cb.play(false);
+      this.cb.play(this.lastRunDaily);
     }
   }
 
@@ -182,7 +205,7 @@ export class UI {
     if (nav.down) moveFocus(s, 0, 1);
     if (nav.left) moveFocus(s, -1, 0);
     if (nav.right) moveFocus(s, 1, 0);
-    if (nav.confirm) {
+    if (nav.confirm && !this.inGrace()) {
       const a = document.activeElement as HTMLElement | null;
       if (a && s.contains(a)) a.click();
       else focusables(s)[0]?.focus();
@@ -482,9 +505,9 @@ export class UI {
 
   // ───────────────────────── Level-up ─────────────────────────
 
-  showLevelUp(offers: Offer[], opts: { cache: boolean; rerolls: number; level: number; world: World }): void {
+  showLevelUp(offers: Offer[], opts: { cache: boolean; rerolls: number; level: number; world: World; reroll?: boolean }): void {
     this.offers = offers;
-    this.offersShownAt = performance.now();
+    if (!opts.reroll) this.shownAt = performance.now();
     const s = this.screen('levelup');
     s.className = 'screen scrim-heavy';
     const cards = offers
@@ -527,7 +550,11 @@ export class UI {
       <div class="lu-actions">
         <button class="btn btn-sm btn-violet" data-act="reroll" ${opts.rerolls > 0 ? '' : 'disabled'}><span>Reroll (${opts.rerolls})</span><span class="key">R</span></button>
       </div>`;
-    s.querySelectorAll<HTMLElement>('[data-pick]').forEach((b) => b.addEventListener('click', () => this.cb.pick(Number(b.dataset.pick))));
+    s.querySelectorAll<HTMLElement>('[data-pick]').forEach((b) =>
+      b.addEventListener('click', () => {
+        if (!this.inGrace()) this.cb.pick(Number(b.dataset.pick));
+      }),
+    );
     this.bind(s, '[data-act="reroll"]', () => this.cb.reroll());
     const top = offers.map(offerRarity).find((r) => r === 'legendary' || r === 'epic');
     if (top) this.cb.sfx.reveal(top);
@@ -657,7 +684,10 @@ export class UI {
       <div class="panel"><div class="rank-row"><h3>Missions</h3></div>${missions}</div>
     </div>`;
 
-    this.bind(s, '[data-act="again"]', () => this.cb.play(r.daily));
+    this.lastRunDaily = r.daily;
+    this.bind(s, '[data-act="again"]', () => {
+      if (!this.inGrace()) this.cb.play(r.daily);
+    });
     this.bind(s, '[data-act="workshop"]', () => this.showWorkshop(save));
     this.bind(s, '[data-act="menu"]', () => this.cb.toTitle());
     this.renderTopbar(save);

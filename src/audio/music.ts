@@ -87,6 +87,7 @@ export class Music {
   }
 
   setBoss(on: boolean): void {
+    if (this.boss === on) return;
     this.boss = on;
     this.bpm = on ? 128 : this.mode === 'menu' ? 96 : 118;
     this.applyMix();

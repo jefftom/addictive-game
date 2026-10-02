@@ -63,6 +63,8 @@ export class Input {
     this.canvas = canvas;
     window.addEventListener('keydown', (e) => {
       if (e.repeat) {
+        // Re-register held keys (they are cleared by releaseAll on pause/level-up) but skip edge actions.
+        if (MOVE_KEYS[e.code]) this.keys.add(e.code);
         if (this.gameActive && (MOVE_KEYS[e.code] || DASH_KEYS.has(e.code))) e.preventDefault();
         return;
       }
@@ -279,8 +281,12 @@ export class Input {
     this.pauseQueued = false;
   }
 
+  /**
+   * Drops pointer steering and queued actions when a menu opens. Held keys are
+   * kept: keyup is tracked in every state, so a key still held when play
+   * resumes keeps steering (they are cleared on window blur instead).
+   */
   releaseAll(): void {
-    this.keys.clear();
     this.stick.active = false;
     this.mouseSteer.active = false;
     this.clearQueued();

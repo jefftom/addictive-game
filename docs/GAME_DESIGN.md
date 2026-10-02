@@ -187,8 +187,9 @@ upgrade picks and simple dodging, plus hand playtesting.
 | --- | --- | --- |
 | First level-up | ≤ 8 s | ~3.5 s (opening wave spawns close) |
 | Level at 1:00 | 4–6 | 6 |
-| Median *bot* survival, fresh save | 2:30–5:00 | ~4:30 over 16 runs; 5/16 beat a boss |
-| Veteran save (rank 8, half workshop) | usually survives 10:00 | median 10:00+, 15/16 beat a boss |
+| Fresh save beats the Warden | roughly 30–60% | 31% (clumsy bot) – 62% (competent bot) |
+| Median *bot* survival, fresh save | 2:30–6:30 | 3:46 – 6:16 depending on bot skill |
+| Veteran save (rank 8, half workshop) | usually survives 10:00 | median 10:00+, 14/16 beat a boss |
 | Enemies on screen at 3:00 | 80–250 | ~85 |
 | First run | affords 1–3 workshop upgrades | yes |
 | Frame budget | 60 fps with 400 enemies + 2,500 particles on a mid laptop | 52–60 fps in headless software rendering |
@@ -208,6 +209,8 @@ upgrade picks and simple dodging, plus hand playtesting.
 - **Small samples lie.** An 8-run batch suggested a 4:40 median; 16 runs
   showed 9:00, because surviving the Warden snowballs. Late enemy HP now
   grows faster (`(t/220)^2.4`) so 10:00 needs meta progression or real skill.
+  Because outcomes are bimodal, the Warden win rate is tracked instead of
+  the median.
 
 Difficulty curve: the spawn budget is `1.2 + 0.03t + 0.45(t/60)²` threat points per
 second; enemy HP scales by `1 + t/100 + (t/220)^2.4`. Player power grows faster than

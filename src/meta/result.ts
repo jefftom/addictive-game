@@ -20,6 +20,8 @@ export interface RunResult {
   maxWeapons: number;
   victory: boolean;
   daily: boolean;
+  /** Date (YYYY-MM-DD) whose Daily Run this was; a run can end after midnight. */
+  dailyDate?: string;
   ship: ShipId;
   hard: boolean;
   coreGain: number;

@@ -99,7 +99,6 @@ export interface Enemy {
   fireT: number;
   summonT: number;
   orbitHitT: number;
-  lanceId: number;
   dashHitId: number;
   spawnT: number;
   dead: boolean;
@@ -191,6 +190,8 @@ export interface Beam {
   duration: number;
   damage: number;
   evolved: boolean;
+  /** Enemies this beam has already hit. */
+  hit: Set<number>;
 }
 
 export interface Player {

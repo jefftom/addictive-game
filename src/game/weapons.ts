@@ -237,6 +237,7 @@ function fireLance(world: World, w: WeaponInstance, st: WeaponStats): boolean {
       duration: st.duration * s.duration,
       damage: st.damage,
       evolved: w.evolved,
+      hit: new Set(),
     });
   }
   return true;

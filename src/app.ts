@@ -46,6 +46,7 @@ export class App {
   private nextBreak = 3600;
   private fps = 60;
   private dailyRun = false;
+  private dailyDate = '';
   /** Debug/testing: `?autoplay` lets the bot play; `?warp=N` fast-forwards N seconds of a run. */
   private readonly debug = readDebugParams();
   private botRng = new Rng(1234);
@@ -195,6 +196,7 @@ export class App {
       hardMode: hard,
     });
     this.dailyRun = daily;
+    this.dailyDate = info.date;
     const best = daily ? this.save.daily.best[info.date] ?? 0 : this.save.stats.bestScore;
     this.world = new World(cfg, { bestScore: best });
     this.renderer.hud.bestScore = best;
@@ -291,7 +293,7 @@ export class App {
     w.rerolls--;
     this.offers = generateOffers(w, 3, this.offerIsCache);
     this.audio.uiClick();
-    this.ui.showLevelUp(this.offers, { cache: this.offerIsCache, rerolls: w.rerolls, level: w.level, world: w });
+    this.ui.showLevelUp(this.offers, { cache: this.offerIsCache, rerolls: w.rerolls, level: w.level, world: w, reroll: true });
   }
 
   private endRun(): void {
@@ -299,6 +301,7 @@ export class App {
     if (!w) return;
     const result = resultFromWorld(w);
     result.daily = this.dailyRun;
+    if (this.dailyRun) result.dailyDate = this.dailyDate;
     const summary = applyRun(this.save, result, this.metaRng);
     writeSave(this.save);
     this.state = 'results';
@@ -416,6 +419,8 @@ export class App {
       }
       this.updateTutorial(realDt);
       this.liveMissions(realDt);
+    } else if (this.state === 'paused' && this.input.consumePause()) {
+      this.resume();
     } else if (this.state === 'dying') {
       this.dyingT -= realDt;
       simDt = realDt * 0.3;
@@ -432,6 +437,7 @@ export class App {
     const intensity = clamp(w.enemies.length / 220 + w.combo / 250 + (w.boss ? 0.3 : 0), 0, 1);
     this.renderer.intensity = intensity;
     this.audio.music?.setIntensity(intensity);
+    this.audio.music?.setBoss(!!w.boss);
 
     this.renderer.draw(w, simDt, { attract: false, realDt });
 
