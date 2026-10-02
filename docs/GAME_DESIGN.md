@@ -187,9 +187,9 @@ upgrade picks and simple dodging, plus hand playtesting.
 | --- | --- | --- |
 | First level-up | ≤ 8 s | ~3.5 s (opening wave spawns close) |
 | Level at 1:00 | 4–6 | 6 |
-| Median *bot* survival, fresh save | 2:30–5:00 | ~4:40, most deaths at the Warden |
-| Veteran save (rank 8, half workshop) | usually survives 10:00 | median 10:00+, 7/8 kill a boss |
-| Enemies on screen at 3:00 | 100–250 | ~110 |
+| Median *bot* survival, fresh save | 2:30–5:00 | ~4:30 over 16 runs; 5/16 beat a boss |
+| Veteran save (rank 8, half workshop) | usually survives 10:00 | median 10:00+, 15/16 beat a boss |
+| Enemies on screen at 3:00 | 80–250 | ~85 |
 | First run | affords 1–3 workshop upgrades | yes |
 | Frame budget | 60 fps with 400 enemies + 2,500 particles on a mid laptop | 52–60 fps in headless software rendering |
 
@@ -205,9 +205,12 @@ upgrade picks and simple dodging, plus hand playtesting.
   one weapon card when one is available, which smooths the power curve.
 - **The Warden was a cliff.** Survival clustered within 30 s of 3:00, so its
   bullets became slower and lighter, and damage scaling was eased.
+- **Small samples lie.** An 8-run batch suggested a 4:40 median; 16 runs
+  showed 9:00, because surviving the Warden snowballs. Late enemy HP now
+  grows faster (`(t/220)^2.4`) so 10:00 needs meta progression or real skill.
 
 Difficulty curve: the spawn budget is `1.2 + 0.03t + 0.45(t/60)²` threat points per
-second; enemy HP scales by `1 + t/100 + (t/250)^2.2`. Player power grows faster than
+second; enemy HP scales by `1 + t/100 + (t/220)^2.4`. Player power grows faster than
 that early (to create the power fantasy) and slower late (to create tension
 toward 10:00).
 

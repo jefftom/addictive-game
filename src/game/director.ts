@@ -38,7 +38,7 @@ export class Director {
   }
 
   hpMult(t: number): number {
-    let m = 1 + t / 100 + Math.pow(t / 250, 2.2);
+    let m = 1 + t / 100 + Math.pow(t / 220, 2.4);
     if (t > VICTORY_TIME) m += (t - VICTORY_TIME) / 20;
     return m;
   }

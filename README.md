@@ -87,9 +87,9 @@ The simulation in `src/game/` never touches the DOM or canvas. It runs at a fixe
 | --- | --- | --- |
 | First level-up | ≤ 8 s | ~3.5 s |
 | Level at 1:00 | 4–6 | 6 |
-| Median survival | 2:30–5:00 | ~4:40 |
-| Enemies on screen at 3:00 | 100–250 | ~110 |
-| Veteran save (rank 8, half workshop) | usually reaches 10:00 | yes |
+| Median survival | 2:30–5:00 | ~4:30 (16 runs) |
+| Enemies on screen at 3:00 | 80–250 | ~85 |
+| Veteran save (rank 8, half workshop) | usually reaches 10:00 | median 10:00+, 15/16 beat a boss |
 
 The bot is not a human. These numbers are a baseline for tuning, not a substitute for playtesting.
 
