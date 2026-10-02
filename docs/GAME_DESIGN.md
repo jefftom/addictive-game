@@ -183,18 +183,31 @@ charges + spirals), **Void Heart** (rotating spiral walls + summons).
 Tuned with a headless bot simulation (`npm run sim`) that plays with random
 upgrade picks and simple dodging, plus hand playtesting.
 
-| Metric | Target |
-| --- | --- |
-| First level-up | ≤ 8 s |
-| Level-ups in first minute | 4–6 |
-| Median *bot* survival, fresh save | 2:30–5:00 |
-| First run cores | ≈ 60–80% of the cheapest workshop upgrade |
-| Second run | at least one workshop purchase affordable |
-| Enemies on screen at 5:00 | 120–250 |
-| Frame budget | 60 fps with 350 enemies + 1500 particles on a mid laptop |
+| Metric | Target | Bot result |
+| --- | --- | --- |
+| First level-up | ≤ 8 s | ~3.5 s (opening wave spawns close) |
+| Level at 1:00 | 4–6 | 6 |
+| Median *bot* survival, fresh save | 2:30–5:00 | ~4:40, most deaths at the Warden |
+| Veteran save (rank 8, half workshop) | usually survives 10:00 | median 10:00+, 7/8 kill a boss |
+| Enemies on screen at 3:00 | 100–250 | ~110 |
+| First run | affords 1–3 workshop upgrades | yes |
+| Frame budget | 60 fps with 400 enemies + 2,500 particles on a mid laptop | 52–60 fps in headless software rendering |
 
-Difficulty curve: the spawn budget grows roughly linearly with a gentle
-quadratic term; enemy HP scales by `1 + t/50`. Player power grows faster than
+### Lessons from tuning
+
+- **Cheap enemies starved expensive ones.** The first director spent its budget
+  on whatever it rolled, so brutes and shooters almost never spawned. It now
+  commits to the next enemy and saves up for it, so the mix follows the weights.
+- **Shards dropped out of reach.** Enemies died at the screen edge, so a new
+  player was still level 1 after ten kills. A shorter Pulse Blaster lock-on
+  range and an opening wave close to the player fixed the first ten seconds.
+- **Pure-passive offers stalled builds.** Each offer now includes at least
+  one weapon card when one is available, which smooths the power curve.
+- **The Warden was a cliff.** Survival clustered within 30 s of 3:00, so its
+  bullets became slower and lighter, and damage scaling was eased.
+
+Difficulty curve: the spawn budget is `1.2 + 0.03t + 0.45(t/60)²` threat points per
+second; enemy HP scales by `1 + t/100 + (t/250)^2.2`. Player power grows faster than
 that early (to create the power fantasy) and slower late (to create tension
 toward 10:00).
 
