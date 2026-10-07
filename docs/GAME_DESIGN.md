@@ -8,11 +8,18 @@
 
 ## 1. Pitch
 
-You are a spark of light adrift in the void. Endless swarms of dark geometry
-close in from every side. Your weapons fire on their own — **you** decide where
-to move, when to **dash straight through** the swarm, and which upgrade to take
-each time you level up. Chain kills to build a combo multiplier, survive the
-three bosses, and take 10:00 on the clock.
+You captain one small starship of the **Allied Beacon Fleet**. Against you:
+the **Resplendent Lattice**, a crystal armada the fleet calls *the Shardstorm*,
+ruled by Overlord Facetius, who wants to bend every light in the galaxy into
+his crown (and writes poetry about it). Its crystal ships close in from every
+side. Your guns fire on their own — **you** decide where to fly, when to
+**dash straight through** the swarm, and which upgrade to take each time you
+level up. Chain kills to build a combo multiplier, beat the armada's three
+capital ships, and hold the line for 10:00.
+
+The tone is a cheesy, affectionate bridge-crew adventure: captains who give
+speeches, a ship's computer with terrible puns, red alerts and hailing
+frequencies (see §5.6).
 
 **Genre:** arena survival roguelite (in the family of *Vampire Survivors*,
 *Brotato*, *20 Minutes Till Dawn*), with an arcade score-chase layer
@@ -128,13 +135,13 @@ This game is meant to be *compelling*, not *exploitative*:
 
 ### 5.1 Ships
 
-| Ship | Start weapon | Trait | Unlock |
-| --- | --- | --- | --- |
-| **Spark** | Pulse Blaster | balanced | default |
-| **Vanguard** | Orbit Blades | +40 HP, +2 armor, −8% speed | survive 3:00 |
-| **Tempest** | Arc Lightning | +15% speed, +10% crit, −20 HP | reach a 150 combo |
-| **Bastion** | Nova | dash releases a shockwave, +20 HP | defeat the Warden |
-| **Phantom** | Seeker Swarm | 2 dash charges, −30% dash cooldown, −30 HP | 10 perfect dashes in one run |
+| Ship (code id) | Class · captain | Start weapon | Trait | Unlock |
+| --- | --- | --- | --- | --- |
+| **Glimmer of Hope** (`spark`) | Kindle-class light frigate · Capt. Starling | Pulse Blaster | balanced | default |
+| **Immovable Object** (`vanguard`) | Monolith-class heavy cruiser · Capt. Ironwake | Orbit Blades | +40 HP, +2 armor, −8% speed | survive 3:00 |
+| **Already Gone** (`tempest`) | Zephyr-class interceptor · Capt. Hotwire | Arc Lightning | +15% speed, +10% crit, −20 HP | reach a 150 combo |
+| **Big Warm Hug** (`bastion`) | Citadel-class shield dreadnought · Capt. Rampart | Nova | dash releases a shockwave, +20 HP | defeat the Warden |
+| **Definitely Not Here** (`phantom`) | Whisper-class stealth raider · Capt. Nocturne | Seeker Swarm | 2 dash charges, −30% dash cooldown, −30 HP | 10 perfect dashes in one run |
 
 ### 5.2 Weapons (max level 5 + Evolution)
 
@@ -163,18 +170,45 @@ Prism Shield, Executioner, Fever, Twin Dash, Bounty Hunter.
 
 ### 5.5 Enemies
 
+The Resplendent Lattice's crystal ships (display names; code ids in brackets):
+
 | Enemy | Shape | Behaviour | Appears |
 | --- | --- | --- | --- |
-| Drifter | triangle | slow chaser | 0:00 |
-| Swarmling | small dart | fast, packs of 6–10 | 0:30 |
-| Dasher | diamond | telegraphs, then charges | 1:00 |
-| Splitter | circle | splits in two on death | 1:30 |
-| Shooter | hexagon | keeps distance, fires slow bolts | 2:00 |
-| Brute | square | slow, tanky, heavy hitter | 2:30 |
-| *Elite* | any, gold rim | ×6 HP, drops a Cache | every ~50 s |
+| Drone (`drifter`) | triangle | slow chaser | 0:00 |
+| Swarm Dart (`swarmling`) | small dart | fast, packs of 6–10 | 0:30 |
+| Lancer (`dasher`) | diamond | telegraphs, then charges | 1:00 |
+| Cell (`splitter`) | circle | splits in two on death | 1:30 |
+| Gunship (`shooter`) | hexagon | keeps distance, fires slow bolts | 2:00 |
+| Bulwark Hauler (`brute`) | square | slow, tanky, heavy hitter | 2:30 |
+| *Elite* ("Employee of the Month") | any, gold rim | ×6 HP, drops a Cache | every ~50 s |
 
-Bosses: **Warden** (radial bursts + minion rings), **Hydra** (telegraphed
-charges + spirals), **Void Heart** (rotating spiral walls + summons).
+Capital ships (bosses): **The Warden**, keeper of the First Gate (radial bursts
++ minion rings), **The Hydra** (telegraphed charges + spirals), **The Void
+Heart**, the hive mothership and the overlord's mother (rotating spiral walls
++ summons). Destroyed crystals leave **shards** (XP) and **cores** (Workshop
+currency). The galaxy backdrop moves through four sectors as each capital ship
+falls: the Turquoise Whorl, the Garnet Nebula, the Amethyst Abyss and the
+Gilded Throne.
+
+### 5.6 Story and presentation
+
+The script lives in `src/story/script.ts` (content only); `director.ts` decides
+when lines play and `logbook.ts` unlocks log entries. Code ids (ships, enemies,
+achievements) never change; only display text is themed.
+
+| Where | What | Code |
+| --- | --- | --- |
+| First launch | **Opening crawl**: a paced fleet briefing over the attract mode; any key/tap skips it (after a short grace); replayable from the Ship's Log; static under reduced motion | `src/ui/crawl.ts` |
+| In a run | **Comms panel**: the `StoryDirector`'s current line, with the speaker's portrait glyph and colour, name and role, a quick typewriter reveal and a timer bar. Story lines (sector arrivals, capital-ship sequences, Overtime) stand out, rare barks are standard, common barks are small and quiet. Never takes pointer input. Setting **Crew chatter**: All / Important only / Off | `src/ui/comms.ts`, `src/story/runlink.ts` |
+| Results | A game-over quip (rotation persisted in the save), or the capital ship's victory taunt when the run ended during a boss fight; newly unlocked log entries with a Read button | `src/ui/ui.ts` |
+| Victory | The ending card ("The Light Holds"), then the Overtime choice; continuing plays the post-credits comms | `src/ui/ui.ts` |
+| Title menu | **Ship's Log**: 14 entries that unlock across the meta arc (with hints and progress), unread badges, briefing replay, the cast and the vessel classes | `src/ui/ui.ts`, `src/story/logbook.ts` |
+
+Pacing is the director's job: at most one common bark every 4–6 s, rare lines
+queue briefly, and story lines take priority. `StoryRunLink` feeds it from the
+simulation each frame: events go through with their own `pid` (so co-op lines
+resolve per pilot's captain), `sector`/`downed`/`revived` events become
+signals, and it detects low-HP crossings per pilot and the boss crossing 50%.
 
 ---
 
@@ -265,5 +299,10 @@ fade in with intensity (enemy count, combo), shifting key for boss fights.
 - **Spatial hash grid** rebuilt each tick (counting sort into typed arrays)
   for collisions with hundreds of entities.
 - **Canvas 2D renderer** with pre-rendered glow sprites and additive particles.
-- **DOM overlay** for menus (crisp text, accessible focus, keyboard nav).
+- **DOM overlay** for menus (crisp text, accessible focus, keyboard nav),
+  the in-run comms panel and the opening crawl.
+- **Story layer** (`src/story/`): a deterministic `StoryDirector` on its own
+  cosmetic RNG stream turns simulation events into paced comms lines; it never
+  affects the simulation.
+
 - **Versioned localStorage save** with migration, guarded by try/catch.

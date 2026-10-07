@@ -78,6 +78,12 @@ const exitCode = (app) =>
 try {
   // ---------------------------------------------------------------- launch 1: default (fullscreen)
   const { app, page, out, pageErrors } = await launch();
+  // A fresh save opens with the story briefing (opening crawl): skip it with a key press.
+  await page.waitForSelector('#screen-title:visible, #crawl', { timeout: 30_000 });
+  if (await page.locator('#crawl').isVisible()) {
+    await page.waitForTimeout(900);
+    await page.keyboard.press('Escape');
+  }
   await page.waitForSelector('#screen-title', { state: 'visible', timeout: 30_000 });
   check('title screen visible', true);
   const logo = await page.locator('.logo').first().textContent();

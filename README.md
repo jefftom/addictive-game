@@ -2,7 +2,7 @@
 
 A neon arena-survival roguelite built around "one more run".
 
-Your weapons fire on their own. You steer, **dash straight through the swarm**, and chain kills into a combo multiplier. Pick one of three upgrades every level, evolve your weapons, take down three bosses, and survive 10:00. Every run, win or lose, earns cores, rank and mission progress, so you always come back a little stronger.
+You captain one small starship of the **Allied Beacon Fleet** against **the Shardstorm**, a crystal armada led by an overlord who writes poetry. Your guns fire on their own. You steer, **dash straight through the swarm**, and chain kills into a combo multiplier. Pick one of three upgrades every level, evolve your weapons, take down three capital ships, and hold the line for 10:00. Every run, win or lose, earns cores, rank and mission progress, so you always come back a little stronger. Your bridge crew talks you through it on comms, and the Ship's Log fills in the story as you go.
 
 - **Runs:** 2–10 minutes; restart in under a second
 - **Platforms:** any modern browser on desktop or mobile, with keyboard, mouse, touch or gamepad
@@ -45,6 +45,7 @@ The full reasoning is in [docs/GAME_DESIGN.md](docs/GAME_DESIGN.md). In short, t
 | Bosses at 3:00 / 6:00 / 9:00 | minutes | A "WARNING" banner, then a clear goal to beat |
 | Missions, rank, workshop | runs | Every run pays out; "312 short of your best" framing |
 | Daily Run + streak | days | Same seed for everyone each day; streak bonus cores |
+| Ship's Log + crew comms | runs | Story chapters unlock across the meta arc; the crew reacts to your play |
 
 There are also guardrails: no real money, ads, loot boxes or energy timers; streaks only add bonuses; an optional break reminder; and a reduced-flashing setting.
 
@@ -55,7 +56,7 @@ There are also guardrails: no real money, ads, loot boxes or energy timers; stre
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run typecheck` | `tsc --noEmit` (strict) |
 | `npm test` | Unit tests (Vitest): RNG, grid, combat rules, determinism, upgrades, saves, missions, daily streaks |
-| `npm run e2e` | Playwright smoke tests on desktop and mobile viewports |
+| `npm run e2e` | Playwright smoke and story tests on desktop and mobile viewports (set `E2E_PORT` if 4173 is taken) |
 | `npm run sim` | Headless balance report: a bot plays dozens of runs ([details](#balance-simulation)) |
 | `npm run build` | Production build to `dist/` |
 | `npm run build:single` | Self-contained `dist-single/shardstorm.html` |
@@ -77,7 +78,9 @@ src/
   meta/      save/migration, progression & rewards, missions, achievements, rank, daily
   render/    canvas renderer, glow sprites, particles, effects, HUD, background
   audio/     procedural WebAudio SFX and music sequencer
-  ui/        DOM menus, level-up cards, results screen, styles
+  story/     story script, StoryDirector (paced comms), Ship's Log unlocks, run-to-director glue
+  ui/        DOM menus, level-up cards, results screen, comms panel, opening crawl, styles
+
   platform/  web vs desktop (Steam) platform layer: saves, achievements, rich presence
 desktop/     Electron main process, sandboxed preload bridge, Steamworks wrapper, atomic save file
 steam/       SteamPipe VDF templates, achievements table, rich presence tokens, dev steam_appid.txt

@@ -14,7 +14,12 @@ import { HARD_MODE_RANK, TRAILS } from './meta/rank';
 import { resultFromWorld } from './meta/result';
 import { clearSave, defaultSave, loadSave, writeSave, type SaveData, type Settings } from './meta/save';
 import { Renderer } from './render/renderer';
-import { UI } from './ui/ui';
+import { StoryDirector, bossIdFromName, pickBossVictoryTaunt, pickGameOverQuip } from './story/director';
+import { checkLogbook, markIntroSeen, recordQuip } from './story/logbook';
+import { StoryRunLink } from './story/runlink';
+import type { BossId } from './story/script';
+import { CommsPanel, chatterAllows } from './ui/comms';
+import { UI, type ResultsStory } from './ui/ui';
 
 export const DT = 1 / 60;
 const MAX_STEPS = 5;
@@ -51,6 +56,13 @@ export class App {
   private readonly debug = readDebugParams();
   private botRng = new Rng(1234);
   private autoPickT = 0;
+  /** Story: one director per session on its own cosmetic stream; the link feeds it each frame. */
+  private readonly storyRng = new Rng(randomSeed());
+  private readonly story = new StoryDirector(this.storyRng);
+  private readonly storyLink = new StoryRunLink(this.story);
+  private readonly comms = new CommsPanel();
+  /** Capital ship on the field when the run was lost (for the results taunt). */
+  private killedBy: BossId | null = null;
 
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     this.renderer = new Renderer(canvas);
@@ -72,7 +84,7 @@ export class App {
       reroll: () => this.reroll(),
       resume: () => this.resume(),
       quitRun: () => this.endRun(),
-      continueOvertime: () => this.resume(),
+      continueOvertime: () => this.continueOvertime(),
       cashOut: () => this.endRun(),
       buy: (id) => this.buy(id),
       selectShip: (id) => {
@@ -94,6 +106,7 @@ export class App {
       },
       toTitle: () => this.toTitle(),
       pause: () => this.pause(),
+      storyChanged: () => writeSave(this.save),
       sfx: {
         hover: () => this.audio.uiHover(),
         click: () => this.audio.uiClick(),
@@ -135,6 +148,14 @@ export class App {
     });
 
     this.ui.showTitle(this.save, dailyInfo(), this.isTouch());
+    // First launch: the opening briefing plays over the attract mode (replayable from the Ship's Log).
+    if (!this.save.story?.introSeen && !this.debug.autoplay && this.debug.warp === 0) {
+      this.ui.showCrawl(() => {
+        markIntroSeen(this.save);
+        writeSave(this.save);
+        if (this.state === 'title') this.ui.showTitle(this.save, dailyInfo(), this.isTouch());
+      });
+    }
   }
 
   start(): void {
@@ -197,6 +218,7 @@ export class App {
     });
     this.dailyRun = daily;
     this.dailyDate = info.date;
+    this.killedBy = null;
     const best = daily ? this.save.daily.best[info.date] ?? 0 : this.save.stats.bestScore;
     this.world = new World(cfg, { bestScore: best });
     this.renderer.hud.bestScore = best;
@@ -212,10 +234,16 @@ export class App {
     this.ui.showHud();
     this.audio.music?.start('game');
     this.audio.music?.setIntensity(0);
+    this.comms.clear();
+    this.comms.setRun(
+      this.world.players.map((p) => p.ship),
+      this.world.coop,
+    );
+    this.storyLink.startRun(this.world, { daily });
     if (!this.save.tutorialDone) {
       this.tutorialStage = 1;
       this.tutorialT = 0;
-      this.ui.tutorial(this.isTouch() ? 'DRAG ANYWHERE TO MOVE' : 'WASD OR ARROWS TO MOVE', 'Your weapons fire on their own');
+      this.ui.tutorial(this.isTouch() ? 'DRAG ANYWHERE TO MOVE' : 'WASD OR ARROWS TO MOVE', "Your ship's guns fire on their own");
     } else {
       this.tutorialStage = 0;
       this.ui.tutorial(null);
@@ -253,6 +281,12 @@ export class App {
     }
   }
 
+  private continueOvertime(): void {
+    if (this.state !== 'victory') return;
+    this.storyLink.overtime();
+    this.resume();
+  }
+
   private openLevelUp(): void {
     const w = this.world;
     if (!w) return;
@@ -273,6 +307,7 @@ export class App {
     const offer = this.offers[i];
     if (!offer) return;
     applyOffer(w, offer);
+    this.storyLink.pick(offer.kind, this.offerIsCache, 0);
     this.audio.pick(offerRarity(offer));
     if (offer.kind === 'evolve') this.renderer.callouts.add('EVOLVED', '#ffc93c', 1, offer.id.toUpperCase(), 1.4);
     if (this.tutorialStage > 0 && this.tutorialStage < 3) {
@@ -303,21 +338,54 @@ export class App {
     result.daily = this.dailyRun;
     if (this.dailyRun) result.dailyDate = this.dailyDate;
     const summary = applyRun(this.save, result, this.metaRng);
+    const story = this.resultsStory(w, result.victory);
     writeSave(this.save);
+    this.storyLink.endRun();
+    this.comms.clear();
     this.state = 'results';
     this.input.gameActive = false;
     this.input.releaseAll();
     this.ui.tutorial(null);
     this.audio.music?.start('menu');
     this.attract = this.newAttractWorld();
-    this.ui.showResults(summary, this.save, this.isTouch());
+    this.ui.showResults(summary, this.save, this.isTouch(), story);
     if (this.save.settings.breakReminder && this.sessionPlay >= this.nextBreak) {
       this.nextBreak = this.sessionPlay + 3600;
       this.ui.toast("You've played for over an hour. A short stretch keeps your reflexes sharp.", '☕');
     }
   }
 
+  /** Results-screen story: boss taunt or game-over quip (persisted rotation), and new log entries. */
+  private resultsStory(w: World, victory: boolean): ResultsStory {
+    const ship = w.players[0]?.ship ?? this.save.ship;
+    const out: ResultsStory = { newLog: checkLogbook(this.save, { coopRun: w.coop }) };
+    if (this.killedBy) {
+      out.taunt = pickBossVictoryTaunt(this.storyRng, this.killedBy, ship);
+    } else if (!victory) {
+      const history = this.save.story?.quipHistory ?? [];
+      const quip = pickGameOverQuip(this.storyRng, ship, history);
+      recordQuip(this.save, quip.key);
+      out.quip = quip;
+    }
+    return out;
+  }
+
+  /** Mirrors the director's current line into the comms panel (filtered by the chatter setting). */
+  private presentComms(): void {
+    const d = this.story;
+    const mode = this.save.settings.chatter;
+    // Filtered lines are skipped at once so the queue keeps moving.
+    for (let guard = 0; d.current && !chatterAllows(mode, d.current) && guard < 16; guard++) d.skipCurrent();
+    d.consumeShown();
+    const cur = d.current;
+    const live = this.state === 'playing' || this.state === 'dying';
+    if (cur && live) this.comms.show(cur, d.currentElapsed);
+    else this.comms.hide();
+  }
+
   private toTitle(): void {
+    this.storyLink.endRun();
+    this.comms.clear();
     this.state = 'title';
     this.world = null;
     this.input.gameActive = false;
@@ -433,7 +501,10 @@ export class App {
     // Feedback.
     this.renderer.consume(w.events, w);
     this.audio.consume(w.events);
+    this.storyLink.frame(w, w.events);
     w.events.length = 0;
+    if (this.state === 'playing' || this.state === 'dying') this.story.update(realDt);
+    this.presentComms();
     const intensity = clamp(w.enemies.length / 220 + w.combo / 250 + (w.boss ? 0.3 : 0), 0, 1);
     this.renderer.intensity = intensity;
     this.audio.music?.setIntensity(intensity);
@@ -448,10 +519,12 @@ export class App {
         this.pick(0);
       }
     }
-    if (this.debug.autoplay && this.state === 'victory') this.resume();
+    if (this.debug.autoplay && this.state === 'victory') this.continueOvertime();
     if (this.state !== 'playing') return;
     if (w.gameOver) {
+      this.killedBy = w.boss && !w.boss.dead ? bossIdFromName(w.boss.kind) : null;
       this.state = 'dying';
+
       this.dyingT = 1.3;
       this.input.gameActive = false;
       this.ui.tutorial(null);
@@ -471,7 +544,7 @@ export class App {
   private advanceTutorial(): void {
     this.tutorialStage = 2;
     this.tutorialT = 0;
-    this.ui.tutorial(this.isTouch() ? 'TAP DASH TO DASH' : 'PRESS SPACE TO DASH', 'You are invulnerable mid-dash. Dash through enemies to damage them.');
+    this.ui.tutorial(this.isTouch() ? 'TAP DASH TO DASH' : 'PRESS SPACE TO DASH', 'Your hull is invulnerable mid-dash. Dash through enemy crystals to damage them.');
   }
 
   private updateTutorial(realDt: number): void {
