@@ -1,0 +1,166 @@
+{
+  "note": "Generated from src/meta/achievements.ts by `npm run steam:achievements`. Do not edit by hand. Enter these in Steamworks > Stats & Achievements.",
+  "achievements": [
+    {
+      "id": "first_run",
+      "apiName": "ACH_FIRST_RUN",
+      "displayName": "Into the Storm",
+      "description": "Finish your first run",
+      "hidden": false
+    },
+    {
+      "id": "survive3",
+      "apiName": "ACH_SURVIVE3",
+      "displayName": "Gatecrasher",
+      "description": "Survive 3:00 in a run",
+      "hidden": false
+    },
+    {
+      "id": "survive5",
+      "apiName": "ACH_SURVIVE5",
+      "displayName": "Holding the Line",
+      "description": "Survive 5:00 in a run",
+      "hidden": false
+    },
+    {
+      "id": "victory",
+      "apiName": "ACH_VICTORY",
+      "displayName": "Eye of the Storm",
+      "description": "Survive 10:00",
+      "hidden": false
+    },
+    {
+      "id": "combo150",
+      "apiName": "ACH_COMBO150",
+      "displayName": "Chain Reaction",
+      "description": "Reach a 150 combo",
+      "hidden": false
+    },
+    {
+      "id": "combo500",
+      "apiName": "ACH_COMBO500",
+      "displayName": "Unbroken",
+      "description": "Reach a 500 combo",
+      "hidden": false
+    },
+    {
+      "id": "warden",
+      "apiName": "ACH_WARDEN",
+      "displayName": "Gatekeeper",
+      "description": "Defeat the Warden",
+      "hidden": false
+    },
+    {
+      "id": "hydra",
+      "apiName": "ACH_HYDRA",
+      "displayName": "Spiral Breaker",
+      "description": "Defeat the Hydra",
+      "hidden": false
+    },
+    {
+      "id": "voidheart",
+      "apiName": "ACH_VOIDHEART",
+      "displayName": "Heartstopper",
+      "description": "Defeat the Void Heart",
+      "hidden": true
+    },
+    {
+      "id": "perfect10",
+      "apiName": "ACH_PERFECT10",
+      "displayName": "Untouchable Grace",
+      "description": "10 perfect dashes in one run",
+      "hidden": false
+    },
+    {
+      "id": "evolve",
+      "apiName": "ACH_EVOLVE",
+      "displayName": "Metamorphosis",
+      "description": "Evolve a weapon",
+      "hidden": false
+    },
+    {
+      "id": "arsenal",
+      "apiName": "ACH_ARSENAL",
+      "displayName": "Full Arsenal",
+      "description": "Hold 4 weapons at once",
+      "hidden": false
+    },
+    {
+      "id": "kills1k",
+      "apiName": "ACH_KILLS1K",
+      "displayName": "Thousand Cuts",
+      "description": "Destroy 1,000 enemies in total",
+      "hidden": false
+    },
+    {
+      "id": "kills10k",
+      "apiName": "ACH_KILLS10K",
+      "displayName": "Shardstorm",
+      "description": "Destroy 10,000 enemies in total",
+      "hidden": false
+    },
+    {
+      "id": "nohit2",
+      "apiName": "ACH_NOHIT2",
+      "displayName": "Ghost",
+      "description": "Go 2:00 without taking damage",
+      "hidden": false
+    },
+    {
+      "id": "daily3",
+      "apiName": "ACH_DAILY3",
+      "displayName": "Ritual",
+      "description": "Reach a 3-day Daily Run streak",
+      "hidden": false
+    },
+    {
+      "id": "investor",
+      "apiName": "ACH_INVESTOR",
+      "displayName": "Investor",
+      "description": "Buy 10 workshop upgrades",
+      "hidden": false
+    },
+    {
+      "id": "score100k",
+      "apiName": "ACH_SCORE100K",
+      "displayName": "Six Figures",
+      "description": "Score 100,000 in one run",
+      "hidden": false
+    },
+    {
+      "id": "level30",
+      "apiName": "ACH_LEVEL30",
+      "displayName": "Ascendant",
+      "description": "Reach level 30 in a run",
+      "hidden": false
+    },
+    {
+      "id": "rank10",
+      "apiName": "ACH_RANK10",
+      "displayName": "Veteran",
+      "description": "Reach rank 10",
+      "hidden": false
+    },
+    {
+      "id": "nightmare",
+      "apiName": "ACH_NIGHTMARE",
+      "displayName": "Nightmare Walker",
+      "description": "Survive 5:00 on Nightmare",
+      "hidden": false
+    },
+    {
+      "id": "squad",
+      "apiName": "ACH_SQUAD",
+      "displayName": "Squad Goals",
+      "description": "Win a co-op run",
+      "hidden": false
+    },
+    {
+      "id": "medic",
+      "apiName": "ACH_MEDIC",
+      "displayName": "No Pilot Left Behind",
+      "description": "Revive teammates 10 times",
+      "hidden": false
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+"DepotBuild"
+{
+	// Windows depot: electron-builder output release/win-unpacked/ (SHARDSTORM.exe).
+	"DepotID" "1234561"
+	"FileMapping"
+	{
+		"LocalPath" "win-unpacked/*"
+		"DepotPath" "."
+		"Recursive" "1"
+	}
+	"FileExclusion" "*.pdb"
+	// Release builds must not ship steam_appid.txt: Steam provides the AppID at launch.
+	"FileExclusion" "steam_appid.txt"
+}
