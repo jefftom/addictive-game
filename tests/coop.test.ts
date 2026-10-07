@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { Rng } from '../src/core/rng';
+import { botInput, botResolvePending } from '../src/game/bot';
 import { COOP_SCALING, REVIVE_HP, SPAWN_CLEARANCE, ZOOM_MAX } from '../src/game/content/coop';
 import { Director } from '../src/game/director';
 import { makeRunConfig } from '../src/game/runconfig';
@@ -6,6 +8,7 @@ import { xpForLevel } from '../src/game/stats';
 import type { ControlInput, GameEvent, ShipId } from '../src/game/types';
 import { applyOffer, generateOffers, offerKey } from '../src/game/upgrades';
 import { World } from '../src/game/world';
+import { simulateRun } from './helpers';
 
 const DT = 1 / 60;
 const still: ControlInput = { mx: 0, my: 0, dash: false };
@@ -489,5 +492,70 @@ describe('spawn clearance', () => {
       if (!w.clearOfPlayers(pt.x, pt.y, SPAWN_CLEARANCE)) close++;
     }
     expect(close).toBeLessThanOrEqual(4);
+  });
+});
+
+describe('bots in co-op', () => {
+  it('two identical 2-player bot runs are identical (determinism)', () => {
+    const play = () => {
+      const w = coopWorld(['spark', 'vanguard'], 77);
+      const rngs = [new Rng(1), new Rng(2)];
+      for (let i = 0; i < 60 * 45 && !w.gameOver; i++) {
+        w.update(DT, w.players.map((p) => botInput(w, rngs[p.pid]!, { skill: 0.6 }, p.pid)));
+        botResolvePending(w, rngs[0]!, (o, pid) => applyOffer(w, o, pid));
+        w.events.length = 0;
+      }
+      return {
+        score: w.score,
+        kills: w.runStats.kills,
+        level: w.level,
+        enemies: w.enemies.length,
+        players: w.players.map((p) => ({ x: p.x, y: p.y, hp: p.hp, build: p.build, kills: p.run.kills })),
+      };
+    };
+    const a = play();
+    expect(a.level).toBeGreaterThan(2);
+    expect(a.players[1]!.kills).toBeGreaterThan(0);
+    expect(a).toEqual(play());
+  });
+
+  it('a bot can drive P2', () => {
+    const w = coopWorld(['spark', 'spark']);
+    quiet(w);
+    const p2 = w.players[1]!;
+    const e = w.spawnEnemy('drifter', p2.x + 60, p2.y)!;
+    e.speed = 0;
+    expect(botInput(w, new Rng(1), { skill: 1 }, 1).mx).toBeLessThan(0);
+  });
+
+  it('a bot goes to revive a downed teammate, and a ghost bot floats toward help', () => {
+    const w = coopWorld(['spark', 'spark']);
+    quiet(w);
+    const [p1, p2] = w.players;
+    p1!.x = -300;
+    p2!.x = 0;
+    down(w, 0);
+    const toP1 = botInput(w, new Rng(1), { skill: 0.6 }, 1);
+    expect(toP1.mx).toBeLessThan(-0.9);
+    const ghost = botInput(w, new Rng(1), { skill: 0.6 }, 0);
+    expect(ghost.mx).toBeGreaterThan(0.9);
+    expect(ghost.dash).toBe(false);
+    // Played out, the bot actually revives P1.
+    const rngs = [new Rng(1), new Rng(2)];
+    for (let i = 0; i < 60 * 8 && p1!.downed; i++) {
+      w.update(DT, w.players.map((p) => botInput(w, rngs[p.pid]!, { skill: 0.6 }, p.pid)));
+      w.events.length = 0;
+    }
+    expect(p1!.downed).toBe(false);
+    expect(p2!.run.revivesGiven).toBe(1);
+  });
+
+  it('simulateRun plays a co-op run and keeps solo untouched', () => {
+    const r = simulateRun({ seed: 5, players: ['spark', 'vanguard'] }, 60);
+    expect(r.players).toBe(2);
+    expect(r.builds).toHaveLength(2);
+    expect(r.kills).toBeGreaterThan(50);
+    const solo = simulateRun({ seed: 77, rank: 1 }, 45);
+    expect([solo.score, solo.kills, solo.level]).toEqual([2395, 94, 5]);
   });
 });

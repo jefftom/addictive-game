@@ -1,4 +1,5 @@
 import type { Rng } from '../core/rng';
+import { REVIVE_RADIUS } from './content/coop';
 import type { ControlInput } from './types';
 import { generateOffers, type Offer } from './upgrades';
 import type { World } from './world';
@@ -12,9 +13,21 @@ export interface BotOptions {
  * A simple steering bot used for the title-screen attract mode and the
  * headless balance simulation. It flees weighted threats, drifts toward
  * shards when safe, and dashes when something is about to touch it.
+ * It can drive any pilot (`pid`); in co-op it also goes to revive downed
+ * teammates and keeps close to the team.
  */
 export function botInput(world: World, rng: Rng, opts: BotOptions = { skill: 0.6 }, pid = 0): ControlInput {
   const p = world.players[pid]!;
+  if (p.downed) {
+    // Ghost: float toward the nearest teammate who can revive us (no rng draw).
+    const q = world.nearestUpPlayer(p.x, p.y);
+    if (!q) return { mx: 0, my: 0, dash: false };
+    const dx = q.x - p.x;
+    const dy = q.y - p.y;
+    const d = Math.hypot(dx, dy);
+    if (d < REVIVE_RADIUS * 0.5) return { mx: 0, my: 0, dash: false };
+    return { mx: dx / d, my: dy / d, dash: false };
+  }
   let fx = 0;
   let fy = 0;
   let threat = 0;
@@ -47,7 +60,38 @@ export function botInput(world: World, rng: Rng, opts: BotOptions = { skill: 0.6
   }
 
   const pressure = Math.hypot(fx, fy);
-  if (pressure < 1.2) {
+  let reviving = false;
+  if (world.coop) {
+    // (a) Revive duty: go to the nearest downed teammate when it's not too hot.
+    if (pressure < 2.5) {
+      let best: { x: number; y: number } | null = null;
+      let bestD = 900;
+      for (const q of world.players) {
+        if (q === p || !q.alive || !q.downed) continue;
+        const d = Math.hypot(q.x - p.x, q.y - p.y);
+        if (d < bestD) {
+          bestD = d;
+          best = q;
+        }
+      }
+      if (best) {
+        reviving = true;
+        const d = bestD || 1;
+        // Ease off inside the revive circle so we hold position instead of orbiting.
+        const pull = d > REVIVE_RADIUS * 0.5 ? 2 : (2 * d) / (REVIVE_RADIUS * 0.5);
+        fx += ((best.x - p.x) / d) * pull;
+        fy += ((best.y - p.y) / d) * pull;
+      }
+    }
+    // (b) Cohesion: don't stray toward the leash.
+    const c = world.teamCenter();
+    const dc = Math.hypot(c.x - p.x, c.y - p.y);
+    if (dc > 0.35 * world.maxSpan().x) {
+      fx += ((c.x - p.x) / dc) * 0.8;
+      fy += ((c.y - p.y) / dc) * 0.8;
+    }
+  }
+  if (pressure < 1.2 && !reviving) {
     // Safe: go collect shards.
     let best = Infinity;
     let gx = 0;

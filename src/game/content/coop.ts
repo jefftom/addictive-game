@@ -23,7 +23,7 @@ export interface CoopScaling {
 
 export const COOP_SCALING: Record<1 | 2 | 3 | 4, CoopScaling> = {
   1: { spawn: 1, hp: 1, bossHp: 1, xpReq: 1, eliteEvery: 1, surge: 1, opening: 1, maxEnemies: 420 },
-  2: { spawn: 1.6, hp: 1.25, bossHp: 1.8, xpReq: 1.6, eliteEvery: 0.8, surge: 1.35, opening: 1.5, maxEnemies: 500 },
+  2: { spawn: 1.6, hp: 1.3, bossHp: 1.9, xpReq: 1.6, eliteEvery: 0.8, surge: 1.35, opening: 1.5, maxEnemies: 500 },
   3: { spawn: 2.15, hp: 1.45, bossHp: 2.5, xpReq: 2.15, eliteEvery: 0.68, surge: 1.65, opening: 2, maxEnemies: 560 },
   4: { spawn: 2.6, hp: 1.6, bossHp: 3.2, xpReq: 2.6, eliteEvery: 0.6, surge: 1.9, opening: 2.4, maxEnemies: 600 },
 };
