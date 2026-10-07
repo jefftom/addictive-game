@@ -318,6 +318,7 @@ export type GameEvent =
   | { t: 'elite'; x: number; y: number }
   | { t: 'surge' }
   | { t: 'victory' }
+  | { t: 'sector'; index: number }
   | { t: 'bomb'; x: number; y: number }
   | { t: 'magnet' }
   | { t: 'newbest' }

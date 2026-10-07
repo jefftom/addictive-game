@@ -165,6 +165,12 @@ export class World {
   boss: Enemy | null = null;
   readonly director: Director;
   victory = false;
+  /**
+   * Galaxy sector 0..3 (backdrop and story). Sector i is left behind when its boss
+   * (BOSS_SCHEDULE[i]) is destroyed, or when the next boss arrives (the last one at
+   * victory time), whichever comes first. Derived from the clock and kills only.
+   */
+  sector = 0;
   gameOver = false;
 
   /** Presentation requests (read and cleared by the app loop). */
@@ -535,6 +541,7 @@ export class World {
       this.victory = true;
       this.events.push({ t: 'victory' });
     }
+    this.updateSector();
     this.cleanup();
   }
 
@@ -1778,6 +1785,20 @@ export class World {
   nextBoss(): { name: string; at: number } | null {
     const next = this.director.nextBossInfo(this.time);
     return next;
+  }
+
+  private updateSector(): void {
+    let target = 0;
+    while (target < BOSS_SCHEDULE.length) {
+      const entry = BOSS_SCHEDULE[target]!;
+      const passedAt = BOSS_SCHEDULE[target + 1]?.at ?? VICTORY_TIME;
+      if (!this.runStats.bossesKilled.includes(entry.kind) && this.time < passedAt) break;
+      target++;
+    }
+    while (this.sector < target) {
+      this.sector++;
+      this.events.push({ t: 'sector', index: this.sector });
+    }
   }
 
   bossSchedule(): typeof BOSS_SCHEDULE {

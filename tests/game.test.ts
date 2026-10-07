@@ -301,3 +301,28 @@ describe('regressions from code review', () => {
     expect(b.slice(0, n)).toEqual(a.slice(0, n));
   });
 });
+
+describe('galaxy sectors', () => {
+  it('advance when a boss dies or the next boss arrives, emitting one event each', () => {
+    const w = newWorld(3);
+    expect(w.sector).toBe(0);
+    w.time = 179.99;
+    w.update(DT, still);
+    const warden = w.enemies.find((e) => e.kind === 'warden')!;
+    w.events.length = 0;
+    w.killEnemy(warden);
+    w.update(DT, still);
+    expect(w.sector).toBe(1);
+    expect(w.events.filter((e) => e.t === 'sector')).toEqual([{ t: 'sector', index: 1 }]);
+    // The Hydra (6:00) is never killed; the Void Heart arriving at 9:00 moves us on anyway.
+    w.time = 539.99;
+    w.events.length = 0;
+    w.update(DT, still);
+    expect(w.sector).toBe(2);
+    w.time = 600;
+    w.update(DT, still);
+    expect(w.sector).toBe(3);
+    w.update(DT, still);
+    expect(w.sector).toBe(3);
+  });
+});
