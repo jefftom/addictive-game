@@ -16,11 +16,11 @@ const SRC = join(ROOT, 'src');
 const ALIAS = /\b(?:world|w)\.(?:player|stats|build|rerolls|pendingCaches)\b|\bthis\.(?:player|stats|build)\b/;
 
 /**
- * Presentation and meta files that still read the P1 aliases for solo. They
- * belong to the co-op presentation/meta wave, which must migrate them to
+ * Presentation files that still read the P1 aliases for solo. They
+ * belong to the co-op rendering wave, which must migrate them to
  * `players[pid]` and then delete them from this list.
  */
-const PENDING_MIGRATION = new Set(['src/app.ts', 'src/render/renderer.ts', 'src/render/hud.ts', 'src/ui/ui.ts', 'src/meta/result.ts']);
+const PENDING_MIGRATION = new Set(['src/render/renderer.ts', 'src/render/hud.ts']);
 
 function tsFiles(dir: string): string[] {
   const out: string[] = [];

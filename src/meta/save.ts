@@ -49,6 +49,55 @@ export interface RunRecord {
   time: number;
   date: string;
   daily: boolean;
+  /** Pilots in the run (absent = solo). */
+  players?: number;
+}
+
+/** A remembered co-op lobby entry (device -> ship), restored when that device joins again. */
+export interface CoopRosterRecord {
+  device: string;
+  ship: ShipId;
+}
+
+/**
+ * Local co-op records (save v2). Co-op scores are kept apart from the solo
+ * `stats.bestScore` / `stats.bestCombo` so the solo score chase stays comparable.
+ */
+export interface CoopStats {
+  /** Co-op runs finished. */
+  runs: number;
+  /** Co-op runs that reached 10:00. */
+  victories: number;
+  /** Best team score per pilot count ('2' | '3' | '4'). */
+  best: Record<string, number>;
+  /** Teammate revives given, all pilots, all co-op runs. */
+  revives: number;
+  /** Last launched roster (ships remembered per device). */
+  lastRoster: CoopRosterRecord[];
+}
+
+export function defaultCoopStats(): CoopStats {
+  return { runs: 0, victories: 0, best: {}, revives: 0, lastRoster: [] };
+}
+
+const count = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
+
+/** Sanitises a stored co-op block; missing or malformed fields fall back to defaults. */
+export function normalizeCoopStats(raw: unknown): CoopStats {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<Record<keyof CoopStats, unknown>>;
+  const best: Record<string, number> = {};
+  if (r.best && typeof r.best === 'object') {
+    for (const [k, v] of Object.entries(r.best as Record<string, unknown>)) {
+      if (['2', '3', '4'].includes(k) && count(v) > 0) best[k] = count(v);
+    }
+  }
+  const lastRoster = Array.isArray(r.lastRoster)
+    ? r.lastRoster
+        .filter((e): e is CoopRosterRecord => !!e && typeof e === 'object' && typeof (e as CoopRosterRecord).device === 'string' && (e as CoopRosterRecord).ship in SHIPS)
+        .slice(0, 4)
+        .map((e) => ({ device: e.device, ship: e.ship }))
+    : [];
+  return { runs: count(r.runs), victories: count(r.victories), best, revives: count(r.revives), lastRoster };
 }
 
 /** Narrative progress (intro crawl, Ship's Log, game-over quip rotation). */
@@ -98,10 +147,13 @@ export interface SaveData {
   history: RunRecord[];
   /** Story/narrative state. Optional so older saves stay valid; migrate() always fills it. */
   story?: StoryState;
+  /** Local co-op records (added in save v2). */
+  coop: CoopStats;
 }
 
 export const SAVE_KEY = 'shardstorm.save';
-export const SAVE_VERSION = 1;
+/** v2: adds `coop` (co-op runs, victories, best per pilot count, revives, last roster). */
+export const SAVE_VERSION = 2;
 
 export function defaultSettings(): Settings {
   return {
@@ -152,10 +204,14 @@ export function defaultSave(): SaveData {
     settings: defaultSettings(),
     tutorialDone: false,
     history: [],
+    coop: defaultCoopStats(),
   };
 }
 
-/** Fills in missing fields from defaults (forward-compatible loads) and migrates old versions. */
+/**
+ * Fills in missing fields from defaults (forward-compatible loads) and migrates old versions.
+ * v1 -> v2 is additive: a v1 save keeps every field and gains an empty `coop` block.
+ */
 export function migrate(raw: unknown): SaveData {
   const base = defaultSave();
   if (!raw || typeof raw !== 'object') return base;
@@ -178,6 +234,7 @@ export function migrate(raw: unknown): SaveData {
   if (!(out.ship in SHIPS)) out.ship = 'spark';
   if (!['default', 'ember', 'aurora', 'prism'].includes(out.settings.trail)) out.settings.trail = 'default';
   out.story = normalizeStoryState(r.story);
+  out.coop = normalizeCoopStats(r.coop);
   return out;
 }
 

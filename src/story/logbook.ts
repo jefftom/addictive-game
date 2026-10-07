@@ -29,7 +29,8 @@ function coopRuns(save: SaveData, ctx: LogbookContext): number {
   // Forward-compatible with a co-op stats counter added by the co-op save change.
   const fromSave = (save.stats as unknown as Record<string, unknown>)['coopRuns'];
   const saved = typeof fromSave === 'number' && Number.isFinite(fromSave) ? fromSave : 0;
-  return Math.max(ctx.coopRuns ?? 0, saved, ctx.coopRun ? 1 : 0);
+  const v2 = save.coop?.runs ?? 0; // save v2 co-op block
+  return Math.max(ctx.coopRuns ?? 0, saved, v2, ctx.coopRun ? 1 : 0);
 }
 
 const isBossId = (v: unknown): v is BossId => typeof v === 'string' && (BOSS_IDS as readonly string[]).includes(v);

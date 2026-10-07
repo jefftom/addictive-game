@@ -61,3 +61,12 @@ export const ZOOM_IN_RATE = 1.2;
 export const SPAWN_CLEARANCE = 220;
 /** Retries (extra posRng draws) a co-op spawn point may take to honour SPAWN_CLEARANCE. */
 export const SPAWN_RETRIES = 3;
+
+/**
+ * Pilot identity colours (index = pid). Cool hues kept away from the warm enemy
+ * palette and from the Shooter (pink) and Dasher (yellow) enemy colours. Each
+ * pilot also gets a shape mark so colour-blind players can tell them apart.
+ * Shared by the UI (lobby, level-up, results) and the co-op renderer/HUD.
+ */
+export const PLAYER_COLORS = ['#7ff9ff', '#b4ff6a', '#5aa8ff', '#f5f0ff'] as const;
+export const PLAYER_MARKS = ['▲', '●', '■', '◆'] as const;

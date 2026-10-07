@@ -958,6 +958,532 @@ select {
   background: var(--gold);
 }
 
+/* ───────── Co-op ───────── */
+
+.btn-coop {
+  --c: #b4ff6a;
+}
+
+.btn-coop .marks {
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  color: var(--dim);
+  margin-left: 8px;
+  vertical-align: 1px;
+}
+
+.pilot-tag {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font: 700 13px/1 var(--font-display);
+  letter-spacing: 0.1em;
+  color: var(--pc, var(--ice));
+  white-space: nowrap;
+}
+
+.pilot-tag > span {
+  font: 600 11px var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+/* Lobby */
+
+.lobby-wrap {
+  max-width: 1180px;
+}
+
+.lobby {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.slot-card {
+  --pc: var(--ice);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 360px;
+  border-color: color-mix(in srgb, var(--pc) 35%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--pc) 10%, var(--panel)), var(--panel) 45%);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.slot-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto var(--chamfer);
+  height: 3px;
+  background: var(--pc);
+  box-shadow: 0 0 14px var(--pc);
+}
+
+.slot-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.slot-id {
+  font: 800 20px/1 var(--font-display);
+  letter-spacing: 0.08em;
+  color: var(--pc);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--pc) 60%, transparent);
+}
+
+.slot-id b {
+  font-size: 15px;
+  margin-right: 2px;
+}
+
+.slot-dev {
+  font: 600 10px/1.2 var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  text-align: right;
+}
+
+.slot-art {
+  height: 96px;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--pc) 16%, transparent), transparent);
+}
+
+.slot-art canvas {
+  width: 96px;
+  height: 96px;
+}
+
+.slot-ship {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.slot-name h3 {
+  font-size: 18px;
+}
+
+.slot-name span {
+  display: block;
+  font: 500 12px/1.3 var(--font-body);
+  color: var(--dim);
+  font-style: italic;
+}
+
+.slot-arrow {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  height: 34px;
+  font: 700 12px/1 var(--font-body);
+  color: var(--pc);
+  background: color-mix(in srgb, var(--pc) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pc) 40%, transparent);
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+}
+
+.slot-arrow:hover:not([disabled]) {
+  background: color-mix(in srgb, var(--pc) 28%, transparent);
+}
+
+.slot-arrow[disabled] {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.slot-desc {
+  font-size: 13.5px;
+  color: var(--text);
+  flex: 1;
+}
+
+.slot-ready {
+  --c: var(--pc);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.slot-ready.is-ready {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--pc) 90%, transparent), color-mix(in srgb, var(--pc) 60%, transparent));
+  color: #04121a;
+}
+
+.slot-ready.is-ready .key {
+  color: rgba(4, 18, 26, 0.7);
+  border-color: rgba(4, 18, 26, 0.3);
+}
+
+.slot-card.ready {
+  border-color: var(--pc);
+  box-shadow: inset 0 0 0 1px var(--pc), inset 0 0 40px color-mix(in srgb, var(--pc) 14%, transparent);
+}
+
+.slot-keys {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  min-height: 28px;
+  gap: 8px;
+  font: 500 10.5px/1.3 var(--font-mono);
+  color: var(--faint);
+  letter-spacing: 0.04em;
+}
+
+.slot-leave {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  cursor: pointer;
+  font: 600 10.5px var(--font-mono);
+  color: var(--dim);
+  white-space: nowrap;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.slot-leave:hover {
+  color: var(--rose);
+}
+
+.slot-card.empty {
+  background: rgba(11, 9, 32, 0.55);
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--pc) 28%, transparent);
+}
+
+.slot-card.empty::before {
+  opacity: 0.35;
+  box-shadow: none;
+}
+
+.slot-card.empty .slot-id {
+  opacity: 0.55;
+  text-shadow: none;
+}
+
+.join-pulse,
+.join-idle {
+  padding-top: 56px;
+  text-align: center;
+  font: 800 17px/1.1 var(--font-display);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.join-pulse {
+  color: var(--pc);
+  animation: join-pulse 1.4s ease-in-out infinite;
+}
+
+.join-idle {
+  color: var(--faint);
+}
+
+@keyframes join-pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.join-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.join-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: 600 12px var(--font-mono);
+  color: var(--dim);
+}
+
+.join-list .key {
+  font: 700 10px/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  padding: 4px 6px;
+  min-width: 44px;
+  text-align: center;
+}
+
+.lobby-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.lobby-foot .hint {
+  margin: 0;
+}
+
+.lobby-status {
+  --k: 0;
+  position: relative;
+  font: 800 clamp(18px, 2.4vw, 24px) / 1.2 var(--font-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text);
+  padding: 6px 4px 10px;
+}
+
+.lobby-status.go {
+  color: var(--gold);
+  text-shadow: 0 0 18px rgba(255, 201, 60, 0.6);
+}
+
+.lobby-status.go::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: calc(var(--k) * 100%);
+  background: var(--gold);
+  box-shadow: 0 0 10px var(--gold);
+}
+
+.lobby-status b {
+  font-size: 1.3em;
+}
+
+/* Co-op level-up */
+
+.coop-pick {
+  box-shadow: inset 0 3px 0 var(--pc), inset 0 60px 90px -70px var(--pc);
+}
+
+.lu-head.coop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.lu-who {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 18px 7px;
+  font: 900 26px/1 var(--font-display);
+  letter-spacing: 0.08em;
+  color: #04121a;
+  background: var(--pc);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--pc) 55%, transparent);
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  animation: who-in 0.35s cubic-bezier(0.2, 1.3, 0.4, 1) both;
+}
+
+.lu-who b {
+  font-size: 20px;
+}
+
+.lu-who span {
+  font: 700 13px var(--font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+@keyframes who-in {
+  from {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
+.lu-head.coop h2 {
+  color: #f4fdff;
+}
+
+.lu-head.coop.cache h2 {
+  color: var(--gold);
+}
+
+.lu-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.lu-chip {
+  font: 700 11px/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  padding: 5px 8px;
+  color: var(--cc);
+  border: 1px solid color-mix(in srgb, var(--cc) 40%, transparent);
+}
+
+.lu-chip b {
+  margin-right: 4px;
+}
+
+.lu-chip i {
+  font-style: normal;
+  margin-left: 2px;
+}
+
+.lu-chip.done {
+  opacity: 0.6;
+}
+
+.lu-chip.now {
+  background: color-mix(in srgb, var(--cc) 20%, transparent);
+  border-color: var(--cc);
+}
+
+.lu-chip.wait {
+  color: var(--faint);
+  border-color: var(--line);
+}
+
+.coop-pick .offer:hover,
+.coop-pick .offer:focus-visible,
+.coop-pick .offer.focus {
+  box-shadow: inset 0 0 0 2px var(--pc), 0 0 36px color-mix(in srgb, var(--pc) 45%, transparent);
+}
+
+.coop-pick .offer:focus-visible .o-name {
+  color: var(--pc);
+}
+
+.lu-hints {
+  font: 600 12px var(--font-mono);
+  color: var(--dim);
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+/* Co-op pause / results */
+
+.modal-box.wide {
+  width: min(880px, 100%);
+}
+
+.coop-builds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 10px;
+}
+
+.pilot-build {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--pc);
+  background: color-mix(in srgb, var(--pc) 6%, transparent);
+}
+
+.pb-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.pb-down {
+  font: 700 11px var(--font-mono);
+  letter-spacing: 0.12em;
+  color: var(--rose);
+}
+
+.pause-note {
+  color: #ffb3c4;
+  font-weight: 600;
+  border-left: 3px solid var(--rose);
+  padding: 6px 10px;
+  background: rgba(255, 61, 110, 0.08);
+}
+
+.coop-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.coop-scroll {
+  overflow-x: auto;
+}
+
+.coop-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.coop-table th {
+  font: 600 10px var(--font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+  text-align: right;
+  padding: 4px 8px 8px;
+  white-space: nowrap;
+}
+
+.coop-table th:first-child {
+  text-align: left;
+  padding-left: 12px;
+}
+
+.coop-table td {
+  text-align: right;
+  padding: 9px 8px;
+  border-top: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.coop-table td:first-child {
+  text-align: left;
+  box-shadow: inset 3px 0 0 var(--pc);
+  padding-left: 12px;
+}
+
+.awards {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 10px;
+  vertical-align: 1px;
+}
+
+.award {
+  display: inline-block;
+  font: 700 9.5px/1 var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 4px 6px;
+  color: #120a00;
+  background: var(--gold);
+  vertical-align: 2px;
+}
+
+.history i.coop {
+  background: rgba(180, 255, 106, 0.45);
+}
+
+.history i.coop.last {
+  background: var(--gold);
+}
+
 /* ───────── Toasts & tutorial ───────── */
 
 #toasts {
@@ -1056,6 +1582,48 @@ select {
 }
 
 /* ───────── Responsive ───────── */
+
+@media (max-width: 980px) {
+  .lobby {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .slot-card {
+    min-height: 0;
+  }
+
+  .join-pulse,
+  .join-idle {
+    padding-top: 18px;
+  }
+}
+
+@media (max-width: 560px) {
+  .lobby {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lu-who {
+    font-size: 21px;
+  }
+
+  /* Narrow results: awards under the captain, and only the columns that matter most. */
+  .coop-table td:first-child {
+    white-space: normal;
+  }
+
+  .awards {
+    display: flex;
+    margin: 6px 0 0;
+  }
+
+  .coop-table th:nth-child(3),
+  .coop-table td:nth-child(3),
+  .coop-table th:nth-child(4),
+  .coop-table td:nth-child(4) {
+    display: none;
+  }
+}
 
 @media (max-width: 860px) {
   #screen-title {

@@ -1,6 +1,6 @@
 import { formatNumber, formatTime } from '../core/math';
 import type { Rng } from '../core/rng';
-import type { RunResult } from './result';
+import { isCoopResult, type RunResult } from './result';
 import type { MissionState, SaveData } from './save';
 
 export interface MissionDef {
@@ -10,6 +10,11 @@ export interface MissionDef {
   targets: number[];
   text: (target: number) => string;
   metric: (r: RunResult) => number;
+  /**
+   * Whether a co-op run counts toward this mission (default true: team values
+   * count). False for missions a co-op team would distort, e.g. the team score.
+   */
+  coop?: boolean;
 }
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
@@ -19,7 +24,7 @@ export const MISSIONS: MissionDef[] = [
   { id: 'combo', scope: 'run', targets: [25, 60, 120, 250, 500], text: (n) => `Reach a ${n} combo`, metric: (r) => r.maxCombo },
   { id: 'survive', scope: 'run', targets: [90, 180, 300, 450, 600], text: (n) => `Survive ${formatTime(n)}`, metric: (r) => Math.floor(r.time) },
   { id: 'level', scope: 'run', targets: [8, 14, 20, 28, 36], text: (n) => `Reach level ${n}`, metric: (r) => r.level },
-  { id: 'score', scope: 'run', targets: [5000, 20000, 60000, 150000, 400000], text: (n) => `Score ${formatNumber(n)} in one run`, metric: (r) => r.score },
+  { id: 'score', scope: 'run', targets: [5000, 20000, 60000, 150000, 400000], text: (n) => `Score ${formatNumber(n)} in one run`, metric: (r) => r.score, coop: false },
   { id: 'perfect_run', scope: 'run', targets: [3, 8, 15, 25, 40], text: (n) => `Pull off ${n} perfect dashes in one run`, metric: (r) => r.perfects },
   { id: 'nohit', scope: 'run', targets: [30, 60, 120, 180], text: (n) => `Go ${formatTime(n)} without taking damage`, metric: (r) => Math.floor(r.longestNoHit) },
   { id: 'boss', scope: 'run', targets: [1, 2, 3], text: (n) => `Defeat ${n} ${plural(n, 'boss', 'bosses')} in one run`, metric: (r) => r.bossesKilled.length },
@@ -28,10 +33,20 @@ export const MISSIONS: MissionDef[] = [
   { id: 'elites_total', scope: 'total', targets: [2, 6, 12, 25, 50], text: (n) => `Destroy ${n} elites`, metric: (r) => r.elites },
   { id: 'dashkills_total', scope: 'total', targets: [15, 50, 120, 250, 500], text: (n) => `Dash through ${n} enemies`, metric: (r) => r.dashKills },
   { id: 'gems_total', scope: 'total', targets: [300, 1000, 2500, 6000, 15000], text: (n) => `Collect ${formatNumber(n)} shards`, metric: (r) => r.gems },
-  { id: 'daily', scope: 'total', targets: [1, 3, 7], text: (n) => `Play ${n} Daily ${plural(n, 'Run', 'Runs')}`, metric: (r) => (r.daily ? 1 : 0) },
+  { id: 'daily', scope: 'total', targets: [1, 3, 7], text: (n) => `Play ${n} Daily ${plural(n, 'Run', 'Runs')}`, metric: (r) => (r.daily ? 1 : 0), coop: false },
 ];
 
 export const MISSION_SLOTS = 3;
+
+/**
+ * Co-op counting rules: team values count (kills, combo, survival, level,
+ * elites, dash kills, shards, bosses, evolutions), perfect dashes and weapons
+ * held use the best single pilot (see resultFromWorld), and missions flagged
+ * `coop: false` (team score, Daily) ignore co-op runs.
+ */
+export function missionCounts(def: MissionDef, r: RunResult): boolean {
+  return !isCoopResult(r) || def.coop !== false;
+}
 
 export function missionDef(id: string): MissionDef | undefined {
   return MISSIONS.find((m) => m.id === id);
@@ -77,7 +92,7 @@ export function missionsSatisfiedLive(save: SaveData, r: RunResult): MissionStat
   return save.missions.filter((m) => {
     if (m.done) return false;
     const def = missionDef(m.def);
-    if (!def) return false;
+    if (!def || !missionCounts(def, r)) return false;
     const value = def.scope === 'run' ? def.metric(r) : m.progress + def.metric(r);
     return value >= m.target;
   });
@@ -89,7 +104,7 @@ export function applyRunToMissions(save: SaveData, r: RunResult): MissionState[]
   for (const m of save.missions) {
     if (m.done) continue;
     const def = missionDef(m.def);
-    if (!def) continue;
+    if (!def || !missionCounts(def, r)) continue;
     const v = def.metric(r);
     m.progress = def.scope === 'run' ? Math.max(m.progress, v) : m.progress + v;
     if (m.progress >= m.target) {

@@ -23,9 +23,10 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'victory', name: 'Eye of the Storm', text: 'Survive 10:00', check: (s) => s.stats.victories >= 1 },
   {
     id: 'combo150', name: 'Chain Reaction', text: 'Reach a 150 combo (unlocks Tempest)',
-    check: (s) => s.stats.bestCombo >= 150, progress: (s) => [Math.min(150, s.stats.bestCombo), 150],
+    // bestCombo is solo-only, so the run itself also counts (a co-op team combo unlocks it).
+    check: (s, r) => s.stats.bestCombo >= 150 || has(r, (x) => x.maxCombo >= 150), progress: (s) => [Math.min(150, s.stats.bestCombo), 150],
   },
-  { id: 'combo500', name: 'Unbroken', text: 'Reach a 500 combo', check: (s) => s.stats.bestCombo >= 500, progress: (s) => [Math.min(500, s.stats.bestCombo), 500] },
+  { id: 'combo500', name: 'Unbroken', text: 'Reach a 500 combo', check: (s, r) => s.stats.bestCombo >= 500 || has(r, (x) => x.maxCombo >= 500), progress: (s) => [Math.min(500, s.stats.bestCombo), 500] },
   { id: 'warden', name: 'Gatekeeper', text: 'Defeat the Warden (unlocks Bastion)', check: (_s, r) => has(r, (x) => x.bossesKilled.includes('warden')) },
   { id: 'hydra', name: 'Spiral Breaker', text: 'Defeat the Hydra', check: (_s, r) => has(r, (x) => x.bossesKilled.includes('hydra')) },
   { id: 'voidheart', name: 'Heartstopper', text: 'Defeat the Void Heart', check: (_s, r) => has(r, (x) => x.bossesKilled.includes('voidheart')) },
@@ -44,6 +45,12 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'level30', name: 'Ascendant', text: 'Reach level 30 in a run', check: (s) => s.stats.bestLevel >= 30 },
   { id: 'rank10', name: 'Veteran', text: 'Reach rank 10', check: (s) => s.rank >= 10, progress: (s) => [Math.min(10, s.rank), 10] },
   { id: 'nightmare', name: 'Nightmare Walker', text: 'Survive 5:00 on Nightmare', check: (_s, r) => has(r, (x) => x.hard && x.time >= 300) },
+  // Co-op (ids match the Steam names ACH_SQUAD / ACH_MEDIC in src/platform/achievements.ts).
+  { id: 'squad', name: 'Squad Goals', text: 'Win a co-op run', check: (s) => s.coop.victories >= 1 },
+  {
+    id: 'medic', name: 'No Pilot Left Behind', text: 'Revive teammates 10 times',
+    check: (s) => s.coop.revives >= 10, progress: (s) => [Math.min(10, s.coop.revives), 10],
+  },
 ];
 
 export function achievementDef(id: string): AchievementDef | undefined {

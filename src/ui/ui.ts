@@ -1,4 +1,6 @@
+import { deviceLabels, type InputSlot, type MenuAction } from '../core/bindings';
 import { formatNumber, formatTime } from '../core/math';
+import { PLAYER_COLORS, PLAYER_MARKS } from '../game/content/coop';
 import { ENEMIES } from '../game/content/enemies';
 import { PASSIVES, RARITY_COLOR, RELICS } from '../game/content/passives';
 import { SHIPS, SHIP_IDS } from '../game/content/ships';
@@ -10,18 +12,59 @@ import type { World } from '../game/world';
 import { ACHIEVEMENTS, achievementDef } from '../meta/achievements';
 import { currentStreak, dailyBonus, playedDailyToday, type DailyInfo } from '../meta/daily';
 import { missionDef, missionReward, missionText } from '../meta/missions';
-import { affordableUpgrades, isShipUnlocked, nextCost, nextWorkshopGoal, workshopLevel, type RunSummary } from '../meta/progression';
+import { affordableUpgrades, coopBest, isShipUnlocked, nextCost, nextWorkshopGoal, workshopLevel, type RunSummary } from '../meta/progression';
 import { HARD_MODE_RANK, TRAILS, rankXpNeeded } from '../meta/rank';
 import type { SaveData, Settings, TrailId } from '../meta/save';
 import { SpriteCache } from '../render/sprites';
+import { STORY } from '../story/script';
 import { $, el, esc, focusables, moveFocus, pips } from './dom';
+import { LOBBY_COUNTDOWN, MIN_COOP_PILOTS, type CoopLobby, type RosterDevice } from './lobby';
 
-export type ScreenId = 'title' | 'hangar' | 'workshop' | 'records' | 'settings' | 'levelup' | 'pause' | 'victory' | 'results' | 'hud';
+export type ScreenId = 'title' | 'hangar' | 'workshop' | 'records' | 'settings' | 'lobby' | 'levelup' | 'pause' | 'victory' | 'results' | 'hud';
+
+/** Mouse/touch actions on a lobby slot card. */
+export type LobbyMouseAction = 'left' | 'right' | 'ready' | 'leave';
+
+/** What the lobby screen shows besides the lobby model itself. */
+export interface LobbyView {
+  lobby: CoopLobby;
+  /** Connected gamepad indices. */
+  pads: number[];
+  /** Desktop build: RightCtrl is a kbB dash key. */
+  allowCtrl: boolean;
+  /** `?bots`: show "Add bot". */
+  bots: boolean;
+}
+
+/** Co-op extras for the level-up screen: whose pick it is and how they control it. */
+export interface CoopPickInfo {
+  pid: number;
+  device: RosterDevice;
+  ship: ShipId;
+  /** Pilots in the run. */
+  players: number;
+  /** Ships by pid (for the round chips). */
+  ships: ShipId[];
+  /** Level round progress; null for a cache pick. */
+  round: { index: number; total: number } | null;
+  allowCtrl: boolean;
+}
+
+/** Pilot number label, e.g. "P2". */
+export const pilotLabel = (pid: number): string => `P${pid + 1}`;
+const pilotColor = (pid: number): string => PLAYER_COLORS[pid % PLAYER_COLORS.length]!;
+const pilotMark = (pid: number): string => PLAYER_MARKS[pid % PLAYER_MARKS.length]!;
 
 export interface UiCallbacks {
   play(daily: boolean): void;
-  pick(index: number): void;
-  reroll(): void;
+  /** Co-op "Play again" (same roster). */
+  again(): void;
+  openCoop(): void;
+  lobbyMouse(slot: number, action: LobbyMouseAction): void;
+  addBot(): void;
+  /** `slot` = the device that pressed it; omitted for mouse/touch and autoplay (always accepted). */
+  pick(index: number, slot?: InputSlot): void;
+  reroll(slot?: InputSlot): void;
   resume(): void;
   quitRun(): void;
   continueOvertime(): void;
@@ -59,10 +102,15 @@ export class UI {
   private resultTimers: number[] = [];
   private shownAt = 0;
   private lastRunDaily = false;
+  private lastRunCoop = false;
+  /** Co-op level-up: the picker's device (only it may steer the cards). */
+  private pickDevice: RosterDevice | null = null;
+  /** Pause/victory/results of a co-op run also accept WASD + E (kbA). */
+  private coopMenus = false;
 
   constructor(root: HTMLElement, cb: UiCallbacks) {
     this.cb = cb;
-    const ids: ScreenId[] = ['title', 'hangar', 'workshop', 'records', 'settings', 'levelup', 'pause', 'victory', 'results'];
+    const ids: ScreenId[] = ['title', 'hangar', 'workshop', 'records', 'settings', 'lobby', 'levelup', 'pause', 'victory', 'results'];
     for (const id of ids) {
       const s = el(`<section class="screen" id="screen-${id}" hidden></section>`);
       this.screens.set(id, s);
@@ -88,7 +136,7 @@ export class UI {
     window.addEventListener('keydown', (e) => this.onKey(e));
     // Space is the dash key: on screens that appear mid-action it must never activate a button.
     window.addEventListener('keyup', (e) => {
-      if (e.code === 'Space' && (this.current === 'levelup' || this.current === 'results')) e.preventDefault();
+      if (e.code === 'Space' && (this.current === 'levelup' || this.current === 'results' || this.current === 'lobby')) e.preventDefault();
     });
   }
 
@@ -98,6 +146,7 @@ export class UI {
     for (const [sid, s] of this.screens) s.hidden = sid !== id;
     if (this.current !== id) this.shownAt = performance.now();
     this.current = id;
+    if (id !== 'levelup') this.pickDevice = null;
     this.pauseBtn.hidden = id !== 'hud';
     this.tutorialEl.style.visibility = id === 'hud' ? 'visible' : 'hidden';
     this.topbar.hidden = !(id === 'title' || id === 'hangar' || id === 'workshop' || id === 'records');
@@ -146,6 +195,15 @@ export class UI {
   private onKey(e: KeyboardEvent): void {
     const id = this.current;
     if (id === 'hud') return;
+    // Slot-routed screens: Input sends each device's own keys through the app (menuAction).
+    if (id === 'lobby') {
+      if (e.code === 'Escape' && !e.repeat) {
+        e.preventDefault();
+        this.cb.toTitle();
+      }
+      return;
+    }
+    if (id === 'levelup' && this.pickDevice !== null) return;
     const s = this.screen(id as ScreenId);
     const activates = e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space';
     if ((id === 'levelup' || id === 'results') && (e.code === 'Space' || (activates && (e.repeat || this.inGrace())))) {
@@ -164,6 +222,23 @@ export class UI {
       const dy = e.code === 'ArrowUp' ? -1 : e.code === 'ArrowDown' ? 1 : 0;
       moveFocus(s, dx, dy);
       return;
+    }
+    if (this.coopMenus && (id === 'pause' || id === 'victory' || id === 'results')) {
+      // Co-op menus: kbA steers focus with WASD and activates with E (kbB has arrows + Enter).
+      const v = ({ KeyW: [0, -1], KeyS: [0, 1], KeyA: [-1, 0], KeyD: [1, 0] } as Record<string, [number, number]>)[e.code];
+      if (v) {
+        e.preventDefault();
+        moveFocus(s, v[0], v[1]);
+        return;
+      }
+      if (e.code === 'KeyE') {
+        e.preventDefault();
+        if (e.repeat || this.inGrace()) return;
+        const a = document.activeElement as HTMLElement | null;
+        if (a && s.contains(a)) a.click();
+        else focusables(s)[0]?.focus();
+        return;
+      }
     }
     if (id === 'levelup') {
       if (this.inGrace()) return;
@@ -192,7 +267,36 @@ export class UI {
     }
     if (id === 'results' && e.code === 'Enter' && document.activeElement === document.body) {
       e.preventDefault();
-      this.cb.play(this.lastRunDaily);
+      if (this.lastRunCoop) this.cb.again();
+      else this.cb.play(this.lastRunDaily);
+    }
+  }
+
+  /**
+   * Co-op level-up: a menu action from one device (routed by Input). Only the
+   * current picker's device may steer, pick or reroll; mouse/touch clicks are
+   * handled by the buttons themselves and always accepted.
+   */
+  menuAction(slot: InputSlot, action: MenuAction): void {
+    if (this.current !== 'levelup' || this.pickDevice === null || slot !== this.pickDevice) return;
+    const s = this.screen('levelup');
+    if (action === 'left' || action === 'right' || action === 'up' || action === 'down') {
+      const dx = action === 'left' ? -1 : action === 'right' ? 1 : 0;
+      const dy = action === 'up' ? -1 : action === 'down' ? 1 : 0;
+      moveFocus(s, dx, dy);
+      return;
+    }
+    if (this.inGrace()) return;
+    if (action === 'reroll') {
+      this.cb.reroll(slot);
+    } else if (action === 'pick0' || action === 'pick1' || action === 'pick2') {
+      this.cb.pick(Number(action.slice(4)), slot);
+    } else if (action === 'confirm') {
+      const a = document.activeElement as HTMLElement | null;
+      const i = a && s.contains(a) ? a.dataset.pick : undefined;
+      if (i !== undefined) this.cb.pick(Number(i), slot);
+      else if (a?.dataset.act === 'reroll') this.cb.reroll(slot);
+      else s.querySelector<HTMLElement>('[data-pick="0"]')?.focus({ preventScroll: true });
     }
   }
 
@@ -245,7 +349,8 @@ export class UI {
 
   // ───────────────────────── Title ─────────────────────────
 
-  showTitle(save: SaveData, daily: DailyInfo, touch: boolean): void {
+  /** `coopAvailable`: show the Co-op button (keyboard/mouse or a gamepad; hidden on touch-only devices). */
+  showTitle(save: SaveData, daily: DailyInfo, touch: boolean, coopAvailable = false): void {
     const s = this.screen('title');
     const streak = currentStreak(save);
     const played = playedDailyToday(save);
@@ -277,6 +382,11 @@ export class UI {
             <span>Daily Run</span>
             <span class="meta">${esc(daily.modifier.name)} · ${played ? `best ${formatNumber(save.daily.best[daily.date] ?? 0)}` : `+${dailyBonus(streak + 1)} ◈`}${streak > 0 ? ` · <span class="streak">🔥 ${streak}</span>` : ''}</span>
           </button>
+          ${
+            coopAvailable
+              ? `<button class="btn btn-coop wide" data-act="coop"><span>Co-op<span class="marks" aria-hidden="true">▲●■◆</span></span><span class="meta">${save.coop.runs > 0 ? `${formatNumber(save.coop.runs)} squad ${save.coop.runs === 1 ? 'run' : 'runs'} · ` : ''}2–4 captains · one screen</span></button>`
+              : ''
+          }
           <button class="btn" data-act="hangar"><span>Hangar</span><span class="meta">${esc(ship.name)}</span></button>
           <button class="btn" data-act="workshop"><span>Workshop</span><span class="meta">${affordable > 0 ? `<span class="badge">${affordable} READY</span>` : `◈ ${formatNumber(save.cores)}`}</span></button>
           <button class="btn" data-act="records"><span>Records</span><span class="meta">${Object.keys(save.achievements).length}/${ACHIEVEMENTS.length}</span></button>
@@ -297,6 +407,7 @@ export class UI {
       </div>`;
     this.bind(s, '[data-act="play"]', () => this.cb.play(false));
     this.bind(s, '[data-act="daily"]', () => this.cb.play(true));
+    this.bind(s, '[data-act="coop"]', () => this.cb.openCoop());
     this.bind(s, '[data-act="hangar"]', () => this.showHangar(save));
     this.bind(s, '[data-act="workshop"]', () => this.showWorkshop(save));
     this.bind(s, '[data-act="records"]', () => this.showRecords(save));
@@ -357,6 +468,114 @@ export class UI {
     });
     this.show('hangar');
     this.focusFirst('hangar');
+  }
+
+  // ───────────────────────── Co-op lobby ─────────────────────────
+
+  private lobbyView: LobbyView | null = null;
+
+  /** Opens (or re-renders) the co-op lobby. */
+  showLobby(view: LobbyView): void {
+    this.lobbyView = view;
+    const s = this.screen('lobby');
+    s.className = 'screen scrim-heavy';
+    const { lobby } = view;
+    const joinedDevices = new Set(lobby.joined().map((j) => j.device));
+    const joinHints: string[] = [];
+    if (!joinedDevices.has('kbA')) joinHints.push(`<li><span class="key">SPACE</span><span>Keyboard · WASD</span></li>`);
+    if (!joinedDevices.has('kbB')) joinHints.push(`<li><span class="key">ENTER</span><span>Keyboard · Arrows</span></li>`);
+    const freePads = view.pads.filter((i) => !joinedDevices.has(`pad${i}` as InputSlot));
+    if (freePads.length > 0) for (const i of freePads) joinHints.push(`<li><span class="key">Ⓐ</span><span>Controller ${i + 1}</span></li>`);
+    else if (view.pads.length === 0) joinHints.push(`<li><span class="key">Ⓐ</span><span>Any controller</span></li>`);
+    let firstEmpty = true;
+    const cards = lobby.slots
+      .map((slot, i) => {
+        const head = `<div class="slot-top"><span class="slot-id"><b>${pilotMark(i)}</b> ${pilotLabel(i)}</span>${slot ? `<span class="slot-dev">${esc(slot.device === 'bot' ? 'Bot pilot' : deviceLabels(slot.device, view.allowCtrl).name)}</span>` : ''}</div>`;
+        if (!slot) {
+          const hints = firstEmpty ? `<ul class="join-list">${joinHints.join('')}</ul>` : '';
+          const body = firstEmpty ? '<div class="join-pulse">Press to join</div>' : '<div class="join-idle">Open slot</div>';
+          firstEmpty = false;
+          return `<div class="panel slot-card empty" style="--pc:${pilotColor(i)}" data-slot="${i}">${head}${body}${hints}</div>`;
+        }
+        const def = SHIPS[slot.ship];
+        const vessel = STORY.vessels[slot.ship];
+        const w = WEAPONS[def.weapon];
+        const lab = slot.device === 'bot' ? null : deviceLabels(slot.device, view.allowCtrl);
+        const confirmKey = slot.device === 'kbA' ? 'SPACE' : lab?.join ?? '';
+        const canCycle = !slot.ready && slot.device !== 'bot';
+        return `<div class="panel slot-card${slot.ready ? ' ready' : ''}" style="--pc:${pilotColor(i)}" data-slot="${i}">
+          ${head}
+          <div class="slot-art" data-art="${i}"></div>
+          <div class="slot-ship">
+            <button class="slot-arrow" data-lobby="left" aria-label="Previous ship" ${canCycle ? '' : 'disabled'}>◀</button>
+            <div class="slot-name"><h3>${esc(def.name)}</h3><span>${esc(vessel?.shipName ?? def.trait)}</span></div>
+            <button class="slot-arrow" data-lobby="right" aria-label="Next ship" ${canCycle ? '' : 'disabled'}>▶</button>
+          </div>
+          <div class="slot-desc">${esc(def.trait)} <span class="dim">Starts with <b style="color:${w.color}">${esc(w.name)}</b>.</span></div>
+          ${
+            slot.ready
+              ? `<button class="btn btn-sm slot-ready is-ready" data-lobby="ready"><span>Ready ✓</span>${lab ? `<span class="key">${esc(lab.back)} cancel</span>` : ''}</button>`
+              : `<button class="btn btn-sm slot-ready" data-lobby="ready"><span>Ready up</span>${lab ? `<span class="key">${esc(confirmKey)}</span>` : ''}</button>`
+          }
+          <div class="slot-keys">${lab ? `<span>${esc(lab.cycle)} ship · ${esc(lab.dash)} dash</span>` : '<span>Flies itself</span>'}<button class="slot-leave" data-lobby="leave">${lab && !slot.ready ? `Leave · ${esc(lab.back)}` : 'Leave'}</button></div>
+        </div>`;
+      })
+      .join('');
+    s.innerHTML = `<div class="sub lobby-wrap">
+      <div class="sub-head"><div><div class="eyebrow">Local co-op · one screen · 2–4 captains</div><h2>Assemble the Squadron</h2></div><button class="btn btn-sm" data-act="back">Back <span class="key">ESC</span></button></div>
+      <div class="lobby">${cards}</div>
+      <div class="lobby-foot">
+        <div class="lobby-status" id="lobby-status"></div>
+        <p class="hint">Shared XP and level-ups · every captain picks their own upgrades · fly close to a downed ally to revive them</p>
+        <p class="hint">Gamepads are best for 3–4 captains${view.pads.length > 0 ? ` · ${view.pads.length} controller${view.pads.length === 1 ? '' : 's'} detected` : ' · press a button on a controller to wake it up'}</p>
+        ${view.bots && lobby.joined().length < 4 ? '<button class="btn btn-sm" data-act="bot">Add bot</button>' : ''}
+      </div>
+    </div>`;
+    s.querySelectorAll<HTMLElement>('[data-art]').forEach((n) => {
+      const i = Number(n.dataset.art);
+      n.appendChild(this.shipArt(pilotColor(i)));
+    });
+    this.bind(s, '[data-act="back"]', () => this.cb.toTitle());
+    this.bind(s, '[data-act="bot"]', () => this.cb.addBot());
+    s.querySelectorAll<HTMLElement>('[data-lobby]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const card = b.closest<HTMLElement>('[data-slot]');
+        if (!card) return;
+        this.cb.sfx.click();
+        this.cb.lobbyMouse(Number(card.dataset.slot), b.dataset.lobby as LobbyMouseAction);
+      }),
+    );
+    this.lobbyTick();
+    if (this.current !== 'lobby') {
+      this.show('lobby');
+      (document.activeElement as HTMLElement | null)?.blur?.();
+    }
+  }
+
+  /** Updates the lobby status line (countdown) without re-rendering the cards. */
+  lobbyTick(): void {
+    const view = this.lobbyView;
+    if (!view) return;
+    const el = this.screen('lobby').querySelector<HTMLElement>('#lobby-status');
+    if (!el) return;
+    const { lobby } = view;
+    const joined = lobby.joined();
+    let html: string;
+    let cls = '';
+    if (lobby.countdown >= 0) {
+      html = `Launching in <b class="num">${Math.max(1, Math.ceil(lobby.countdown))}</b>`;
+      cls = 'go';
+      el.style.setProperty('--k', String(1 - lobby.countdown / LOBBY_COUNTDOWN));
+    } else if (joined.length === 0) {
+      html = 'Each captain presses their join key';
+    } else if (joined.length < MIN_COOP_PILOTS) {
+      html = 'Need one more captain to launch';
+    } else {
+      const waiting = lobby.slots.map((sl, i) => (sl && !sl.ready ? pilotLabel(i) : '')).filter(Boolean);
+      html = `Waiting for ${waiting.join(', ')} to ready up`;
+    }
+    el.className = `lobby-status ${cls}`;
+    el.innerHTML = html;
   }
 
   // ───────────────────────── Workshop ─────────────────────────
@@ -420,6 +639,16 @@ export class UI {
       ['Victories', formatNumber(st.victories)],
       ['Cores earned', formatNumber(st.coresEarned)],
       ['Time in the storm', formatTime(st.timePlayed)],
+      ['Co-op runs', formatNumber(save.coop.runs)],
+      ...(['2', '3', '4'] as const)
+        .filter((n) => coopBest(save, Number(n)) > 0)
+        .map((n): [string, string] => [`Squad best (${n}P)`, formatNumber(coopBest(save, Number(n)))]),
+      ...(save.coop.runs > 0
+        ? ([
+            ['Co-op victories', formatNumber(save.coop.victories)],
+            ['Teammates revived', formatNumber(save.coop.revives)],
+          ] as [string, string][])
+        : []),
     ];
     const ach = ACHIEVEMENTS.map((a) => {
       const got = !!save.achievements[a.id];
@@ -428,7 +657,12 @@ export class UI {
     }).join('');
     const hist = save.history.slice(-24);
     const maxScore = Math.max(1, ...hist.map((h) => h.score));
-    const bars = hist.map((h, i) => `<i class="${i === hist.length - 1 ? 'last' : ''}" style="height:${Math.max(4, (h.score / maxScore) * 100)}%" title="${formatNumber(h.score)}"></i>`).join('');
+    const bars = hist
+      .map((h, i) => {
+        const cls = [i === hist.length - 1 ? 'last' : '', (h.players ?? 1) > 1 ? 'coop' : ''].filter(Boolean).join(' ');
+        return `<i class="${cls}" style="height:${Math.max(4, (h.score / maxScore) * 100)}%" title="${formatNumber(h.score)}${(h.players ?? 1) > 1 ? ` · co-op ${h.players}` : ''}"></i>`;
+      })
+      .join('');
     s.innerHTML = `<div class="sub">
       <div class="sub-head"><div><div class="eyebrow">Your storm so far</div><h2>Records</h2></div><button class="btn btn-sm" data-act="back">Back <span class="key">ESC</span></button></div>
       <div class="panel"><div class="stat-list">${rows.map(([k, v]) => `<div><span class="dim">${k}</span><b class="num">${v}</b></div>`).join('')}</div>
@@ -505,11 +739,27 @@ export class UI {
 
   // ───────────────────────── Level-up ─────────────────────────
 
-  showLevelUp(offers: Offer[], opts: { cache: boolean; rerolls: number; level: number; world: World; reroll?: boolean }): void {
+  /**
+   * Level-up / cache picks. Solo: unchanged. Co-op (`opts.pilot`): one modal
+   * per pick, headed by whose pick it is (number, colour, mark, ship), with the
+   * round chips and that pilot's device hints; only their device steers.
+   */
+  showLevelUp(offers: Offer[], opts: { cache: boolean; rerolls: number; level: number; world: World; reroll?: boolean; pilot?: CoopPickInfo }): void {
     this.offers = offers;
+    // The anti-mash grace restarts on every new pick (so on every picker change), not on rerolls.
     if (!opts.reroll) this.shownAt = performance.now();
     const s = this.screen('levelup');
-    s.className = 'screen scrim-heavy';
+    const co = opts.pilot ?? null;
+    this.pickDevice = co ? co.device : null;
+    const pid = co ? co.pid : 0;
+    const keys = co ? (co.device === 'bot' ? null : deviceLabels(co.device, co.allowCtrl)) : null;
+    s.className = `screen scrim-heavy${co ? ' coop-pick' : ''}`;
+    if (co) s.style.setProperty('--pc', pilotColor(pid));
+    else s.style.removeProperty('--pc');
+    const pickKey = (i: number): string => {
+      if (!co) return `<span class="key">${i + 1}</span>`;
+      return keys?.picks ? `<span class="key">${esc(keys.picks[i]!)}</span>` : '';
+    };
     const cards = offers
       .map((o, i) => {
         const rarity = offerRarity(o);
@@ -523,7 +773,7 @@ export class UI {
           foot = `${pips(o.level - 1, 5, o.level - 1)}<span>LV ${o.level}</span>`;
           if (o.level === 5) {
             const partner = WEAPONS[o.id].evolvesWith;
-            const owned = (opts.world.build.passives[partner as PassiveId] ?? 0) > 0;
+            const owned = (opts.world.players[pid]!.build.passives[partner as PassiveId] ?? 0) > 0;
             foot += `</div><div class="o-foot"><span>${owned ? 'Evolution ready next level' : `Evolves with ${esc(PASSIVES[partner].name)}`}</span>`;
           }
         } else if (o.kind === 'passive') {
@@ -540,16 +790,26 @@ export class UI {
           <div class="o-top"><div class="glyph">${esc(offerIcon(o))}</div><span class="o-tag">${tag}</span></div>
           <div class="o-name">${esc(offerTitle(o))}</div>
           <div class="o-text">${esc(offerText(o))}</div>
-          <div class="o-foot">${foot}<span class="key">${i + 1}</span></div>
+          <div class="o-foot">${foot}${pickKey(i)}</div>
         </button>`;
       })
       .join('');
+    const rerollKey = co && keys ? esc(keys.reroll) : 'R';
+    const hints = !co
+      ? ''
+      : keys
+        ? `<div class="lu-hints">${esc(keys.picks ? `${keys.picks.join(' ')} take` : `${keys.cycle} choose`)} · ${esc(keys.confirm)} take selected · ${esc(keys.reroll)} reroll</div>`
+        : `<div class="lu-hints">${esc(pilotLabel(co.pid))} is a bot pilot and is choosing…</div>`;
+    const head = co
+      ? this.coopLevelHead(co, opts)
+      : `<div class="lu-head${opts.cache ? ' cache' : ''}"><div class="eyebrow">${opts.cache ? 'Elite cache opened' : `Level ${opts.level}`}</div><h2>${opts.cache ? 'CACHE' : 'LEVEL UP'}</h2></div>`;
     s.innerHTML = `
-      <div class="lu-head${opts.cache ? ' cache' : ''}"><div class="eyebrow">${opts.cache ? 'Elite cache opened' : `Level ${opts.level}`}</div><h2>${opts.cache ? 'CACHE' : 'LEVEL UP'}</h2></div>
+      ${head}
       <div class="offers">${cards}</div>
       <div class="lu-actions">
-        <button class="btn btn-sm btn-violet" data-act="reroll" ${opts.rerolls > 0 ? '' : 'disabled'}><span>Reroll (${opts.rerolls})</span><span class="key">R</span></button>
-      </div>`;
+        <button class="btn btn-sm btn-violet" data-act="reroll" ${opts.rerolls > 0 ? '' : 'disabled'}><span>Reroll (${opts.rerolls})</span>${co && !keys ? '' : `<span class="key">${rerollKey}</span>`}</button>
+      </div>
+      ${hints}`;
     s.querySelectorAll<HTMLElement>('[data-pick]').forEach((b) =>
       b.addEventListener('click', () => {
         if (!this.inGrace()) this.cb.pick(Number(b.dataset.pick));
@@ -564,25 +824,69 @@ export class UI {
     }, 300);
   }
 
+  private coopLevelHead(co: CoopPickInfo, opts: { cache: boolean; level: number }): string {
+    const def = SHIPS[co.ship];
+    const chips = co.round
+      ? `<div class="lu-chips">${co.ships
+          .map((ship, i) => {
+            const state = i < co.pid ? 'done' : i === co.pid ? 'now' : 'wait';
+            const tail = state === 'done' ? '✓' : state === 'now' ? '…' : '·';
+            return `<span class="lu-chip ${state}" style="--cc:${pilotColor(i)}" title="${esc(SHIPS[ship].name)}"><b>${pilotMark(i)}</b>${pilotLabel(i)} <i>${tail}</i></span>`;
+          })
+          .join('')}</div>`
+      : '';
+    const eyebrow = opts.cache
+      ? `Elite cache · ${pilotLabel(co.pid)}'s bonus pick`
+      : `Level ${opts.level} · pick ${co.round ? co.round.index : 1} of ${co.round ? co.round.total : co.players}`;
+    return `<div class="lu-head coop${opts.cache ? ' cache' : ''}">
+      <div class="lu-who"><b>${pilotMark(co.pid)}</b> ${pilotLabel(co.pid)}<span>${esc(def.name)}</span></div>
+      <div class="eyebrow">${esc(eyebrow)}</div>
+      <h2>${opts.cache ? 'CACHE' : 'LEVEL UP'}</h2>
+      ${chips}
+    </div>`;
+  }
+
   offerAt(i: number): Offer | undefined {
     return this.offers[i];
   }
 
   // ───────────────────────── Pause / victory ─────────────────────────
 
-  showPause(world: World, save: SaveData): void {
+  /** One pilot's build as chips. */
+  private buildChips(world: World, pid: number): string {
+    const b = world.players[pid]!.build;
+    return [
+      ...b.weapons.map((w) => `<span style="color:${w.evolved ? 'var(--gold)' : WEAPONS[w.id].color}">${esc(w.evolved ? WEAPONS[w.id].evolvedName : WEAPONS[w.id].name)} ${w.evolved ? '★' : `LV${w.level}`}</span>`),
+      ...(Object.keys(b.passives) as PassiveId[]).map((id) => `<span style="color:${PASSIVES[id].color}">${esc(PASSIVES[id].name)} LV${b.passives[id]}</span>`),
+      ...b.relics.map((id) => `<span style="color:${RARITY_COLOR[RELICS[id].rarity]}">${esc(RELICS[id].name)}</span>`),
+    ].join('');
+  }
+
+  /** "▲ P1 · Spark" header for a pilot (co-op screens). */
+  private pilotTag(pid: number, ship: ShipId): string {
+    return `<span class="pilot-tag" style="--pc:${pilotColor(pid)}"><b>${pilotMark(pid)}</b> ${pilotLabel(pid)}<span>${esc(SHIPS[ship].name)}</span></span>`;
+  }
+
+  showPause(world: World, save: SaveData, note = ''): void {
     const s = this.screen('pause');
     s.className = 'screen modal scrim-heavy';
-    const build = [
-      ...world.build.weapons.map((w) => `<span style="color:${w.evolved ? 'var(--gold)' : WEAPONS[w.id].color}">${esc(w.evolved ? WEAPONS[w.id].evolvedName : WEAPONS[w.id].name)} ${w.evolved ? '★' : `LV${w.level}`}</span>`),
-      ...(Object.keys(world.build.passives) as PassiveId[]).map((id) => `<span style="color:${PASSIVES[id].color}">${esc(PASSIVES[id].name)} LV${world.build.passives[id]}</span>`),
-      ...world.build.relics.map((id) => `<span style="color:${RARITY_COLOR[RELICS[id].rarity]}">${esc(RELICS[id].name)}</span>`),
-    ].join('');
-    s.innerHTML = `<div class="panel modal-box">
-      <div><div class="eyebrow">${formatTime(world.time)} · Level ${world.level} · ${formatNumber(world.score)} pts</div><h2>Paused</h2></div>
-      <div class="build-list">${build}</div>
+    this.coopMenus = world.coop;
+    const build = world.coop
+      ? `<div class="coop-builds">${world.players
+          .map(
+            (p) => `<div class="pilot-build" style="--pc:${pilotColor(p.pid)}">
+              <div class="pb-head">${this.pilotTag(p.pid, p.ship)}${p.downed ? '<span class="pb-down">DOWN</span>' : `<span class="dim num">${Math.ceil(p.hp)}/${Math.round(p.stats.maxHp)} HP</span>`}</div>
+              <div class="build-list">${this.buildChips(world, p.pid)}</div>
+            </div>`,
+          )
+          .join('')}</div>`
+      : `<div class="build-list">${this.buildChips(world, 0)}</div>`;
+    s.innerHTML = `<div class="panel modal-box${world.coop ? ' wide' : ''}">
+      <div><div class="eyebrow">${formatTime(world.time)} · Level ${world.level} · ${formatNumber(world.score)} pts${world.coop ? ` · ${world.players.length} captains` : ''}</div><h2>Paused</h2></div>
+      ${note ? `<div class="pause-note">${esc(note)}</div>` : ''}
+      ${build}
       <div class="modal-actions">
-        <button class="btn btn-primary" data-act="resume">Resume <span class="key">ESC</span></button>
+        <button class="btn btn-primary" data-act="resume">Resume <span class="key">${world.coop ? 'ESC · START' : 'ESC'}</span></button>
         <button class="btn" data-act="settings">Settings</button>
         <button class="btn btn-rose" data-act="quit">End run</button>
       </div>
@@ -597,9 +901,13 @@ export class UI {
   showVictory(world: World): void {
     const s = this.screen('victory');
     s.className = 'screen modal scrim-heavy';
+    this.coopMenus = world.coop;
+    const text = world.coop
+      ? `Your squad of ${world.players.length} outlasted the storm with <b class="num">${formatNumber(world.score)}</b> points. Fly on together into <b>Overtime</b> for more score, or cash out now.`
+      : `You outlasted the storm with <b class="num">${formatNumber(world.score)}</b> points. Keep going into <b>Overtime</b> for more score, or cash out now.`;
     s.innerHTML = `<div class="panel modal-box">
-      <div><div class="eyebrow">10:00 survived</div><h2 style="color:var(--gold)">Victory</h2></div>
-      <p>You outlasted the storm with <b class="num">${formatNumber(world.score)}</b> points. Keep going into <b>Overtime</b> for more score, or cash out now.</p>
+      <div><div class="eyebrow">10:00 survived${world.coop ? ' · squad victory' : ''}</div><h2 style="color:var(--gold)">Victory</h2></div>
+      <p>${text}</p>
       <div class="modal-actions">
         <button class="btn btn-primary" data-act="continue">Continue into Overtime</button>
         <button class="btn btn-gold" data-act="cashout">Cash out</button>
@@ -619,10 +927,12 @@ export class UI {
     const r = sum.result;
     const s = this.screen('results');
     s.className = 'screen scrim-heavy';
+    const coop = (r.players ?? 1) > 1 && !!r.team;
+    this.coopMenus = coop;
     const killedBoss = r.bossesKilled.map((k) => ENEMIES[k].name).join(', ');
-    const head = r.victory ? 'Victory' : 'Run over';
+    const head = r.victory ? (coop ? 'Squad victory' : 'Victory') : 'Run over';
     const stamps = [
-      sum.newBest.score ? 'NEW BEST SCORE' : '',
+      sum.newBest.score ? (coop ? 'NEW SQUAD BEST' : 'NEW BEST SCORE') : '',
       sum.daily?.best && r.daily ? 'DAILY BEST' : '',
       sum.newBest.time && !sum.newBest.score ? 'LONGEST RUN' : '',
     ].filter(Boolean);
@@ -645,9 +955,17 @@ export class UI {
     s.innerHTML = `<div class="sub">
       <div class="results-head">
         <div>
-          <div class="eyebrow">${head} · ${formatTime(r.time)}${r.daily ? ' · Daily Run' : ''}${r.hard ? ' · Nightmare' : ''}</div>
+          <div class="eyebrow">${head} · ${formatTime(r.time)}${coop ? ` · Co-op · ${r.players} captains` : ''}${r.daily ? ' · Daily Run' : ''}${r.hard ? ' · Nightmare' : ''}</div>
           <div class="big-score" id="res-score">0</div>
-          <div class="dim">${sum.prevBest.score > 0 ? `Best ${formatNumber(Math.max(sum.prevBest.score, r.score))}` : 'Your first score on the board'}</div>
+          <div class="dim">${
+            coop
+              ? sum.prevBest.score > 0
+                ? `Team score · squad best (${r.players} captains) ${formatNumber(Math.max(sum.prevBest.score, r.score))}`
+                : `Team score · your first ${r.players}-captain squad on the board`
+              : sum.prevBest.score > 0
+                ? `Best ${formatNumber(Math.max(sum.prevBest.score, r.score))}`
+                : 'Your first score on the board'
+          }</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">${stamps.map((t, i) => `<span class="stamp" style="animation-delay:${1.2 + i * 0.25}s">${t}</span>`).join('')}</div>
       </div>
@@ -657,6 +975,7 @@ export class UI {
         <button class="btn btn-gold" data-act="workshop"><span>Workshop</span><span class="meta">${affordable > 0 ? `<span class="badge">${affordable} READY</span>` : goal ? `${formatNumber(goal.missing)} ◈ to go` : ''}</span></button>
         <button class="btn" data-act="menu">Menu</button>
       </div>
+      ${coop ? this.coopTable(r) : ''}
       <div class="results-grid">
         <div class="panel">
           <div class="kpis">
@@ -664,7 +983,7 @@ export class UI {
             <div class="kpi"><b>${r.level}</b><span>Level</span></div>
             <div class="kpi"><b>${formatNumber(r.kills)}</b><span>Destroyed</span></div>
             <div class="kpi"><b>${formatNumber(r.maxCombo)}</b><span>Best combo</span></div>
-            <div class="kpi"><b>${r.perfects}</b><span>Perfect dashes</span></div>
+            <div class="kpi"><b>${coop ? r.perfectsTeam ?? r.perfects : r.perfects}</b><span>Perfect dashes</span></div>
             <div class="kpi"><b>${r.bossesKilled.length}</b><span>Bosses</span></div>
           </div>
           ${killedBoss ? `<p class="dim" style="margin:12px 0 0">Defeated: ${esc(killedBoss)}</p>` : ''}
@@ -685,8 +1004,11 @@ export class UI {
     </div>`;
 
     this.lastRunDaily = r.daily;
+    this.lastRunCoop = coop;
     this.bind(s, '[data-act="again"]', () => {
-      if (!this.inGrace()) this.cb.play(r.daily);
+      if (this.inGrace()) return;
+      if (coop) this.cb.again();
+      else this.cb.play(r.daily);
     });
     this.bind(s, '[data-act="workshop"]', () => this.showWorkshop(save));
     this.bind(s, '[data-act="menu"]', () => this.cb.toTitle());
@@ -719,6 +1041,51 @@ export class UI {
         if (sum.rankUps.length) this.cb.sfx.rankUp();
       }, 900),
     );
+  }
+
+  /** Co-op results: one row per pilot plus a few friendly awards. */
+  private coopTable(r: RunSummary['result']): string {
+    const team = r.team ?? [];
+    const awards: string[][] = team.map(() => []);
+    const award = (label: string, value: (t: (typeof team)[number]) => number, min = 1) => {
+      let best = -1;
+      let bestV = -Infinity;
+      let tie = false;
+      team.forEach((t, i) => {
+        const v = value(t);
+        if (v > bestV) {
+          bestV = v;
+          best = i;
+          tie = false;
+        } else if (v === bestV) {
+          tie = true;
+        }
+      });
+      if (best >= 0 && !tie && bestV >= min) awards[best]!.push(label);
+    };
+    award('Top gun', (t) => t.kills);
+    award('Heavy hitter', (t) => t.damage);
+    award('Medic', (t) => t.revivesGiven);
+    award('Daredevil', (t) => t.perfects, 3);
+    const rows = team
+      .map(
+        (t, i) => `<tr style="--pc:${pilotColor(i)}">
+          <td>${this.pilotTag(i, t.ship)}${awards[i]!.length ? `<span class="awards">${awards[i]!.map((a) => `<span class="award">${esc(a)}</span>`).join('')}</span>` : ''}</td>
+          <td class="num">${formatNumber(t.kills)}</td>
+          <td class="num">${formatNumber(t.damage)}</td>
+          <td class="num">${t.perfects}</td>
+          <td class="num">${t.downs}</td>
+          <td class="num">${t.revivesGiven}</td>
+        </tr>`,
+      )
+      .join('');
+    return `<div class="panel coop-panel">
+      <div class="rank-row"><h3>Squadron report</h3><span class="eyebrow">${team.length} captains</span></div>
+      <div class="coop-scroll"><table class="coop-table">
+        <thead><tr><th>Captain</th><th>Destroyed</th><th>Damage</th><th>Perfect</th><th>Downs</th><th>Revives</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
   }
 
   setCoresTopbar(save: SaveData): void {

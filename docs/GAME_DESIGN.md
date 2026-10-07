@@ -94,6 +94,13 @@ move ──► weapons auto-fire ──► enemies die ──► shards drop ─
 | **Daily Run**     | one seeded run per day           | streak bonus cores, daily best             |
 | **Personal best** | score / time / combo             | "NEW BEST" fanfare, ghost bar in the HUD   |
 
+### 3.5 Co-op (local, 2–4 captains)
+
+- **Flow.** Title → Co-op → lobby: each device presses its join key, picks one of the save's unlocked ships, and readies up; 2 s after 2+ captains are ready the squad launches. Slots stay packed, so the P# and colour shown in the lobby are the ones flown (P1 ▲ cyan, P2 ● lime, P3 ■ azure, P4 ◆ white-violet). Results → Play again relaunches the same squad (or reopens the lobby if a controller is gone).
+- **Level-ups.** XP and level are shared. A team level-up opens a round where every captain picks once, P1→P4, on a screen headed by whose turn it is (number, colour, ship, round chips, that device's key hints); caches go to whoever collected them and are picked first. Only the picker's device steers; mouse clicks are always accepted.
+- **Downs.** A captain at 0 HP is downed; a teammate flying over them for ~2.5 s revives them. The run ends when everyone is down.
+- **Meta.** One shared save. Lifetime totals, best time/level, victories, missions and ship unlocks count team values; the solo best score and best combo do not move, and the squad's score goes to a separate co-op best per pilot count. Cores and rank XP use score ÷ the co-op spawn multiplier. The score and Daily missions ignore co-op, perfect-dash goals use the best single captain, and the Daily Run is solo-only. Achievements: *Squad Goals* (win a co-op run) and *No Pilot Left Behind* (10 revives).
+
 ---
 
 ## 4. Retention techniques used (and why)
@@ -250,6 +257,19 @@ fade in with intensity (enemy count, combo), shifting key for boss fights.
 | Pause | Esc / P | Start | ⏸ button |
 | Pick card | 1 / 2 / 3, arrows + Enter, click | d-pad + A | tap |
 | Reroll | R | X | tap |
+
+**Co-op (local, 1 screen, 2–4 captains).** Solo merges every device into P1; in co-op each pilot owns one device (`src/core/bindings.ts`). Touch is solo-only, so the title's Co-op button is hidden on touch-only devices unless a gamepad is connected.
+
+| Action | kbA (left hand) | kbB (right hand) | Gamepad *n* |
+| --- | --- | --- | --- |
+| Move | WASD (mouse steers kbA too) | arrows | left stick / d-pad |
+| Dash | Space / LeftShift | RightShift / Numpad0 (RightCtrl in the desktop build only) | A / LB / RB / LT / RT |
+| Lobby join · ready | Space or E | Enter | A |
+| Lobby ship ◀ ▶ · leave | A / D · Q | ← / → · Backspace | d-pad · B |
+| Level-up choose · take · direct · reroll | A / D · E · 1 2 3 · R | ← / → · Enter · Num1–3 · Backspace | d-pad · A · — · X |
+| Pause (anyone) | Esc / P | Esc / P | Start |
+
+Enter is never a dash key, so no pilot's dash key can confirm a card (anti-mash); the 350 ms grace restarts for every picker. RightCtrl is opt-in because in a browser RightCtrl+W closes the tab. Every game key is `preventDefault`ed during co-op play.
 
 ---
 
