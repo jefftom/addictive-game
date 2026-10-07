@@ -1,12 +1,39 @@
 import { TAU } from '../core/math';
+import { TARGET_HYSTERESIS } from './content/coop';
 import type { Enemy, Player } from './types';
 import type { World } from './world';
 
 const KNOCK_DECAY = 9;
+const HYST2 = TARGET_HYSTERESIS * TARGET_HYSTERESIS;
 
-/** The pilot this enemy chases. */
-export function targetOf(world: World, _e: Enemy): Player {
-  return world.players[0]!;
+/**
+ * The pilot this enemy chases: the nearest active one, with hysteresis so an
+ * enemy between two pilots doesn't jitter. Updates `e.tgt`.
+ */
+export function targetOf(world: World, e: Enemy): Player {
+  const ps = world.players;
+  if (ps.length === 1) return ps[0]!;
+  let best: Player | null = null;
+  let bestD2 = Infinity;
+  for (const p of ps) {
+    if (!world.isUp(p)) continue;
+    const dx = p.x - e.x;
+    const dy = p.y - e.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < bestD2) {
+      bestD2 = d2;
+      best = p;
+    }
+  }
+  const cur = ps[e.tgt] ?? ps[0]!;
+  if (!best) return cur; // Only after a team wipe (gameOver).
+  if (cur !== best && world.isUp(cur)) {
+    const dx = cur.x - e.x;
+    const dy = cur.y - e.y;
+    if (bestD2 > (dx * dx + dy * dy) * HYST2) return cur;
+  }
+  e.tgt = best.pid;
+  return best;
 }
 
 export function updateEnemies(world: World, dt: number): void {

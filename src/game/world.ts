@@ -1,8 +1,27 @@
 import { SpatialGrid } from '../core/grid';
-import { TAU, damp, ease } from '../core/math';
+import { TAU, clamp, damp, ease } from '../core/math';
 import { Rng } from '../core/rng';
 import { comboMult, comboTier, milestoneAt } from './combo';
-import { coopScaling, SPAWN_SPACING, type CoopScaling } from './content/coop';
+import {
+  CAM_MARGIN,
+  GHOST_SPEED,
+  LEASH_EDGE,
+  REVIVE_DECAY,
+  REVIVE_GROWTH,
+  REVIVE_HP,
+  REVIVE_INVULN,
+  REVIVE_RADIUS,
+  REVIVE_TIME,
+  REVIVE_TIME_MAX,
+  SPAWN_CLEARANCE,
+  SPAWN_RETRIES,
+  SPAWN_SPACING,
+  ZOOM_IN_RATE,
+  ZOOM_MAX,
+  ZOOM_OUT_RATE,
+  coopScaling,
+  type CoopScaling,
+} from './content/coop';
 import { BOSS_KINDS, BOSS_SCHEDULE, ENEMIES, VICTORY_TIME } from './content/enemies';
 import { SHIPS } from './content/ships';
 import { Director } from './director';
@@ -475,6 +494,11 @@ export class World {
       this.noHitT += dt;
       if (this.noHitT > this.runStats.longestNoHit) this.runStats.longestNoHit = this.noHitT;
     }
+    if (this.coop) {
+      this.applyLeash();
+      this.updateRevives(dt);
+      this.updateZoom(dt);
+    }
     updateEnemies(this, dt);
     const c = this.teamCenter();
     this.grid.build(this.enemies, c.x, c.y);
@@ -507,6 +531,25 @@ export class World {
   private updatePlayer(p: PlayerState, dt: number, input: ControlInput): void {
     const st = p.stats;
     if (!p.alive) return;
+
+    if (p.downed) {
+      // Ghost: drift slowly toward help. No dash, regen, shield or attacks.
+      p.dashBuffer = 0;
+      p.dashT = 0;
+      const speed = this.moveSpeed(p) * GHOST_SPEED;
+      const k = damp(16, dt);
+      p.vx += (input.mx * speed - p.vx) * k;
+      p.vy += (input.my * speed - p.vy) * k;
+      const mag = Math.hypot(input.mx, input.my);
+      if (mag > 0.15) {
+        p.facingX = input.mx / mag;
+        p.facingY = input.my / mag;
+      }
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (p.hurtT > 0) p.hurtT -= dt;
+      return;
+    }
 
     if (input.dash) p.dashBuffer = 0.15;
     else p.dashBuffer -= dt;
@@ -599,7 +642,9 @@ export class World {
       this.settleDashRecharge(p);
     }
     this.addCombo(3);
-    this.slowmo(0.35, 0.22);
+    // A milder slow-mo in co-op so one pilot's perfects don't stutter everyone.
+    if (this.coop) this.slowmo(0.6, 0.15);
+    else this.slowmo(0.35, 0.22);
     this.events.push({ t: 'perfect', x: p.x, y: p.y, pid: p.pid });
   }
 
@@ -679,10 +724,149 @@ export class World {
         for (const b of this.bullets) b.dead = true;
         this.slowmo(0.3, 0.8);
         this.events.push({ t: 'revive', x: p.x, y: p.y, pid });
+      } else if (this.coop && this.players.some((q) => q !== p && this.isUp(q))) {
+        this.downPlayer(p);
       } else {
         this.teamWipe(p);
       }
     }
+  }
+
+  /** Co-op: the pilot becomes a ghost until a teammate revives them. */
+  private downPlayer(p: PlayerState): void {
+    p.hp = 0;
+    p.downed = true;
+    p.downs++;
+    p.run.downs++;
+    p.reviveT = 0;
+    p.dashT = 0;
+    p.dashBuffer = 0;
+    p.vx *= 0.2;
+    p.vy *= 0.2;
+    this.hitstop = Math.max(this.hitstop, 0.06);
+    this.slowmo(0.4, 0.5);
+    this.events.push({ t: 'downed', pid: p.pid, x: p.x, y: p.y });
+    let up: PlayerState | null = null;
+    let nUp = 0;
+    for (const q of this.players) {
+      if (this.isUp(q)) {
+        nUp++;
+        up = q;
+      }
+    }
+    if (nUp === 1 && up) this.events.push({ t: 'laststand', pid: up.pid });
+  }
+
+  /** Seconds a teammate must stay close to revive this pilot (grows with each down). */
+  reviveNeed(p: Player): number {
+    return Math.min(REVIVE_TIME_MAX, REVIVE_TIME * (1 + REVIVE_GROWTH * Math.max(0, p.downs - 1)));
+  }
+
+  private updateRevives(dt: number): void {
+    const r2 = REVIVE_RADIUS * REVIVE_RADIUS;
+    for (const p of this.players) {
+      if (!p.alive || !p.downed) continue;
+      let by = -1;
+      for (const q of this.players) {
+        if (q === p || !this.isUp(q)) continue;
+        const dx = q.x - p.x;
+        const dy = q.y - p.y;
+        if (dx * dx + dy * dy <= r2) {
+          by = q.pid;
+          break;
+        }
+      }
+      p.reviveT = by >= 0 ? p.reviveT + dt : Math.max(0, p.reviveT - dt * REVIVE_DECAY);
+      if (by >= 0 && p.reviveT >= this.reviveNeed(p)) {
+        p.downed = false;
+        p.reviveT = 0;
+        p.hp = p.stats.maxHp * REVIVE_HP;
+        p.invuln = REVIVE_INVULN;
+        p.dashCharges = p.stats.dashCharges;
+        p.dashRecharge = 0;
+        // Shove the crowd back so the revived pilot gets a breath.
+        this.addRing(p.x, p.y, 220, 0.4, 40, 600, false, '#ffffff', 0, p.pid);
+        this.players[by]!.run.revivesGiven++;
+        this.events.push({ t: 'revived', pid: p.pid, by, x: p.x, y: p.y });
+      }
+    }
+  }
+
+  /** Largest allowed span of the present players' bounding box (leash), per axis. */
+  maxSpan(): { x: number; y: number } {
+    return {
+      x: 2 * (this.viewHalfW * ZOOM_MAX - LEASH_EDGE),
+      y: 2 * (this.viewHalfH * ZOOM_MAX - LEASH_EDGE),
+    };
+  }
+
+  /**
+   * Co-op leash: keeps the present players' bounding box within the max-zoom
+   * view. It blocks a pilot at the edge and never drags anyone else.
+   */
+  private applyLeash(): void {
+    const span = this.maxSpan();
+    for (const p of this.players) {
+      if (!p.alive) continue;
+      let oMinX = Infinity;
+      let oMaxX = -Infinity;
+      let oMinY = Infinity;
+      let oMaxY = -Infinity;
+      for (const q of this.players) {
+        if (q === p || !q.alive) continue;
+        if (q.x < oMinX) oMinX = q.x;
+        if (q.x > oMaxX) oMaxX = q.x;
+        if (q.y < oMinY) oMinY = q.y;
+        if (q.y > oMaxY) oMaxY = q.y;
+      }
+      if (oMinX === Infinity) continue;
+      const loX = oMaxX - span.x;
+      const hiX = oMinX + span.x;
+      if (loX > hiX) p.x = (loX + hiX) / 2;
+      else if (p.x < loX) {
+        p.x = loX;
+        if (p.vx < 0) p.vx = 0;
+      } else if (p.x > hiX) {
+        p.x = hiX;
+        if (p.vx > 0) p.vx = 0;
+      }
+      const loY = oMaxY - span.y;
+      const hiY = oMinY + span.y;
+      if (loY > hiY) p.y = (loY + hiY) / 2;
+      else if (p.y < loY) {
+        p.y = loY;
+        if (p.vy < 0) p.vy = 0;
+      } else if (p.y > hiY) {
+        p.y = hiY;
+        if (p.vy > 0) p.vy = 0;
+      }
+    }
+  }
+
+  /** Co-op zoom: fit every present pilot, out fast, in slowly, capped at ZOOM_MAX. */
+  private updateZoom(dt: number): void {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const p of this.players) {
+      if (!p.alive) continue;
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    if (minX === Infinity) return;
+    const wb = this.viewHalfW;
+    const hb = this.viewHalfH;
+    const hx = (maxX - minX) / 2;
+    const hy = (maxY - minY) / 2;
+    const zFit = Math.max((hx + CAM_MARGIN) / wb, (hy + CAM_MARGIN) / hb);
+    const zTarget = clamp(zFit, 1, ZOOM_MAX);
+    this.zoom += (zTarget - this.zoom) * damp(zTarget > this.zoom ? ZOOM_OUT_RATE : ZOOM_IN_RATE, dt);
+    // Hard guarantee: a lagging zoom never leaves a pilot outside the view.
+    const zNeed = Math.max((hx + LEASH_EDGE) / wb, (hy + LEASH_EDGE) / hb);
+    this.zoom = clamp(Math.max(this.zoom, zNeed), 1, ZOOM_MAX);
   }
 
   /** Ends the run: every pilot is out. */
@@ -913,18 +1097,37 @@ export class World {
     const vx = vel.x;
     const vy = vel.y;
     const rng = this.posRng;
-    let a = rng.next() * TAU;
-    const speed = Math.hypot(vx, vy);
-    if (speed > 40 && rng.chance(0.35)) {
-      a = Math.atan2(vy, vx) + rng.range(-0.9, 0.9);
-    }
-    const c = Math.cos(a);
-    const s = Math.sin(a);
     const hw = this.effHalfW();
     const hh = this.effHalfH();
-    const edge = Math.min(Math.abs(c) > 1e-6 ? hw / Math.abs(c) : Infinity, Math.abs(s) > 1e-6 ? hh / Math.abs(s) : Infinity);
-    const d = edge + margin;
-    return { x: cx + c * d, y: cy + s * d };
+    const speed = Math.hypot(vx, vy);
+    const tries = this.coop ? SPAWN_RETRIES + 1 : 1;
+    let pt = { x: cx, y: cy };
+    for (let attempt = 0; attempt < tries; attempt++) {
+      let a = rng.next() * TAU;
+      if (speed > 40 && rng.chance(0.35)) {
+        a = Math.atan2(vy, vx) + rng.range(-0.9, 0.9);
+      }
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      const edge = Math.min(Math.abs(c) > 1e-6 ? hw / Math.abs(c) : Infinity, Math.abs(s) > 1e-6 ? hh / Math.abs(s) : Infinity);
+      const d = edge + margin;
+      pt = { x: cx + c * d, y: cy + s * d };
+      // Co-op: a point just off a spread team's view can sit on an edge pilot; try again.
+      if (!this.coop || this.clearOfPlayers(pt.x, pt.y, SPAWN_CLEARANCE)) break;
+    }
+    return pt;
+  }
+
+  /** True if no active pilot is within `dist` of (x, y). */
+  clearOfPlayers(x: number, y: number, dist: number): boolean {
+    const d2 = dist * dist;
+    for (const p of this.players) {
+      if (!this.isUp(p)) continue;
+      const dx = p.x - x;
+      const dy = p.y - y;
+      if (dx * dx + dy * dy < d2) return false;
+    }
+    return true;
   }
 
   fireBullet(x: number, y: number, angle: number, speed: number, damage: number, r = 6): void {
@@ -1275,7 +1478,79 @@ export class World {
   }
 
   private updatePickups(dt: number): void {
-    this.updatePickupsSolo(dt);
+    if (!this.coop) this.updatePickupsSolo(dt);
+    else this.updatePickupsCoop(dt);
+  }
+
+  /**
+   * Co-op pickups: each flies to the nearest active pilot whose magnet reaches
+   * it (that pilot becomes its owner), and is collected by the nearest active
+   * pilot that touches it. A downed owner releases it to the nearest pilot.
+   */
+  private updatePickupsCoop(dt: number): void {
+    const fr = damp(5, dt);
+    const players = this.players;
+    for (const pk of this.pickups) {
+      if (pk.dead) continue;
+      pk.age += dt;
+      const wide = pk.kind === 'xp' || pk.kind === 'core';
+      let target: PlayerState | null = null;
+      const owner = pk.owner >= 0 ? players[pk.owner] : undefined;
+      if (pk.magnetized && owner && this.isUp(owner)) {
+        target = owner;
+      } else {
+        let bestD = Infinity;
+        let q: PlayerState | null = null;
+        for (const p of players) {
+          if (!this.isUp(p)) continue;
+          const d = Math.hypot(p.x - pk.x, p.y - pk.y);
+          const radius = wide ? p.stats.magnet : Math.min(p.stats.magnet, 60);
+          if (d < radius && d < bestD) {
+            bestD = d;
+            q = p;
+          }
+        }
+        if (q && pk.age > 0.15) {
+          pk.magnetized = true;
+          pk.owner = q.pid;
+          target = q;
+        } else if (pk.magnetized) {
+          target = this.nearestUpPlayer(pk.x, pk.y);
+          pk.owner = target ? target.pid : -1;
+        }
+      }
+
+      // Collection uses the pre-move distance (as in solo).
+      let collector: PlayerState | null = null;
+      let collectD = Infinity;
+      for (const p of players) {
+        if (!this.isUp(p)) continue;
+        const d = Math.hypot(p.x - pk.x, p.y - pk.y);
+        if (d < p.r + 12 && d < collectD) {
+          collectD = d;
+          collector = p;
+        }
+      }
+
+      if (target) {
+        const dx = target.x - pk.x;
+        const dy = target.y - pk.y;
+        const d = Math.hypot(dx, dy) || 1;
+        const radius = wide ? target.stats.magnet : Math.min(target.stats.magnet, 60);
+        const speed = Math.min(1400, 260 + pk.age * 900 + (radius / d) * 60);
+        pk.vx = (dx / d) * speed;
+        pk.vy = (dy / d) * speed;
+      } else {
+        pk.vx -= pk.vx * fr;
+        pk.vy -= pk.vy * fr;
+      }
+      pk.x += pk.vx * dt;
+      pk.y += pk.vy * dt;
+      if (collector) {
+        pk.dead = true;
+        this.collect(pk, collector.pid);
+      }
+    }
   }
 
   /** The original single-player routine, kept verbatim (it also magnetizes on the death tick). */
