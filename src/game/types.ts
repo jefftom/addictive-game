@@ -98,7 +98,10 @@ export interface Enemy {
   aimY: number;
   fireT: number;
   summonT: number;
-  orbitHitT: number;
+  /** pid of the player this enemy is chasing (always 0 in solo). */
+  tgt: number;
+  /** Last orbit-blade hit time, one entry per player (so two orbits never block each other). */
+  orbitHitT: number[];
   dashHitId: number;
   spawnT: number;
   dead: boolean;
@@ -122,6 +125,8 @@ export interface Projectile {
   hits: number[];
   evolved: boolean;
   dead: boolean;
+  /** pid that fired it (damage stats, kill credit). */
+  owner: number;
 }
 
 export interface Bullet {
@@ -148,6 +153,8 @@ export interface Pickup {
   magnetized: boolean;
   age: number;
   dead: boolean;
+  /** pid the pickup is flying to, or -1 for none. */
+  owner: number;
 }
 
 export interface Ring {
@@ -164,6 +171,8 @@ export interface Ring {
   hit: Set<number>;
   color: string;
   hurtsPlayer: boolean;
+  /** pid that created it; `follow` rings track this player. */
+  owner: number;
 }
 
 export interface Mine {
@@ -177,6 +186,7 @@ export interface Mine {
   pullT: number;
   triggered: boolean;
   dead: boolean;
+  owner: number;
 }
 
 export interface Beam {
@@ -192,9 +202,14 @@ export interface Beam {
   evolved: boolean;
   /** Enemies this beam has already hit. */
   hit: Set<number>;
+  /** pid that fired it; evolved beams follow this player. */
+  owner: number;
 }
 
 export interface Player {
+  /** 0..3, index into world.players. */
+  pid: number;
+  ship: ShipId;
   x: number;
   y: number;
   vx: number;
@@ -215,8 +230,34 @@ export interface Player {
   perfectThisDash: boolean;
   shieldT: number;
   shieldReady: boolean;
+  /** False only after a team wipe (or solo death). Stays true while downed. */
   alive: boolean;
   revivesUsed: number;
+  /** Ghost state (co-op only; never set in solo). */
+  downed: boolean;
+  /** Seconds of revive progress while downed. */
+  reviveT: number;
+  /** Times downed this run (raises the revive time). */
+  downs: number;
+}
+
+/** Per-player numbers for the results screen and meta. */
+export interface PlayerRunStats {
+  kills: number;
+  dashKills: number;
+  perfects: number;
+  damage: number;
+  hitsTaken: number;
+  damageTaken: number;
+  gems: number;
+  downs: number;
+  revivesGiven: number;
+  evolutions: number;
+  maxWeapons: number;
+}
+
+export interface PlayerConfig {
+  ship: ShipId;
 }
 
 export interface ControlInput {
@@ -231,7 +272,10 @@ export type DailyModifierId = 'swarm' | 'glass' | 'hyper' | 'bounty' | 'rich' | 
 
 export interface RunConfig {
   seed: number;
+  /** Always equals players[0].ship (meta and achievements read it). */
   ship: ShipId;
+  /** One entry per pilot, length 1..4. */
+  players: PlayerConfig[];
   workshop: Record<string, number>;
   rank: number;
   daily: DailyModifierId | null;
@@ -243,23 +287,30 @@ export interface RunConfig {
 
 export type GameEvent =
   | { t: 'hit'; x: number; y: number; dmg: number; crit: boolean }
-  | { t: 'kill'; x: number; y: number; color: string; r: number; elite: boolean; boss: boolean; score: number; dash: boolean }
+  | { t: 'kill'; x: number; y: number; color: string; r: number; elite: boolean; boss: boolean; score: number; dash: boolean; pid: number }
   | { t: 'shoot'; weapon: WeaponId }
-  | { t: 'pickup'; kind: PickupKind; value: number }
+  | { t: 'pickup'; kind: PickupKind; value: number; pid: number }
   | { t: 'levelup'; level: number }
-  | { t: 'dash'; x: number; y: number; dx: number; dy: number }
-  | { t: 'dashready' }
-  | { t: 'perfect'; x: number; y: number }
-  | { t: 'hurt'; dmg: number; x: number; y: number }
-  | { t: 'shieldbreak'; x: number; y: number }
-  | { t: 'heal'; amount: number }
+  | { t: 'dash'; x: number; y: number; dx: number; dy: number; pid: number }
+  | { t: 'dashready'; pid: number }
+  | { t: 'perfect'; x: number; y: number; pid: number }
+  | { t: 'hurt'; dmg: number; x: number; y: number; pid: number }
+  | { t: 'shieldbreak'; x: number; y: number; pid: number }
+  | { t: 'heal'; amount: number; pid: number }
   | { t: 'combo'; tier: number; mult: number }
   | { t: 'combobreak'; combo: number }
   | { t: 'milestone'; name: string; combo: number }
   | { t: 'boss'; name: string; title: string }
   | { t: 'bossdead'; x: number; y: number; name: string }
-  | { t: 'death'; x: number; y: number }
-  | { t: 'revive'; x: number; y: number }
+  | { t: 'death'; x: number; y: number; pid: number }
+  /** Self-revive (Second Wind / Revival). */
+  | { t: 'revive'; x: number; y: number; pid: number }
+  /** Co-op: a pilot went down (ghost) while a teammate is still up. */
+  | { t: 'downed'; pid: number; x: number; y: number }
+  /** Co-op: `by` revived `pid`. */
+  | { t: 'revived'; pid: number; by: number; x: number; y: number }
+  /** Co-op: only one pilot is still up while the others are downed. */
+  | { t: 'laststand'; pid: number }
   | { t: 'ring'; x: number; y: number; r: number; color: string }
   | { t: 'arc'; points: number[]; evolved: boolean }
   | { t: 'explode'; x: number; y: number; r: number; color: string }

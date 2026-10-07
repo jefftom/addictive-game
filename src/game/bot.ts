@@ -13,8 +13,8 @@ export interface BotOptions {
  * headless balance simulation. It flees weighted threats, drifts toward
  * shards when safe, and dashes when something is about to touch it.
  */
-export function botInput(world: World, rng: Rng, opts: BotOptions = { skill: 0.6 }): ControlInput {
-  const p = world.player;
+export function botInput(world: World, rng: Rng, opts: BotOptions = { skill: 0.6 }, pid = 0): ControlInput {
+  const p = world.players[pid]!;
   let fx = 0;
   let fy = 0;
   let threat = 0;
@@ -78,24 +78,26 @@ export function botInput(world: World, rng: Rng, opts: BotOptions = { skill: 0.6
 }
 
 /** Picks an offer: prefers evolutions, then upgrades to owned weapons, otherwise random. */
-export function botPick(world: World, offers: Offer[], rng: Rng): Offer {
+export function botPick(world: World, offers: Offer[], rng: Rng, pid = 0): Offer {
   const evo = offers.find((o) => o.kind === 'evolve');
   if (evo) return evo;
   const owned = offers.find((o) => o.kind === 'weapon' && !o.isNew);
   if (owned && rng.chance(0.65)) return owned;
   const fresh = offers.find((o) => o.kind === 'weapon' && o.isNew);
-  if (fresh && world.build.weapons.length < 3 && rng.chance(0.6)) return fresh;
+  if (fresh && world.players[pid]!.build.weapons.length < 3 && rng.chance(0.6)) return fresh;
   return rng.pick(offers);
 }
 
-/** Resolves all pending level-ups and caches with bot picks. */
-export function botResolvePending(world: World, rng: Rng, applyFn: (o: Offer) => void): void {
+/**
+ * Resolves all pending picks (caches, then level rounds) with bot picks, for
+ * every pilot in world order. `applyFn` receives the picking pid.
+ */
+export function botResolvePending(world: World, rng: Rng, applyFn: (o: Offer, pid: number) => void): void {
   let guard = 0;
-  while ((world.pendingLevelUps > 0 || world.pendingCaches > 0) && guard++ < 50) {
-    const cache = world.pendingCaches > 0;
-    if (cache) world.pendingCaches--;
-    else world.pendingLevelUps--;
-    const offers = generateOffers(world, 3, cache);
-    applyFn(botPick(world, offers, rng));
+  while (guard++ < 50 * world.players.length && world.hasPendingPicks()) {
+    const r = world.beginPick();
+    if (!r) break;
+    const offers = generateOffers(world, 3, r.cache, r.pid);
+    applyFn(botPick(world, offers, rng, r.pid), r.pid);
   }
 }

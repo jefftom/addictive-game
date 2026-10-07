@@ -1,48 +1,50 @@
 import { TAU } from '../core/math';
 import { weaponStats, type WeaponStats } from './content/weapons';
 import type { Enemy, WeaponInstance } from './types';
-import type { World } from './world';
+import type { PlayerState, World } from './world';
 
+/** Fires every active pilot's weapons (pid order). Downed ghosts don't fire. */
 export function updateWeapons(world: World, dt: number): void {
   world.blades.length = 0;
-  if (!world.player.alive) return;
-  const cdMult = world.cooldownMult();
-  for (const w of world.build.weapons) {
-    const st = weaponStats(w.id, w.level, w.evolved);
-    if (w.id === 'orbit') {
-      updateOrbit(world, w, st, dt, cdMult);
-      continue;
+  for (const p of world.players) {
+    if (!world.isUp(p)) continue;
+    const cdMult = world.cooldownMult(p);
+    for (const w of p.build.weapons) {
+      const st = weaponStats(w.id, w.level, w.evolved);
+      if (w.id === 'orbit') {
+        updateOrbit(world, p, w, st, dt, cdMult);
+        continue;
+      }
+      w.timer -= dt;
+      if (w.timer > 0) continue;
+      const fired = fireWeapon(world, p, w, st);
+      w.timer = fired ? st.cooldown * cdMult : 0.1;
+      if (fired) world.events.push({ t: 'shoot', weapon: w.id });
     }
-    w.timer -= dt;
-    if (w.timer > 0) continue;
-    const fired = fireWeapon(world, w, st);
-    w.timer = fired ? st.cooldown * cdMult : 0.1;
-    if (fired) world.events.push({ t: 'shoot', weapon: w.id });
   }
 }
 
-function fireWeapon(world: World, w: WeaponInstance, st: WeaponStats): boolean {
+function fireWeapon(world: World, p: PlayerState, w: WeaponInstance, st: WeaponStats): boolean {
   switch (w.id) {
     case 'pulse':
-      return firePulse(world, w, st);
+      return firePulse(world, p, w, st);
     case 'nova':
-      return fireNova(world, w, st);
+      return fireNova(world, p, w, st);
     case 'arc':
-      return fireArc(world, w, st);
+      return fireArc(world, p, w, st);
     case 'seeker':
-      return fireSeeker(world, w, st);
+      return fireSeeker(world, p, w, st);
     case 'mines':
-      return fireMines(world, w, st);
+      return fireMines(world, p, w, st);
     case 'lance':
-      return fireLance(world, w, st);
+      return fireLance(world, p, w, st);
     case 'orbit':
       return false;
   }
 }
 
-function firePulse(world: World, w: WeaponInstance, st: WeaponStats): boolean {
-  const p = world.player;
-  const s = world.stats;
+function firePulse(world: World, p: PlayerState, w: WeaponInstance, st: WeaponStats): boolean {
+  const s = p.stats;
   const target = world.nearestEnemy(p.x, p.y, 470);
   if (!target) return false;
   const base = Math.atan2(target.y - p.y, target.x - p.x);
@@ -71,14 +73,15 @@ function firePulse(world: World, w: WeaponInstance, st: WeaponStats): boolean {
       hits: [],
       evolved: w.evolved,
       dead: false,
+      owner: p.pid,
     });
   }
   return true;
 }
 
-function updateOrbit(world: World, w: WeaponInstance, st: WeaponStats, dt: number, cdMult: number): void {
-  const p = world.player;
-  const s = world.stats;
+function updateOrbit(world: World, p: PlayerState, w: WeaponInstance, st: WeaponStats, dt: number, cdMult: number): void {
+  const s = p.stats;
+  const pid = p.pid;
   w.phase += st.speed * dt * Math.sqrt(1 / cdMult);
   const count = st.count + s.amount;
   const radius = st.extra * s.area * (w.evolved ? 1 + Math.sin(world.time * 2.2) * 0.14 : 1);
@@ -90,42 +93,40 @@ function updateOrbit(world: World, w: WeaponInstance, st: WeaponStats, dt: numbe
     const a = w.phase + (i / count) * TAU;
     const bx = p.x + Math.cos(a) * radius;
     const by = p.y + Math.sin(a) * radius;
-    world.blades.push({ x: bx, y: by, r: bladeR });
+    world.blades.push({ x: bx, y: by, r: bladeR, pid });
     const n = world.grid.query(bx, by, bladeR + 64, buf);
     for (let k = 0; k < n; k++) {
       const e = world.enemies[buf[k]!]!;
-      if (e.dead || world.time - e.orbitHitT < hitCd) continue;
+      if (e.dead || world.time - e.orbitHitT[pid]! < hitCd) continue;
       const dx = e.x - bx;
       const dy = e.y - by;
       const rr = e.r + bladeR;
       if (dx * dx + dy * dy <= rr * rr) {
-        e.orbitHitT = world.time;
+        e.orbitHitT[pid] = world.time;
         victims.push(e);
       }
     }
   }
   for (const e of victims) {
     const d = Math.hypot(e.x - p.x, e.y - p.y) || 1;
-    const [dmg, crit] = world.rollDamage(st.damage);
-    world.damageEnemy(e, dmg, crit, (e.x - p.x) / d, (e.y - p.y) / d, 160);
+    const [dmg, crit] = world.rollDamage(st.damage, pid);
+    world.damageEnemy(e, dmg, crit, (e.x - p.x) / d, (e.y - p.y) / d, 160, false, pid);
   }
 }
 
-function fireNova(world: World, w: WeaponInstance, st: WeaponStats): boolean {
-  const p = world.player;
-  const s = world.stats;
+function fireNova(world: World, p: PlayerState, w: WeaponInstance, st: WeaponStats): boolean {
+  const s = p.stats;
   // Only fire when something is in range, so the rhythm reads as a response to danger.
   const radius = st.area * s.area;
   if (!world.nearestEnemy(p.x, p.y, radius + 40)) return false;
   for (let i = 0; i < st.count; i++) {
-    world.addRing(p.x, p.y, radius, st.duration, st.damage, st.extra, true, w.evolved ? '#ffffff' : '#6fd2ff', i * 0.25);
+    world.addRing(p.x, p.y, radius, st.duration, st.damage, st.extra, true, w.evolved ? '#ffffff' : '#6fd2ff', i * 0.25, p.pid);
   }
   return true;
 }
 
-function fireArc(world: World, w: WeaponInstance, st: WeaponStats): boolean {
-  const p = world.player;
-  const s = world.stats;
+function fireArc(world: World, p: PlayerState, w: WeaponInstance, st: WeaponStats): boolean {
+  const s = p.stats;
   const first = world.nearestEnemy(p.x, p.y, 420);
   if (!first) return false;
   const used = new Set<number>();
@@ -139,7 +140,7 @@ function fireArc(world: World, w: WeaponInstance, st: WeaponStats): boolean {
     for (let jump = 0; jump <= st.pierce && target; jump++) {
       used.add(target.id);
       points.push(target.x, target.y);
-      let [dmg, crit] = world.rollDamage(st.damage);
+      let [dmg, crit] = world.rollDamage(st.damage, p.pid);
       if (!crit && critBonus > 0 && world.rng.chance(critBonus)) {
         dmg *= s.critMult;
         crit = true;
@@ -149,7 +150,7 @@ function fireArc(world: World, w: WeaponInstance, st: WeaponStats): boolean {
       const d = Math.hypot(dx, dy) || 1;
       const hit = target;
       from = { x: hit.x, y: hit.y };
-      world.damageEnemy(hit, dmg, crit, dx / d, dy / d, 60);
+      world.damageEnemy(hit, dmg, crit, dx / d, dy / d, 60, false, p.pid);
       target = world.nearestEnemy(from.x, from.y, range, used);
     }
     world.events.push({ t: 'arc', points, evolved: w.evolved });
@@ -157,9 +158,8 @@ function fireArc(world: World, w: WeaponInstance, st: WeaponStats): boolean {
   return true;
 }
 
-function fireSeeker(world: World, w: WeaponInstance, st: WeaponStats): boolean {
-  const p = world.player;
-  const s = world.stats;
+function fireSeeker(world: World, p: PlayerState, w: WeaponInstance, st: WeaponStats): boolean {
+  const s = p.stats;
   const target = world.nearestEnemy(p.x, p.y, 600);
   if (!target) return false;
   const count = st.count + s.amount;
@@ -185,14 +185,14 @@ function fireSeeker(world: World, w: WeaponInstance, st: WeaponStats): boolean {
       hits: [],
       evolved: w.evolved,
       dead: false,
+      owner: p.pid,
     });
   }
   return true;
 }
 
-function fireMines(world: World, w: WeaponInstance, st: WeaponStats): boolean {
-  const p = world.player;
-  const s = world.stats;
+function fireMines(world: World, p: PlayerState, w: WeaponInstance, st: WeaponStats): boolean {
+  const s = p.stats;
   for (let i = 0; i < st.count + s.amount; i++) {
     const a = world.rng.next() * TAU;
     const d = i === 0 ? 0 : world.rng.range(50, 110);
@@ -207,14 +207,14 @@ function fireMines(world: World, w: WeaponInstance, st: WeaponStats): boolean {
       pullT: 0,
       triggered: false,
       dead: false,
+      owner: p.pid,
     });
   }
   return true;
 }
 
-function fireLance(world: World, w: WeaponInstance, st: WeaponStats): boolean {
-  const p = world.player;
-  const s = world.stats;
+function fireLance(world: World, p: PlayerState, w: WeaponInstance, st: WeaponStats): boolean {
+  const s = p.stats;
   let angle: number;
   const moving = Math.hypot(p.vx, p.vy) > 30;
   if (moving) {
@@ -238,6 +238,7 @@ function fireLance(world: World, w: WeaponInstance, st: WeaponStats): boolean {
       damage: st.damage,
       evolved: w.evolved,
       hit: new Set(),
+      owner: p.pid,
     });
   }
   return true;

@@ -2,6 +2,7 @@ import { SpatialGrid } from '../core/grid';
 import { TAU, damp, ease } from '../core/math';
 import { Rng } from '../core/rng';
 import { comboMult, comboTier, milestoneAt } from './combo';
+import { coopScaling, SPAWN_SPACING, type CoopScaling } from './content/coop';
 import { BOSS_KINDS, BOSS_SCHEDULE, ENEMIES, VICTORY_TIME } from './content/enemies';
 import { SHIPS } from './content/ships';
 import { Director } from './director';
@@ -19,10 +20,12 @@ import type {
   Pickup,
   PickupKind,
   Player,
+  PlayerRunStats,
   Projectile,
   RelicId,
   Ring,
   RunConfig,
+  ShipId,
   Stats,
   WeaponId,
   WeaponInstance,
@@ -33,6 +36,7 @@ export const DASH_TIME = 0.17;
 export const DASH_SPEED = 1150;
 export const DASH_BASE_DAMAGE = 30;
 export const PLAYER_RADIUS = 11;
+/** Solo enemy cap (co-op uses `world.maxEnemies`). */
 export const MAX_ENEMIES = 420;
 export const MAX_PICKUPS = 450;
 
@@ -58,6 +62,23 @@ export interface Build {
   relics: RelicId[];
 }
 
+/** A pilot: body, kinematics, stats and build. Index in `world.players` = pid. */
+export interface PlayerState extends Player {
+  stats: Stats;
+  build: Build;
+  rerolls: number;
+  pendingCaches: number;
+  run: PlayerRunStats;
+}
+
+/** One pick (level-up or cache) for one pilot. */
+export interface PickRequest {
+  pid: number;
+  cache: boolean;
+}
+
+const NO_INPUT: ControlInput = { mx: 0, my: 0, dash: false };
+
 export interface WorldOptions {
   /** Personal best score; crossing it emits a `newbest` event. */
   bestScore?: number;
@@ -75,9 +96,18 @@ export class World {
   readonly posRng: Rng;
 
   time = 0;
-  player: Player;
-  stats!: Stats;
-  build: Build = { weapons: [], passives: {}, relics: [] };
+  /** Every pilot, fixed for the run; index = pid. */
+  readonly players: PlayerState[];
+  /** players.length > 1 */
+  readonly coop: boolean;
+  /** COOP_SCALING row for the player count. */
+  readonly scaling: CoopScaling;
+  /** Live (non-boss) enemy cap. */
+  readonly maxEnemies: number;
+  /** Camera zoom-out factor owned by the sim (1 forever in solo). */
+  zoom = 1;
+  /** pids still to pick in the current team level round. */
+  levelRound: number[] = [];
 
   enemies: Enemy[] = [];
   projectiles: Projectile[] = [];
@@ -87,7 +117,7 @@ export class World {
   mines: Mine[] = [];
   beams: Beam[] = [];
   /** Orbit blade positions this tick (for rendering). */
-  blades: { x: number; y: number; r: number }[] = [];
+  blades: { x: number; y: number; r: number; pid: number }[] = [];
   events: GameEvent[] = [];
 
   readonly grid = new SpatialGrid(64, 2048);
@@ -95,10 +125,8 @@ export class World {
 
   level = 1;
   xp = 0;
-  xpNext = xpForLevel(1);
+  xpNext: number;
   pendingLevelUps = 0;
-  pendingCaches = 0;
-  rerolls = 0;
 
   combo = 0;
   comboTimer = 0;
@@ -110,7 +138,7 @@ export class World {
   private bestScore: number;
   private newBestAnnounced = false;
 
-  /** Half-size of the visible area in world units (set by the renderer). */
+  /** Base (zoom 1) half-size of the visible area in world units (set by the app). */
   viewHalfW = 700;
   viewHalfH = 400;
 
@@ -142,6 +170,10 @@ export class World {
   private noHitT = 0;
   private nextId = 1;
   private nextFxId = 1;
+  /** Global dash id sequence, so two players' dashes never share an id. */
+  private dashSeq = 0;
+  private readonly centerBuf = { x: 0, y: 0 };
+  private readonly velBuf = { x: 0, y: 0 };
 
   constructor(cfg: RunConfig, opts: WorldOptions = {}) {
     this.cfg = cfg;
@@ -151,9 +183,27 @@ export class World {
     this.rng = root.fork(3);
     this.posRng = root.fork(4);
     this.bestScore = opts.bestScore ?? 0;
+    this.scaling = coopScaling(cfg.players.length);
+    this.maxEnemies = this.scaling.maxEnemies;
+    this.xpNext = Math.round(xpForLevel(1) * this.scaling.xpReq);
     this.director = new Director(cfg);
-    this.player = {
-      x: 0,
+    const n = cfg.players.length;
+    this.coop = n > 1;
+    this.players = cfg.players.map((pc, pid) => this.makePlayer(pid, pc.ship, n));
+    for (const p of this.players) {
+      this.addWeapon(SHIPS[p.ship].weapon, p.pid);
+      this.refreshStats(p.pid);
+      p.hp = p.stats.maxHp;
+      p.dashCharges = p.stats.dashCharges;
+      p.rerolls = p.stats.rerolls;
+    }
+  }
+
+  private makePlayer(pid: number, ship: ShipId, n: number): PlayerState {
+    return {
+      pid,
+      ship,
+      x: n > 1 ? (pid - (n - 1) / 2) * SPAWN_SPACING : 0,
       y: 0,
       vx: 0,
       vy: 0,
@@ -175,49 +225,225 @@ export class World {
       shieldReady: false,
       alive: true,
       revivesUsed: 0,
+      downed: false,
+      reviveT: 0,
+      downs: 0,
+      stats: computeStats(this.cfg, {}, [], ship),
+      build: { weapons: [], passives: {}, relics: [] },
+      rerolls: 0,
+      pendingCaches: 0,
+      run: {
+        kills: 0,
+        dashKills: 0,
+        perfects: 0,
+        damage: 0,
+        hitsTaken: 0,
+        damageTaken: 0,
+        gems: 0,
+        downs: 0,
+        revivesGiven: 0,
+        evolutions: 0,
+        maxWeapons: 0,
+      },
     };
-    this.addWeapon(SHIPS[cfg.ship].weapon);
-    this.refreshStats();
-    this.player.hp = this.stats.maxHp;
-    this.player.dashCharges = this.stats.dashCharges;
-    this.rerolls = this.stats.rerolls;
+  }
+
+  // ───────────────────────────── P1 aliases ─────────────────────────────
+  // P1 aliases for tests, debug and the e2e harness. Production code must use players[pid].
+  // (tests/no-p1-alias.test.ts allow-lists only this block.)
+
+  get player(): PlayerState { return this.players[0]!; }
+  get stats(): Stats { return this.players[0]!.stats; }
+  get build(): Build { return this.players[0]!.build; }
+  get rerolls(): number { return this.players[0]!.rerolls; }
+  set rerolls(v: number) { this.players[0]!.rerolls = v; }
+  get pendingCaches(): number { return this.players[0]!.pendingCaches; }
+  set pendingCaches(v: number) { this.players[0]!.pendingCaches = v; }
+
+  // ───────────────────────────── team helpers ─────────────────────────────
+
+  /** Alive and not downed: can move, shoot, collect and be targeted. */
+  isUp(p: Player): boolean {
+    return p.alive && !p.downed;
+  }
+
+  /** Up players (allocates; not for hot loops). */
+  alivePlayers(): PlayerState[] {
+    return this.players.filter((p) => this.isUp(p));
+  }
+
+  /** Alive players, including downed ghosts. */
+  presentPlayers(): PlayerState[] {
+    return this.players.filter((p) => p.alive);
+  }
+
+  /**
+   * Bounding-box midpoint of present players (ghosts included). Solo returns
+   * the player's position. Returns a reused scratch object: copy the values.
+   */
+  teamCenter(): Readonly<{ x: number; y: number }> {
+    const c = this.centerBuf;
+    if (!this.coop) {
+      const p = this.players[0]!;
+      c.x = p.x;
+      c.y = p.y;
+      return c;
+    }
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const p of this.players) {
+      if (!p.alive) continue;
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    if (minX === Infinity) {
+      const p = this.players[0]!;
+      c.x = p.x;
+      c.y = p.y;
+    } else {
+      c.x = (minX + maxX) / 2;
+      c.y = (minY + maxY) / 2;
+    }
+    return c;
+  }
+
+  /** Mean velocity of present players. Solo: the player's velocity. Reused scratch object. */
+  teamVelocity(): Readonly<{ x: number; y: number }> {
+    const v = this.velBuf;
+    if (!this.coop) {
+      const p = this.players[0]!;
+      v.x = p.vx;
+      v.y = p.vy;
+      return v;
+    }
+    let sx = 0;
+    let sy = 0;
+    let n = 0;
+    for (const p of this.players) {
+      if (!p.alive) continue;
+      sx += p.vx;
+      sy += p.vy;
+      n++;
+    }
+    v.x = n > 0 ? sx / n : 0;
+    v.y = n > 0 ? sy / n : 0;
+    return v;
+  }
+
+  /** Effective (zoomed) half extents of the view in world units. */
+  effHalfW(): number {
+    return this.viewHalfW * this.zoom;
+  }
+
+  effHalfH(): number {
+    return this.viewHalfH * this.zoom;
+  }
+
+  nearestUpPlayer(x: number, y: number): PlayerState | null {
+    let best: PlayerState | null = null;
+    let bestD = Infinity;
+    for (const p of this.players) {
+      if (!this.isUp(p)) continue;
+      const d = (p.x - x) * (p.x - x) + (p.y - y) * (p.y - y);
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    return best;
+  }
+
+  /** True if any pilot owns the relic (team-wide relics such as Chrono Field). */
+  teamHasRelic(id: RelicId): boolean {
+    for (const p of this.players) if (p.build.relics.includes(id)) return true;
+    return false;
+  }
+
+  /** Team combo window: the best Combo Engine on the team counts. */
+  comboWindow(): number {
+    let w = 0;
+    for (const p of this.players) if (p.stats.comboWindow > w) w = p.stats.comboWindow;
+    return w;
+  }
+
+  // ───────────────────────────── picks (level rounds & caches) ─────────────────────────────
+
+  hasPendingPicks(): boolean {
+    if (this.pendingLevelUps > 0 || this.levelRound.length > 0) return true;
+    for (const p of this.players) if (p.pendingCaches > 0) return true;
+    return false;
+  }
+
+  /**
+   * Starts the next pick and consumes its counter. Caches go first (P1→P4);
+   * then one team level-up opens a round where every pilot picks once in pid
+   * order (downed pilots included, so nobody falls permanently behind).
+   */
+  beginPick(): PickRequest | null {
+    for (const p of this.players) {
+      if (p.pendingCaches > 0) {
+        p.pendingCaches--;
+        return { pid: p.pid, cache: true };
+      }
+    }
+    if (this.levelRound.length === 0 && this.pendingLevelUps > 0) {
+      this.pendingLevelUps--;
+      for (const p of this.players) this.levelRound.push(p.pid);
+    }
+    const pid = this.levelRound.shift();
+    return pid === undefined ? null : { pid, cache: false };
+  }
+
+  /** Picks this pilot still has queued (caches + remaining level picks), for HUD chips. */
+  pendingPicksFor(pid: number): number {
+    const p = this.players[pid];
+    if (!p) return 0;
+    let n = p.pendingCaches + this.pendingLevelUps;
+    if (this.levelRound.includes(pid)) n++;
+    return n;
   }
 
   // ───────────────────────────── build & stats ─────────────────────────────
 
-  addWeapon(id: WeaponId): void {
-    if (this.build.weapons.some((w) => w.id === id)) return;
-    this.build.weapons.push({ id, level: 1, evolved: false, timer: 0.4, phase: 0 });
-    this.runStats.maxWeapons = Math.max(this.runStats.maxWeapons, this.build.weapons.length);
+  addWeapon(id: WeaponId, pid = 0): void {
+    const p = this.players[pid]!;
+    const build = p.build;
+    if (build.weapons.some((w) => w.id === id)) return;
+    build.weapons.push({ id, level: 1, evolved: false, timer: 0.4, phase: 0 });
+    this.runStats.maxWeapons = Math.max(this.runStats.maxWeapons, build.weapons.length);
+    p.run.maxWeapons = Math.max(p.run.maxWeapons, build.weapons.length);
   }
 
-  hasRelic(id: RelicId): boolean {
-    return this.build.relics.includes(id);
+  hasRelic(id: RelicId, pid = 0): boolean {
+    return this.players[pid]!.build.relics.includes(id);
   }
 
-  refreshStats(): void {
-    const prev = this.stats;
-    this.stats = computeStats(this.cfg, this.build.passives, this.build.relics);
-    if (prev) {
-      const hpGain = this.stats.maxHp - prev.maxHp;
-      if (hpGain > 0) this.player.hp += hpGain;
-      const chargeGain = this.stats.dashCharges - prev.dashCharges;
-      if (chargeGain > 0) this.player.dashCharges += chargeGain;
-    }
-    this.player.hp = Math.min(this.player.hp, this.stats.maxHp);
+  refreshStats(pid = 0): void {
+    const p = this.players[pid]!;
+    const prev = p.stats;
+    p.stats = computeStats(this.cfg, p.build.passives, p.build.relics, p.ship);
+    const hpGain = p.stats.maxHp - prev.maxHp;
+    if (hpGain > 0 && !p.downed) p.hp += hpGain;
+    const chargeGain = p.stats.dashCharges - prev.dashCharges;
+    if (chargeGain > 0) p.dashCharges += chargeGain;
+    p.hp = p.downed ? 0 : Math.min(p.hp, p.stats.maxHp);
   }
 
-  /** Multiplier applied to weapon cooldowns right now. */
-  cooldownMult(): number {
-    let m = this.stats.cooldown;
+  /** Multiplier applied to a pilot's weapon cooldowns right now. */
+  cooldownMult(p: PlayerState = this.players[0]!): number {
+    let m = p.stats.cooldown;
     if (this.overdriveT > 0) m /= 1.5;
-    if (this.combo >= 40 && this.hasRelic('fever')) m /= 1.35;
+    if (this.combo >= 40 && this.hasRelic('fever', p.pid)) m /= 1.35;
     return m;
   }
 
-  moveSpeed(): number {
-    let s = this.stats.speed;
-    if (this.combo >= 40 && this.hasRelic('fever')) s *= 1.15;
+  moveSpeed(p: PlayerState = this.players[0]!): number {
+    let s = p.stats.speed;
+    if (this.combo >= 40 && this.hasRelic('fever', p.pid)) s *= 1.15;
     if (this.cfg.daily === 'hyper') s *= 1.1;
     return s;
   }
@@ -228,15 +454,30 @@ export class World {
 
   // ───────────────────────────── main update ─────────────────────────────
 
-  update(dt: number, input: ControlInput): void {
+  /**
+   * Advances the simulation. A single `ControlInput` drives P1 (other pilots
+   * get no input); an array gives one input per pid.
+   */
+  update(dt: number, input: ControlInput | readonly ControlInput[]): void {
     if (this.gameOver) return;
     this.time += dt;
     if (this.overdriveT > 0) this.overdriveT -= dt;
 
     this.director.update(this, dt);
-    this.updatePlayer(dt, input);
+    const many = Array.isArray(input);
+    let anyUp = false;
+    for (const p of this.players) {
+      const inp = many ? ((input as readonly ControlInput[])[p.pid] ?? NO_INPUT) : p.pid === 0 ? (input as ControlInput) : NO_INPUT;
+      this.updatePlayer(p, dt, inp);
+      if (this.isUp(p)) anyUp = true;
+    }
+    if (anyUp) {
+      this.noHitT += dt;
+      if (this.noHitT > this.runStats.longestNoHit) this.runStats.longestNoHit = this.noHitT;
+    }
     updateEnemies(this, dt);
-    this.grid.build(this.enemies, this.player.x, this.player.y);
+    const c = this.teamCenter();
+    this.grid.build(this.enemies, c.x, c.y);
     separateEnemies(this);
     updateWeapons(this, dt);
     this.updateProjectiles(dt);
@@ -263,9 +504,8 @@ export class World {
 
   // ───────────────────────────── player ─────────────────────────────
 
-  private updatePlayer(dt: number, input: ControlInput): void {
-    const p = this.player;
-    const st = this.stats;
+  private updatePlayer(p: PlayerState, dt: number, input: ControlInput): void {
+    const st = p.stats;
     if (!p.alive) return;
 
     if (input.dash) p.dashBuffer = 0.15;
@@ -275,7 +515,7 @@ export class World {
     if (p.dashCharges < st.dashCharges) {
       if (p.dashRecharge === 0) p.dashRecharge = st.dashCooldown;
       p.dashRecharge -= dt;
-      this.settleDashRecharge();
+      this.settleDashRecharge(p);
     } else {
       p.dashRecharge = 0;
     }
@@ -304,10 +544,10 @@ export class World {
       p.dashCharges--;
       // Arm the recharge now so a perfect dash on this same tick can refund it.
       if (p.dashRecharge <= 0) p.dashRecharge = st.dashCooldown;
-      p.dashId++;
+      p.dashId = ++this.dashSeq;
       p.perfectThisDash = false;
       p.dashBuffer = 0;
-      this.events.push({ t: 'dash', x: p.x, y: p.y, dx, dy });
+      this.events.push({ t: 'dash', x: p.x, y: p.y, dx, dy, pid: p.pid });
     }
 
     if (p.dashT > 0) {
@@ -318,12 +558,12 @@ export class World {
         p.invuln = Math.max(p.invuln, 0.12);
         p.vx *= 0.25;
         p.vy *= 0.25;
-        if (SHIPS[this.cfg.ship].dashNova) {
-          this.addRing(p.x, p.y, 150 * st.area, 0.3, 26 * st.dashDamage, 320, false, '#6fd2ff');
+        if (SHIPS[p.ship].dashNova) {
+          this.addRing(p.x, p.y, 150 * st.area, 0.3, 26 * st.dashDamage, 320, false, '#6fd2ff', 0, p.pid);
         }
       }
     } else {
-      const speed = this.moveSpeed();
+      const speed = this.moveSpeed(p);
       const k = damp(16, dt);
       p.vx += (input.mx * speed - p.vx) * k;
       p.vy += (input.my * speed - p.vy) * k;
@@ -335,89 +575,90 @@ export class World {
     if (p.hurtT > 0) p.hurtT -= dt;
     if (st.regen > 0 && p.hp < st.maxHp) p.hp = Math.min(st.maxHp, p.hp + st.regen * dt);
 
-    if (this.hasRelic('shield') && !p.shieldReady) {
+    if (this.hasRelic('shield', p.pid) && !p.shieldReady) {
       p.shieldT += dt;
       if (p.shieldT >= 20) {
         p.shieldReady = true;
         p.shieldT = 0;
       }
     }
-
-    this.noHitT += dt;
-    if (this.noHitT > this.runStats.longestNoHit) this.runStats.longestNoHit = this.noHitT;
   }
 
-  isPlayerInvulnerable(): boolean {
-    return this.player.dashT > 0 || this.player.invuln > 0;
+  isPlayerInvulnerable(pid = 0): boolean {
+    const p = this.players[pid]!;
+    return p.dashT > 0 || p.invuln > 0;
   }
 
-  private perfectDash(): void {
-    const p = this.player;
+  private perfectDash(p: PlayerState): void {
     if (p.perfectThisDash) return;
     p.perfectThisDash = true;
     this.runStats.perfects++;
-    if (p.dashCharges < this.stats.dashCharges) {
-      p.dashRecharge -= this.stats.dashCooldown * 0.5;
-      this.settleDashRecharge();
+    p.run.perfects++;
+    if (p.dashCharges < p.stats.dashCharges) {
+      p.dashRecharge -= p.stats.dashCooldown * 0.5;
+      this.settleDashRecharge(p);
     }
     this.addCombo(3);
     this.slowmo(0.35, 0.22);
-    this.events.push({ t: 'perfect', x: p.x, y: p.y });
+    this.events.push({ t: 'perfect', x: p.x, y: p.y, pid: p.pid });
   }
 
   /** Converts a non-positive recharge timer into charges, carrying any remainder. */
-  private settleDashRecharge(): void {
-    const p = this.player;
-    const st = this.stats;
+  private settleDashRecharge(p: PlayerState): void {
+    const st = p.stats;
     while (p.dashRecharge <= 0 && p.dashCharges < st.dashCharges) {
       p.dashCharges++;
-      this.events.push({ t: 'dashready' });
+      this.events.push({ t: 'dashready', pid: p.pid });
       p.dashRecharge = p.dashCharges < st.dashCharges ? p.dashRecharge + st.dashCooldown : 0;
     }
   }
 
   private playerContacts(): void {
-    const p = this.player;
-    if (!p.alive) return;
     const buf = this.queryBuf;
-    const dashing = p.dashT > 0;
-    const n = this.grid.query(p.x, p.y, p.r + 72, buf);
-    for (let k = 0; k < n; k++) {
-      const e = this.enemies[buf[k]!]!;
-      if (e.dead) continue;
-      const dx = e.x - p.x;
-      const dy = e.y - p.y;
-      const reach = dashing ? e.r + p.r + 8 : e.r + p.r * 0.8;
-      if (dx * dx + dy * dy > reach * reach) continue;
-      if (dashing) {
-        if (e.dashHitId !== p.dashId) {
-          e.dashHitId = p.dashId;
-          this.perfectDash();
-          const [dmg, crit] = this.rollDamage(DASH_BASE_DAMAGE * this.stats.dashDamage);
-          this.damageEnemy(e, dmg, crit, p.dashDirX, p.dashDirY, 420, true);
+    for (const p of this.players) {
+      if (!this.isUp(p)) continue;
+      const dashing = p.dashT > 0;
+      const n = this.grid.query(p.x, p.y, p.r + 72, buf);
+      for (let k = 0; k < n; k++) {
+        if (!this.isUp(p)) break;
+        const e = this.enemies[buf[k]!]!;
+        if (e.dead) continue;
+        const dx = e.x - p.x;
+        const dy = e.y - p.y;
+        const reach = dashing ? e.r + p.r + 8 : e.r + p.r * 0.8;
+        if (dx * dx + dy * dy > reach * reach) continue;
+        if (dashing) {
+          if (e.dashHitId !== p.dashId) {
+            e.dashHitId = p.dashId;
+            this.perfectDash(p);
+            const [dmg, crit] = this.rollDamage(DASH_BASE_DAMAGE * p.stats.dashDamage, p.pid);
+            this.damageEnemy(e, dmg, crit, p.dashDirX, p.dashDirY, 420, true, p.pid);
+          }
+        } else if (e.spawnT <= 0) {
+          this.hurtPlayer(e.damage, e.x, e.y, p.pid);
         }
-      } else if (e.spawnT <= 0) {
-        this.hurtPlayer(e.damage, e.x, e.y);
       }
     }
   }
 
-  hurtPlayer(raw: number, sx: number, sy: number): void {
-    const p = this.player;
-    if (!p.alive || this.isPlayerInvulnerable()) return;
+  hurtPlayer(raw: number, sx: number, sy: number, pid = 0): void {
+    const p = this.players[pid]!;
+    if (!this.isUp(p) || this.isPlayerInvulnerable(pid)) return;
     if (p.shieldReady) {
       p.shieldReady = false;
       p.shieldT = 0;
       p.invuln = 0.8;
-      this.events.push({ t: 'shieldbreak', x: p.x, y: p.y });
+      this.events.push({ t: 'shieldbreak', x: p.x, y: p.y, pid });
       return;
     }
-    const dmg = Math.max(1, raw - this.stats.armor);
+    const dmg = Math.max(1, raw - p.stats.armor);
     p.hp -= dmg;
     p.invuln = 0.75;
     p.hurtT = 0.3;
     this.runStats.hitsTaken++;
     this.runStats.damageTaken += dmg;
+    p.run.hitsTaken++;
+    p.run.damageTaken += dmg;
     this.noHitT = 0;
     const d = Math.hypot(p.x - sx, p.y - sy) || 1;
     p.vx += ((p.x - sx) / d) * 260;
@@ -426,31 +667,38 @@ export class World {
       this.combo = Math.floor(this.combo / 2);
       this.comboTierIdx = comboTier(this.combo);
     }
-    this.events.push({ t: 'hurt', dmg, x: p.x, y: p.y });
+    this.events.push({ t: 'hurt', dmg, x: p.x, y: p.y, pid });
 
     if (p.hp <= 0) {
-      if (p.revivesUsed < this.stats.revives) {
+      if (p.revivesUsed < p.stats.revives) {
+        // Self-revives (Second Wind, Revival) are spent first.
         p.revivesUsed++;
-        p.hp = this.stats.maxHp * 0.5;
+        p.hp = p.stats.maxHp * 0.5;
         p.invuln = 2.5;
-        this.addRing(p.x, p.y, 420, 0.5, 200, 700, false, '#ffffff');
+        this.addRing(p.x, p.y, 420, 0.5, 200, 700, false, '#ffffff', 0, pid);
         for (const b of this.bullets) b.dead = true;
         this.slowmo(0.3, 0.8);
-        this.events.push({ t: 'revive', x: p.x, y: p.y });
+        this.events.push({ t: 'revive', x: p.x, y: p.y, pid });
       } else {
-        p.hp = 0;
-        p.alive = false;
-        this.gameOver = true;
-        this.events.push({ t: 'death', x: p.x, y: p.y });
+        this.teamWipe(p);
       }
     }
   }
 
-  heal(amount: number): void {
-    const p = this.player;
+  /** Ends the run: every pilot is out. */
+  private teamWipe(p: PlayerState): void {
+    p.hp = 0;
+    for (const q of this.players) q.alive = false;
+    this.gameOver = true;
+    this.events.push({ t: 'death', x: p.x, y: p.y, pid: p.pid });
+  }
+
+  heal(amount: number, pid = 0): void {
+    const p = this.players[pid]!;
+    if (p.downed) return;
     const before = p.hp;
-    p.hp = Math.min(this.stats.maxHp, p.hp + amount);
-    if (p.hp > before) this.events.push({ t: 'heal', amount: p.hp - before });
+    p.hp = Math.min(p.stats.maxHp, p.hp + amount);
+    if (p.hp > before) this.events.push({ t: 'heal', amount: p.hp - before, pid });
   }
 
   // ───────────────────────────── enemies ─────────────────────────────
@@ -458,7 +706,7 @@ export class World {
   spawnEnemy(kind: EnemyKind, x: number, y: number, elite = false): Enemy | null {
     const def = ENEMIES[kind];
     const isBoss = BOSS_KINDS.has(kind);
-    if (!isBoss && this.enemies.length >= MAX_ENEMIES) return null;
+    if (!isBoss && this.enemies.length >= this.maxEnemies) return null;
     const d = this.director;
     const t = this.time;
     const daily = this.cfg.daily;
@@ -516,7 +764,8 @@ export class World {
       aimY: 0,
       fireT: this.rng.range(1, 2.5),
       summonT: 6,
-      orbitHitT: -99,
+      tgt: 0,
+      orbitHitT: this.players.map(() => -99),
       dashHitId: -1,
       spawnT: isBoss ? 0.8 : 0.35,
       dead: false,
@@ -529,16 +778,29 @@ export class World {
     return e;
   }
 
-  rollDamage(base: number): [number, boolean] {
-    let dmg = base * this.stats.damage * this.rng.range(0.92, 1.08);
-    const crit = this.rng.chance(this.stats.crit);
-    if (crit) dmg *= this.stats.critMult;
+  /** Rolls damage with the owner's damage and crit stats. */
+  rollDamage(base: number, owner = 0): [number, boolean] {
+    const st = this.players[owner]!.stats;
+    let dmg = base * st.damage * this.rng.range(0.92, 1.08);
+    const crit = this.rng.chance(st.crit);
+    if (crit) dmg *= st.critMult;
     return [dmg, crit];
   }
 
-  /** Applies damage and knockback. (dx, dy) is the knockback direction (unit). */
-  damageEnemy(e: Enemy, dmg: number, crit: boolean, dx: number, dy: number, knock: number, viaDash = false): void {
+  /** Applies damage and knockback. (dx, dy) is the knockback direction (unit). `owner` gets the credit. */
+  damageEnemy(
+    e: Enemy,
+    dmg: number,
+    crit: boolean,
+    dx: number,
+    dy: number,
+    knock: number,
+    viaDash = false,
+    owner = 0,
+  ): void {
     if (e.dead) return;
+    const p = this.players[owner]!;
+    p.run.damage += Math.min(dmg, Math.max(0, e.hp));
     e.hp -= dmg;
     e.flash = 0.08;
     if (knock > 0) {
@@ -547,16 +809,21 @@ export class World {
       e.ky += dy * k;
     }
     this.events.push({ t: 'hit', x: e.x, y: e.y - e.r, dmg, crit });
-    if (e.hp > 0 && !e.boss && this.hasRelic('exec') && e.hp < e.maxHp * 0.12) e.hp = 0;
-    if (e.hp <= 0) this.killEnemy(e, viaDash);
+    if (e.hp > 0 && !e.boss && this.hasRelic('exec', owner) && e.hp < e.maxHp * 0.12) e.hp = 0;
+    if (e.hp <= 0) this.killEnemy(e, viaDash, owner);
   }
 
-  killEnemy(e: Enemy, viaDash = false): void {
+  killEnemy(e: Enemy, viaDash = false, owner = 0): void {
     if (e.dead) return;
     e.dead = true;
     const def = ENEMIES[e.kind];
+    const killer = this.players[owner]!;
     this.runStats.kills++;
-    if (viaDash) this.runStats.dashKills++;
+    killer.run.kills++;
+    if (viaDash) {
+      this.runStats.dashKills++;
+      killer.run.dashKills++;
+    }
     this.addCombo(1);
     const points = Math.round(e.score * comboMult(this.combo) * this.scoreMult());
     this.addScore(points);
@@ -567,10 +834,13 @@ export class World {
       this.runStats.bossesKilled.push(e.kind);
       if (this.boss === e) this.boss = this.enemies.find((x) => x.boss && !x.dead) ?? null;
       for (let i = 0; i < 10; i++) this.dropXp(e.x + this.rng.range(-60, 60), e.y + this.rng.range(-60, 60), e.xp / 10);
-      const cores = this.hasRelic('bounty') ? 50 : 25;
+      const cores = this.hasRelic('bounty', owner) ? 50 : 25;
       for (let i = 0; i < 5; i++) this.dropPickup('core', e.x, e.y, cores / 5);
-      this.dropPickup('cache', e.x, e.y, 1);
-      this.dropPickup('heart', e.x, e.y, 40);
+      // Bosses are team milestones: one cache and one heart per pilot.
+      for (let i = 0; i < this.players.length; i++) {
+        this.dropPickup('cache', e.x, e.y, 1);
+        this.dropPickup('heart', e.x, e.y, 40);
+      }
       this.hitstop = Math.max(this.hitstop, 0.12);
       this.slowmo(0.25, 1.2);
       for (const b of this.bullets) b.dead = true;
@@ -578,11 +848,11 @@ export class World {
     } else if (e.elite) {
       this.runStats.elites++;
       this.dropPickup('cache', e.x, e.y, 1);
-      const cores = this.hasRelic('bounty') ? 6 : 3;
+      const cores = this.hasRelic('bounty', owner) ? 6 : 3;
       this.dropPickup('core', e.x, e.y, cores);
       this.hitstop = Math.max(this.hitstop, 0.05);
     } else {
-      const luck = this.stats.luck;
+      const luck = killer.stats.luck;
       const roll = this.rng.next();
       if (roll < 0.009 * luck) this.dropPickup('heart', e.x, e.y, 25);
       else if (roll < 0.0125 * luck) this.dropPickup('magnet', e.x, e.y, 1);
@@ -602,7 +872,7 @@ export class World {
       }
     }
 
-    if (this.hasRelic('vamp') && this.rng.chance(0.08)) this.heal(2);
+    if (this.hasRelic('vamp', owner) && this.rng.chance(0.08)) this.heal(2, owner);
 
     this.events.push({
       t: 'kill',
@@ -614,6 +884,7 @@ export class World {
       boss: e.boss,
       score: points,
       dash: viaDash,
+      pid: owner,
     });
   }
 
@@ -633,27 +904,32 @@ export class World {
     return best;
   }
 
-  /** A point just outside the visible area, biased toward where the player is heading. */
+  /** A point just outside the visible area, biased toward where the team is heading. */
   spawnPoint(margin = 70): { x: number; y: number } {
-    const p = this.player;
+    const center = this.teamCenter();
+    const cx = center.x;
+    const cy = center.y;
+    const vel = this.teamVelocity();
+    const vx = vel.x;
+    const vy = vel.y;
     const rng = this.posRng;
     let a = rng.next() * TAU;
-    const speed = Math.hypot(p.vx, p.vy);
+    const speed = Math.hypot(vx, vy);
     if (speed > 40 && rng.chance(0.35)) {
-      a = Math.atan2(p.vy, p.vx) + rng.range(-0.9, 0.9);
+      a = Math.atan2(vy, vx) + rng.range(-0.9, 0.9);
     }
     const c = Math.cos(a);
     const s = Math.sin(a);
-    const hw = this.viewHalfW;
-    const hh = this.viewHalfH;
+    const hw = this.effHalfW();
+    const hh = this.effHalfH();
     const edge = Math.min(Math.abs(c) > 1e-6 ? hw / Math.abs(c) : Infinity, Math.abs(s) > 1e-6 ? hh / Math.abs(s) : Infinity);
     const d = edge + margin;
-    return { x: p.x + c * d, y: p.y + s * d };
+    return { x: cx + c * d, y: cy + s * d };
   }
 
   fireBullet(x: number, y: number, angle: number, speed: number, damage: number, r = 6): void {
     let sp = speed;
-    if (this.hasRelic('chrono')) sp *= 0.8;
+    if (this.teamHasRelic('chrono')) sp *= 0.8;
     if (this.cfg.daily === 'hyper') sp *= 1.2;
     this.bullets.push({
       x,
@@ -680,6 +956,7 @@ export class World {
     follow: boolean,
     color: string,
     delay = 0,
+    owner = 0,
   ): void {
     this.rings.push({
       id: this.nextFxId++,
@@ -695,6 +972,7 @@ export class World {
       hit: new Set(),
       color,
       hurtsPlayer: false,
+      owner,
     });
     if (delay <= 0) this.events.push({ t: 'ring', x, y, r: maxRadius, color });
   }
@@ -737,7 +1015,7 @@ export class World {
       pr.y += pr.vy * dt;
       pr.life -= dt;
       if (pr.life <= 0) {
-        if (pr.kind === 'missile') this.explode(pr.x, pr.y, pr.splash, pr.damage * 0.6, '#ffb3f0');
+        if (pr.kind === 'missile') this.explode(pr.x, pr.y, pr.splash, pr.damage * 0.6, '#ffb3f0', -1, pr.owner);
         pr.dead = true;
         continue;
       }
@@ -750,15 +1028,15 @@ export class World {
         const rr = e.r + pr.r;
         if (dx * dx + dy * dy > rr * rr) continue;
         if (pr.kind === 'missile') {
-          const [dmg, crit] = this.rollDamage(pr.damage);
-          this.damageEnemy(e, dmg, crit, pr.vx / pr.speed, pr.vy / pr.speed, 120);
-          this.explode(pr.x, pr.y, pr.splash, pr.damage * 0.6, '#ffb3f0', e.id);
+          const [dmg, crit] = this.rollDamage(pr.damage, pr.owner);
+          this.damageEnemy(e, dmg, crit, pr.vx / pr.speed, pr.vy / pr.speed, 120, false, pr.owner);
+          this.explode(pr.x, pr.y, pr.splash, pr.damage * 0.6, '#ffb3f0', e.id, pr.owner);
           pr.dead = true;
           break;
         }
-        const [dmg, crit] = this.rollDamage(pr.damage);
+        const [dmg, crit] = this.rollDamage(pr.damage, pr.owner);
         const sp = Math.hypot(pr.vx, pr.vy) || 1;
-        this.damageEnemy(e, dmg, crit, pr.vx / sp, pr.vy / sp, 90);
+        this.damageEnemy(e, dmg, crit, pr.vx / sp, pr.vy / sp, 90, false, pr.owner);
         pr.hits.push(e.id);
         pr.pierce--;
         if (pr.pierce < 0) {
@@ -770,7 +1048,7 @@ export class World {
   }
 
   /** Area damage. `base` is pre-crit damage before the global damage multiplier. */
-  explode(x: number, y: number, radius: number, base: number, color: string, skipId = -1): void {
+  explode(x: number, y: number, radius: number, base: number, color: string, skipId = -1, owner = 0): void {
     const buf = this.queryBuf;
     const n = this.grid.query(x, y, radius + 64, buf);
     const hits: Enemy[] = [];
@@ -784,20 +1062,20 @@ export class World {
     }
     for (const e of hits) {
       const d = Math.hypot(e.x - x, e.y - y) || 1;
-      const [dmg, crit] = this.rollDamage(base);
-      this.damageEnemy(e, dmg, crit, (e.x - x) / d, (e.y - y) / d, 160);
+      const [dmg, crit] = this.rollDamage(base, owner);
+      this.damageEnemy(e, dmg, crit, (e.x - x) / d, (e.y - y) / d, 160, false, owner);
     }
     this.events.push({ t: 'explode', x, y, r: radius, color });
   }
 
   private updateRings(dt: number): void {
     const buf = this.queryBuf;
-    const p = this.player;
     for (const ring of this.rings) {
       ring.t += dt;
       if (ring.t < 0) continue;
       if (ring.t - dt < 0) this.events.push({ t: 'ring', x: ring.x, y: ring.y, r: ring.maxRadius, color: ring.color });
       if (ring.follow) {
+        const p = this.players[ring.owner]!;
         ring.x = p.x;
         ring.y = p.y;
       }
@@ -816,8 +1094,8 @@ export class World {
       for (const e of victims) {
         ring.hit.add(e.id);
         const d = Math.hypot(e.x - ring.x, e.y - ring.y) || 1;
-        const [dmg, crit] = this.rollDamage(ring.damage);
-        this.damageEnemy(e, dmg, crit, (e.x - ring.x) / d, (e.y - ring.y) / d, ring.knock);
+        const [dmg, crit] = this.rollDamage(ring.damage, ring.owner);
+        this.damageEnemy(e, dmg, crit, (e.x - ring.x) / d, (e.y - ring.y) / d, ring.knock, false, ring.owner);
       }
     }
     this.rings = this.rings.filter((r) => r.t < r.duration + 0.25);
@@ -847,7 +1125,7 @@ export class World {
           }
         }
         if (m.pullT <= 0) {
-          this.explode(m.x, m.y, m.radius, m.damage, '#b4ff6a');
+          this.explode(m.x, m.y, m.radius, m.damage, '#b4ff6a', -1, m.owner);
           m.dead = true;
         }
         continue;
@@ -878,10 +1156,10 @@ export class World {
 
   private updateBeams(dt: number): void {
     const buf = this.queryBuf;
-    const p = this.player;
     for (const b of this.beams) {
       b.t += dt;
       if (b.evolved) {
+        const p = this.players[b.owner]!;
         b.angle += 2.6 * dt;
         b.x = p.x;
         b.y = p.y;
@@ -905,38 +1183,43 @@ export class World {
       }
       for (const e of victims) {
         b.hit.add(e.id);
-        const [dmg, crit] = this.rollDamage(b.damage);
-        this.damageEnemy(e, dmg, crit, ux, uy, 140);
+        const [dmg, crit] = this.rollDamage(b.damage, b.owner);
+        this.damageEnemy(e, dmg, crit, ux, uy, 140, false, b.owner);
       }
     }
     this.beams = this.beams.filter((b) => b.t < b.duration + 0.2);
   }
 
   private updateBullets(dt: number): void {
-    const p = this.player;
-    const limit = Math.max(this.viewHalfW, this.viewHalfH) * 2 + 200;
+    const center = this.teamCenter();
+    const cx = center.x;
+    const cy = center.y;
+    const limit = Math.max(this.effHalfW(), this.effHalfH()) * 2 + 200;
     for (const b of this.bullets) {
       if (b.dead) continue;
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       b.life -= dt;
-      if (b.life <= 0 || Math.abs(b.x - p.x) > limit || Math.abs(b.y - p.y) > limit) {
+      if (b.life <= 0 || Math.abs(b.x - cx) > limit || Math.abs(b.y - cy) > limit) {
         b.dead = true;
         continue;
       }
-      if (!p.alive) continue;
-      const dx = b.x - p.x;
-      const dy = b.y - p.y;
-      const rr = b.r + p.r * (p.dashT > 0 ? 1.4 : 0.75);
-      if (dx * dx + dy * dy > rr * rr) continue;
-      if (p.dashT > 0) {
-        if (!b.grazed) {
-          b.grazed = true;
-          this.perfectDash();
+      for (const p of this.players) {
+        if (!this.isUp(p)) continue;
+        const dx = b.x - p.x;
+        const dy = b.y - p.y;
+        const rr = b.r + p.r * (p.dashT > 0 ? 1.4 : 0.75);
+        if (dx * dx + dy * dy > rr * rr) continue;
+        if (p.dashT > 0) {
+          if (!b.grazed) {
+            b.grazed = true;
+            this.perfectDash(p);
+          }
+        } else if (p.invuln <= 0) {
+          this.hurtPlayer(b.damage, b.x, b.y, p.pid);
+          b.dead = true;
+          break;
         }
-      } else if (p.invuln <= 0) {
-        this.hurtPlayer(b.damage, b.x, b.y);
-        b.dead = true;
       }
     }
   }
@@ -978,16 +1261,27 @@ export class World {
       magnetized: false,
       age: 0,
       dead: false,
+      owner: -1,
     });
   }
 
   magnetizeAll(): void {
-    for (const pk of this.pickups) if (pk.kind === 'xp' || pk.kind === 'core') pk.magnetized = true;
+    for (const pk of this.pickups) {
+      if (pk.kind === 'xp' || pk.kind === 'core') {
+        pk.magnetized = true;
+        pk.owner = -1;
+      }
+    }
   }
 
   private updatePickups(dt: number): void {
-    const p = this.player;
-    const magnet = this.stats.magnet;
+    this.updatePickupsSolo(dt);
+  }
+
+  /** The original single-player routine, kept verbatim (it also magnetizes on the death tick). */
+  private updatePickupsSolo(dt: number): void {
+    const p = this.players[0]!;
+    const magnet = p.stats.magnet;
     const fr = damp(5, dt);
     for (const pk of this.pickups) {
       if (pk.dead) continue;
@@ -1009,58 +1303,64 @@ export class World {
       pk.y += pk.vy * dt;
       if (p.alive && d < p.r + 12) {
         pk.dead = true;
-        this.collect(pk);
+        this.collect(pk, 0);
       }
     }
   }
 
-  private collect(pk: Pickup): void {
+  private collect(pk: Pickup, pid: number): void {
+    const p = this.players[pid]!;
     switch (pk.kind) {
       case 'xp':
         this.runStats.gems++;
-        this.addXp(pk.value);
+        p.run.gems++;
+        this.addXp(pk.value, pid);
         break;
       case 'heart':
-        this.heal(pk.value);
+        this.heal(pk.value, pid);
         break;
       case 'magnet':
         this.magnetizeAll();
         this.events.push({ t: 'magnet' });
         break;
       case 'bomb':
-        this.bomb();
+        this.bomb(pid);
         break;
       case 'core':
         this.runStats.coresCollected += pk.value;
         break;
       case 'cache':
-        this.pendingCaches++;
+        p.pendingCaches++;
         break;
     }
-    this.events.push({ t: 'pickup', kind: pk.kind, value: pk.value });
+    this.events.push({ t: 'pickup', kind: pk.kind, value: pk.value, pid });
   }
 
-  bomb(): void {
-    const p = this.player;
-    const hw = this.viewHalfW + 40;
-    const hh = this.viewHalfH + 40;
+  /** Clears the (zoomed) screen around the team centre. `pid` gets the credit. */
+  bomb(pid = 0): void {
+    const c = this.teamCenter();
+    const cx = c.x;
+    const cy = c.y;
+    const hw = this.effHalfW() + 40;
+    const hh = this.effHalfH() + 40;
     for (const e of this.enemies) {
-      if (e.dead || Math.abs(e.x - p.x) > hw || Math.abs(e.y - p.y) > hh) continue;
-      const d = Math.hypot(e.x - p.x, e.y - p.y) || 1;
+      if (e.dead || Math.abs(e.x - cx) > hw || Math.abs(e.y - cy) > hh) continue;
+      const d = Math.hypot(e.x - cx, e.y - cy) || 1;
       const dmg = e.boss || e.elite ? e.maxHp * 0.1 : e.hp + 1;
-      this.damageEnemy(e, dmg, false, (e.x - p.x) / d, (e.y - p.y) / d, 300);
+      this.damageEnemy(e, dmg, false, (e.x - cx) / d, (e.y - cy) / d, 300, false, pid);
     }
     for (const b of this.bullets) b.dead = true;
     this.hitstop = Math.max(this.hitstop, 0.08);
-    this.events.push({ t: 'bomb', x: p.x, y: p.y });
+    this.events.push({ t: 'bomb', x: cx, y: cy });
   }
 
-  addXp(amount: number): void {
-    this.xp += amount * this.stats.xpGain;
+  /** Team XP; the collector's xpGain applies. */
+  addXp(amount: number, pid = 0): void {
+    this.xp += amount * this.players[pid]!.stats.xpGain;
     while (this.xp >= this.xpNext) {
       this.xp -= this.xpNext;
       this.level++;
-      this.xpNext = xpForLevel(this.level);
+      this.xpNext = Math.round(xpForLevel(this.level) * this.scaling.xpReq);
       this.pendingLevelUps++;
       this.events.push({ t: 'levelup', level: this.level });
     }
@@ -1082,7 +1382,7 @@ export class World {
       const m = milestoneAt(this.combo);
       if (m) this.triggerMilestone(m);
     }
-    this.comboTimer = this.stats.comboWindow;
+    this.comboTimer = this.comboWindow();
     if (this.combo > this.runStats.maxCombo) this.runStats.maxCombo = this.combo;
     const tier = comboTier(this.combo);
     if (tier > this.comboTierIdx) this.events.push({ t: 'combo', tier, mult: comboMult(this.combo) });
@@ -1090,10 +1390,14 @@ export class World {
   }
 
   private triggerMilestone(name: 'MAGNET PULSE' | 'NOVA BURST' | 'OVERDRIVE'): void {
-    const p = this.player;
     if (name === 'MAGNET PULSE') this.magnetizeAll();
-    else if (name === 'NOVA BURST') this.addRing(p.x, p.y, 460, 0.55, 60, 500, true, '#ffffff');
-    else this.overdriveT = 6;
+    else if (name === 'NOVA BURST') {
+      // One ring per active pilot (solo: always the one pilot, exactly as before).
+      for (const p of this.players) {
+        if (this.coop && !this.isUp(p)) continue;
+        this.addRing(p.x, p.y, 460, 0.55, 60, 500, true, '#ffffff', 0, p.pid);
+      }
+    } else this.overdriveT = 6;
     this.events.push({ t: 'milestone', name, combo: this.combo });
   }
 

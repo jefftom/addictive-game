@@ -1,4 +1,5 @@
 import { TAU, clamp } from '../core/math';
+import { coopScaling, type CoopScaling } from './content/coop';
 import { BOSS_SCHEDULE, ENEMIES, SPAWNABLE, VICTORY_TIME } from './content/enemies';
 import type { Rng } from '../core/rng';
 import type { EnemyKind, RunConfig } from './types';
@@ -23,9 +24,13 @@ export class Director {
   private overtimeCycle = 0;
   private nextOvertimeBoss = VICTORY_TIME + OVERTIME_BOSS_INTERVAL;
   private readonly cfg: RunConfig;
+  /** Co-op difficulty row (all 1 in solo). */
+  private readonly scale: CoopScaling;
 
   constructor(cfg: RunConfig) {
     this.cfg = cfg;
+    this.scale = coopScaling(cfg.players.length);
+    this.eliteT = 45 * this.scale.eliteEvery;
   }
 
   /** Threat points per second. */
@@ -34,13 +39,13 @@ export class Director {
     if (this.cfg.daily === 'swarm') r *= 1.6;
     if (this.cfg.daily === 'giants') r *= 0.5;
     if (this.cfg.hardMode) r *= 1.15;
-    return r;
+    return r * this.scale.spawn;
   }
 
   hpMult(t: number): number {
     let m = 1 + t / 100 + Math.pow(t / 220, 2.4);
     if (t > VICTORY_TIME) m += (t - VICTORY_TIME) / 20;
-    return m;
+    return m * this.scale.hp;
   }
 
   speedMult(t: number): number {
@@ -52,7 +57,7 @@ export class Director {
   }
 
   bossHpMult(): number {
-    return 1 + this.overtimeCycle * 0.8;
+    return (1 + this.overtimeCycle * 0.8) * this.scale.bossHp;
   }
 
   nextBossInfo(t: number): { name: string; at: number } | null {
@@ -69,11 +74,12 @@ export class Director {
     const t = world.time;
     const rng = world.spawnRng;
 
-    // Opening wave: a loose ring just off the player so the first kills (and level-up) come fast.
+    // Opening wave: a loose ring just off the team so the first kills (and level-up) come fast.
     if (!this.openingDone && t >= 0.6) {
       this.openingDone = true;
-      const p = world.player;
-      const n = 12;
+      const c = world.teamCenter();
+      const p = { x: c.x, y: c.y };
+      const n = Math.round(12 * this.scale.opening);
       const offset = rng.next() * TAU;
       for (let i = 0; i < n; i++) {
         const a = offset + (i / n) * TAU;
@@ -96,7 +102,7 @@ export class Director {
 
     // Continuous budget.
     const bossFactor = world.boss ? 0.4 : 1;
-    this.budget = Math.min(60, this.budget + this.rate(t) * bossFactor * dt);
+    this.budget = Math.min(60 * this.scale.spawn, this.budget + this.rate(t) * bossFactor * dt);
     if (this.pendingKind === null) this.pendingKind = this.chooseKind(t, rng);
     let guard = 0;
     while (this.pendingKind !== null && guard++ < 40) {
@@ -124,9 +130,10 @@ export class Director {
       const kind: EnemyKind = t > 150 && rng.chance(0.5) ? 'swarmling' : 'drifter';
       const offset = rng.next() * TAU;
       if (!world.boss) {
-        const n = Math.round((12 + t / 10) * (this.cfg.daily === 'giants' ? 0.5 : 1));
-        const radius = Math.max(world.viewHalfW, world.viewHalfH) * 0.95 + 40;
-        const p = world.player;
+        const n = Math.round((12 + t / 10) * (this.cfg.daily === 'giants' ? 0.5 : 1) * this.scale.surge);
+        const radius = Math.max(world.effHalfW(), world.effHalfH()) * 0.95 + 40;
+        const c = world.teamCenter();
+        const p = { x: c.x, y: c.y };
         for (let i = 0; i < n; i++) {
           const a = offset + (i / n) * TAU;
           world.spawnEnemy(kind, p.x + Math.cos(a) * radius, p.y + Math.sin(a) * radius);
@@ -138,7 +145,7 @@ export class Director {
     // Elites.
     this.eliteT -= dt;
     if (this.eliteT <= 0) {
-      this.eliteT = this.cfg.daily === 'bounty' ? 25 : 50;
+      this.eliteT = (this.cfg.daily === 'bounty' ? 25 : 50) * this.scale.eliteEvery;
       const options = SPAWNABLE.filter((k) => k !== 'swarmling' && ENEMIES[k].unlockAt <= t);
       const kind = options.length > 0 ? rng.pick(options) : 'drifter';
       const pt = world.spawnPoint(80);
@@ -166,9 +173,10 @@ export class Director {
   }
 
   private spawnBoss(world: World, kind: EnemyKind, title: string): void {
-    const p = world.player;
+    const c = world.teamCenter();
+    const p = { x: c.x, y: c.y };
     const a = world.spawnRng.next() * TAU;
-    const d = Math.min(world.viewHalfW, world.viewHalfH) * 0.9 + 120;
+    const d = Math.min(world.effHalfW(), world.effHalfH()) * 0.9 + 120;
     const e = world.spawnEnemy(kind, p.x + Math.cos(a) * d, p.y + Math.sin(a) * d);
     if (e) {
       e.fireT = 2;

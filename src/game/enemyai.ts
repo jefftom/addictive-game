@@ -1,31 +1,43 @@
 import { TAU } from '../core/math';
-import type { Enemy } from './types';
+import type { Enemy, Player } from './types';
 import type { World } from './world';
 
 const KNOCK_DECAY = 9;
 
+/** The pilot this enemy chases. */
+export function targetOf(world: World, _e: Enemy): Player {
+  return world.players[0]!;
+}
+
 export function updateEnemies(world: World, dt: number): void {
-  const p = world.player;
-  const slow = world.hasRelic('chrono') ? 0.88 : 1;
-  const farLimit = Math.max(world.viewHalfW, world.viewHalfH) * 1.5 + 350;
+  // Chrono Field is team-wide (does not stack).
+  const slow = world.teamHasRelic('chrono') ? 0.88 : 1;
+  const farLimit = Math.max(world.effHalfW(), world.effHalfH()) * 1.5 + 350;
   const decay = Math.exp(-KNOCK_DECAY * dt);
+  const coop = world.coop;
+  const center = world.teamCenter();
+  const cx = center.x;
+  const cy = center.y;
 
   for (const e of world.enemies) {
     if (e.dead) continue;
     if (e.spawnT > 0) e.spawnT -= dt;
     if (e.flash > 0) e.flash -= dt;
 
+    let p = targetOf(world, e);
     let dx = p.x - e.x;
     let dy = p.y - e.y;
     let d = Math.hypot(dx, dy) || 1;
 
-    // Enemies left far behind are recycled ahead of the player.
-    if (!e.boss && d > farLimit) {
+    // Enemies left far behind the team view are recycled ahead of the team.
+    const far = coop ? Math.hypot(e.x - cx, e.y - cy) : d;
+    if (!e.boss && far > farLimit) {
       const sp = world.spawnPoint(60);
       e.x = sp.x;
       e.y = sp.y;
       e.kx = 0;
       e.ky = 0;
+      if (coop) p = targetOf(world, e);
       dx = p.x - e.x;
       dy = p.y - e.y;
       d = Math.hypot(dx, dy) || 1;

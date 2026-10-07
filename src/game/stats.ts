@@ -1,7 +1,7 @@
 import { PASSIVES, RELICS } from './content/passives';
 import { SHIPS } from './content/ships';
 import { WORKSHOP } from './content/workshop';
-import type { PassiveId, RelicId, RunConfig, Stats } from './types';
+import type { PassiveId, RelicId, RunConfig, ShipId, Stats } from './types';
 
 export function baseStats(): Stats {
   return {
@@ -34,9 +34,10 @@ export function computeStats(
   cfg: RunConfig,
   passives: Partial<Record<PassiveId, number>>,
   relics: readonly RelicId[],
+  ship: ShipId = cfg.ship,
 ): Stats {
   const s = baseStats();
-  SHIPS[cfg.ship].apply(s);
+  SHIPS[ship].apply(s);
   for (const def of WORKSHOP) {
     const lvl = cfg.workshop[def.id] ?? 0;
     if (lvl > 0) def.apply(s, lvl);

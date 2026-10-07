@@ -31,12 +31,13 @@ export function offerRarity(o: Offer): Rarity {
 }
 
 /** Weapons whose evolution is currently available. */
-export function availableEvolutions(world: World): WeaponId[] {
+export function availableEvolutions(world: World, pid = 0): WeaponId[] {
   const out: WeaponId[] = [];
-  for (const w of world.build.weapons) {
+  const build = world.players[pid]!.build;
+  for (const w of build.weapons) {
     if (w.evolved || w.level < MAX_WEAPON_LEVEL) continue;
     const partner = WEAPONS[w.id].evolvesWith;
-    if ((world.build.passives[partner] ?? 0) > 0) out.push(w.id);
+    if ((build.passives[partner] ?? 0) > 0) out.push(w.id);
   }
   return out;
 }
@@ -46,8 +47,9 @@ interface Candidate {
   weight: number;
 }
 
-export function offerCandidates(world: World, cache: boolean): Candidate[] {
-  const { build, cfg, stats } = world;
+export function offerCandidates(world: World, cache: boolean, pid = 0): Candidate[] {
+  const { cfg } = world;
+  const { build, stats } = world.players[pid]!;
   const out: Candidate[] = [];
   const ownedWeapons = new Set(build.weapons.map((w) => w.id));
 
@@ -90,19 +92,19 @@ export function offerCandidates(world: World, cache: boolean): Candidate[] {
  * Builds a set of distinct offers. Evolutions (if available) are always
  * included first; caches guarantee one relic when relics are unlocked.
  */
-export function generateOffers(world: World, count: number, cache = false): Offer[] {
+export function generateOffers(world: World, count: number, cache = false, pid = 0): Offer[] {
   const rng = world.lootRng;
   const offers: Offer[] = [];
   const used = new Set<string>();
 
-  for (const id of availableEvolutions(world)) {
+  for (const id of availableEvolutions(world, pid)) {
     if (offers.length >= count) break;
     const o: Offer = { kind: 'evolve', id };
     offers.push(o);
     used.add(offerKey(o));
   }
 
-  const candidates = offerCandidates(world, cache);
+  const candidates = offerCandidates(world, cache, pid);
 
   if (cache && offers.length < count) {
     const relics = candidates.filter((c) => c.offer.kind === 'relic');
@@ -137,7 +139,8 @@ export function generateOffers(world: World, count: number, cache = false): Offe
 
   // Fallbacks once the build is complete.
   const fillers: Offer[] = [
-    { kind: 'heal' },
+    // A downed pilot can't be healed, so the heal card is hidden for them.
+    ...(world.players[pid]!.downed ? [] : [{ kind: 'heal' } as const]),
     { kind: 'cores', amount: 5 + Math.floor(world.time / 60) * 2 },
     { kind: 'score', amount: 500 + Math.floor(world.time) * 10 },
   ];
@@ -148,13 +151,14 @@ export function generateOffers(world: World, count: number, cache = false): Offe
   return offers;
 }
 
-export function applyOffer(world: World, offer: Offer): void {
-  const { build } = world;
+export function applyOffer(world: World, offer: Offer, pid = 0): void {
+  const p = world.players[pid]!;
+  const { build } = p;
   switch (offer.kind) {
     case 'weapon': {
       const existing = build.weapons.find((w) => w.id === offer.id);
       if (existing) existing.level = Math.min(MAX_WEAPON_LEVEL, existing.level + 1);
-      else if (build.weapons.length < MAX_WEAPONS) world.addWeapon(offer.id);
+      else if (build.weapons.length < MAX_WEAPONS) world.addWeapon(offer.id, pid);
       break;
     }
     case 'evolve': {
@@ -163,6 +167,7 @@ export function applyOffer(world: World, offer: Offer): void {
         w.evolved = true;
         w.timer = 0;
         world.runStats.evolutions++;
+        p.run.evolutions++;
       }
       break;
     }
@@ -173,13 +178,13 @@ export function applyOffer(world: World, offer: Offer): void {
     case 'relic': {
       if (!build.relics.includes(offer.id)) build.relics.push(offer.id);
       if (offer.id === 'shield') {
-        world.player.shieldReady = true;
-        world.player.shieldT = 0;
+        p.shieldReady = true;
+        p.shieldT = 0;
       }
       break;
     }
     case 'heal':
-      world.heal(world.stats.maxHp * 0.4);
+      world.heal(p.stats.maxHp * 0.4, pid);
       break;
     case 'cores':
       world.runStats.coresCollected += offer.amount;
@@ -188,7 +193,7 @@ export function applyOffer(world: World, offer: Offer): void {
       world.addScore(offer.amount);
       break;
   }
-  world.refreshStats();
+  world.refreshStats(pid);
 }
 
 export function offerTitle(o: Offer): string {
