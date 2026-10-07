@@ -51,6 +51,35 @@ export interface RunRecord {
   daily: boolean;
 }
 
+/** Narrative progress (intro crawl, Ship's Log, game-over quip rotation). */
+export interface StoryState {
+  introSeen: boolean;
+  /** Logbook entry ids unlocked so far (in unlock order). */
+  logUnlocked: string[];
+  /** Logbook entry ids the player has opened. */
+  logSeen: string[];
+  /** Keys of recently shown game-over quips (newest last). */
+  quipHistory: string[];
+}
+
+export function defaultStoryState(): StoryState {
+  return { introSeen: false, logUnlocked: [], logSeen: [], quipHistory: [] };
+}
+
+const strList = (v: unknown, max: number): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string').slice(-max) : [];
+
+/** Sanitises a stored story block; missing or malformed fields fall back to defaults. */
+export function normalizeStoryState(raw: unknown): StoryState {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<Record<keyof StoryState, unknown>>;
+  return {
+    introSeen: r.introSeen === true,
+    logUnlocked: [...new Set(strList(r.logUnlocked, 200))],
+    logSeen: [...new Set(strList(r.logSeen, 200))],
+    quipHistory: strList(r.quipHistory, 32),
+  };
+}
+
 export interface SaveData {
   version: number;
   cores: number;
@@ -67,6 +96,8 @@ export interface SaveData {
   settings: Settings;
   tutorialDone: boolean;
   history: RunRecord[];
+  /** Story/narrative state. Optional so older saves stay valid; migrate() always fills it. */
+  story?: StoryState;
 }
 
 export const SAVE_KEY = 'shardstorm.save';
@@ -146,6 +177,7 @@ export function migrate(raw: unknown): SaveData {
   if (!Number.isFinite(out.rank) || out.rank < 1) out.rank = 1;
   if (!(out.ship in SHIPS)) out.ship = 'spark';
   if (!['default', 'ember', 'aurora', 'prism'].includes(out.settings.trail)) out.settings.trail = 'default';
+  out.story = normalizeStoryState(r.story);
   return out;
 }
 
