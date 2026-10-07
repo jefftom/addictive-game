@@ -7,3 +7,6 @@ playwright-report/
 .DS_Store
 .vite/
 coverage/
+
+# Agent git worktrees (tooling scratch space)
+.claude/worktrees/
