@@ -97,7 +97,7 @@ function fresh(seed = 1, cfg: Partial<DirectorConfig> = {}, ships: ShipId[] = ['
   return d;
 }
 
-const kill = (): GameEvent => ({ t: 'kill', x: 0, y: 0, color: '#fff', r: 10, elite: false, boss: false, score: 10, dash: false });
+const kill = (): GameEvent => ({ t: 'kill', x: 0, y: 0, color: '#fff', r: 10, elite: false, boss: false, score: 10, dash: false, pid: 0 });
 
 /** How to provoke each trigger through the public API. */
 const PROVOKE: Record<BarkTrigger, ((d: StoryDirector) => void) | null> = {
@@ -108,21 +108,21 @@ const PROVOKE: Record<BarkTrigger, ((d: StoryDirector) => void) | null> = {
   levelup: (d) => d.onEvent({ t: 'levelup', level: 2 }),
   evolve: (d) => d.signal({ kind: 'evolve' }),
   relic: (d) => d.signal({ kind: 'relic' }),
-  cache: (d) => d.onEvent({ t: 'pickup', kind: 'cache', value: 1 }),
+  cache: (d) => d.onEvent({ t: 'pickup', kind: 'cache', value: 1, pid: 0 }),
   combo_x2: (d) => d.onEvent({ t: 'combo', tier: 1, mult: 2 }),
   combo_x5: (d) => d.onEvent({ t: 'combo', tier: 4, mult: 5 }),
   combo_x10: (d) => d.onEvent({ t: 'combo', tier: 7, mult: 10 }),
   milestone: (d) => d.onEvent({ t: 'milestone', name: 'NOVA BURST', combo: 100 }),
   overdrive: (d) => d.onEvent({ t: 'milestone', name: 'OVERDRIVE', combo: 200 }),
-  perfect: (d) => d.onEvent({ t: 'perfect', x: 0, y: 0 }),
+  perfect: (d) => d.onEvent({ t: 'perfect', x: 0, y: 0, pid: 0 }),
   low_hp: (d) => d.signal({ kind: 'lowHp' }),
-  heal: (d) => d.onEvent({ t: 'heal', amount: 10 }),
-  shield_break: (d) => d.onEvent({ t: 'shieldbreak', x: 0, y: 0 }),
+  heal: (d) => d.onEvent({ t: 'heal', amount: 10, pid: 0 }),
+  shield_break: (d) => d.onEvent({ t: 'shieldbreak', x: 0, y: 0, pid: 0 }),
   elite: (d) => d.onEvent({ t: 'elite', x: 0, y: 0 }),
   surge: (d) => d.onEvent({ t: 'surge' }),
   boss_half: (d) => d.signal({ kind: 'bossHalf' }),
   new_best: (d) => d.onEvent({ t: 'newbest' }),
-  revive: (d) => d.onEvent({ t: 'revive', x: 0, y: 0 }),
+  revive: (d) => d.onEvent({ t: 'revive', x: 0, y: 0, pid: 0 }),
   idle: (d) => d.signal({ kind: 'idle' }),
   overtime: null,
   coop_down: (d) => d.signal({ kind: 'coopDown', player: 0 }),
@@ -316,8 +316,8 @@ describe('StoryDirector triggers', () => {
     const d = director(11);
     d.startRun({ ships: ['tempest'] });
     const evs: GameEvent[] = [
-      kill(), { t: 'levelup', level: 3 }, { t: 'perfect', x: 0, y: 0 }, { t: 'heal', amount: 3 },
-      { t: 'combo', tier: 1, mult: 2 }, { t: 'shieldbreak', x: 0, y: 0 }, { t: 'elite', x: 0, y: 0 },
+      kill(), { t: 'levelup', level: 3 }, { t: 'perfect', x: 0, y: 0, pid: 0 }, { t: 'heal', amount: 3, pid: 0 },
+      { t: 'combo', tier: 1, mult: 2 }, { t: 'shieldbreak', x: 0, y: 0, pid: 0 }, { t: 'elite', x: 0, y: 0 },
     ];
     const all: CommsMessage[] = [];
     for (let i = 0; i < 3000; i++) {
@@ -336,7 +336,7 @@ describe('StoryDirector triggers', () => {
       const out: string[] = [];
       for (let i = 0; i < 2000; i++) {
         if (i % 7 === 0) d.onEvent({ t: 'levelup', level: i });
-        if (i % 13 === 0) d.onEvent({ t: 'perfect', x: 0, y: 0 });
+        if (i % 13 === 0) d.onEvent({ t: 'perfect', x: 0, y: 0, pid: 0 });
         if (i === 500) d.onEvent({ t: 'boss', name: 'The Warden', title: '' });
         d.update(0.05);
         out.push(...d.consumeShown().map((m) => `${m.key}@${d.time.toFixed(2)}`));
@@ -353,8 +353,8 @@ describe('StoryDirector pacing', () => {
     const starts: number[] = [];
     for (let i = 0; i < 1200; i++) {
       d.onEvent({ t: 'levelup', level: 2 });
-      d.onEvent({ t: 'perfect', x: 0, y: 0 });
-      d.onEvent({ t: 'shieldbreak', x: 0, y: 0 });
+      d.onEvent({ t: 'perfect', x: 0, y: 0, pid: 0 });
+      d.onEvent({ t: 'shieldbreak', x: 0, y: 0, pid: 0 });
       d.update(0.1);
       for (const m of d.consumeShown()) if (m.priority === PRIORITY.common) starts.push(d.time);
     }
@@ -367,7 +367,7 @@ describe('StoryDirector pacing', () => {
     const d = fresh(5);
     d.signal({ kind: 'evolve' });
     expect(d.current!.source).toBe('evolve');
-    for (let i = 0; i < 20; i++) d.onEvent({ t: 'perfect', x: 0, y: 0 });
+    for (let i = 0; i < 20; i++) d.onEvent({ t: 'perfect', x: 0, y: 0, pid: 0 });
     expect(d.pending).toBe(0);
     expect(d.current!.source).toBe('evolve');
   });
@@ -492,7 +492,7 @@ describe('no-repeat shuffle bags and pilot mixing', () => {
 describe('co-op captains', () => {
   it('per-player events speak with that player\'s captain', () => {
     const d = fresh(1, { pilotMix: 1 }, ['spark', 'phantom']);
-    for (let i = 0; i < 20 && !d.current; i++) d.onEvent({ t: 'perfect', x: 0, y: 0 }, 1);
+    for (let i = 0; i < 20 && !d.current; i++) d.onEvent({ t: 'perfect', x: 0, y: 0, pid: 0 }, 1);
     expect(d.current!.speaker.id).toBe('nocturne');
     expect(d.current!.ship).toBe('phantom');
   });
