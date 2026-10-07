@@ -1,0 +1,95 @@
+# electron-builder config for the SHARDSTORM desktop (Steam) build.
+# Produces UNPACKED app folders for SteamPipe (no installers, no auto-updater: Steam updates the game).
+#   release/win-unpacked/      -> Windows depot   (SHARDSTORM.exe)
+#   release/mac-universal/     -> macOS depot     (SHARDSTORM.app)
+#   release/linux-unpacked/    -> Linux depot     (shardstorm)
+# Build on the matching OS (CI matrix in .github/workflows/desktop.yml): `npm run desktop:dist`.
+# Icons: drop build/icon.png (1024x1024), build/icon.ico and build/icon.icns in place; electron-builder picks them up.
+appId: com.shardstorm.game # placeholder reverse-DNS id
+productName: SHARDSTORM
+copyright: "Copyright © 2026 SHARDSTORM"
+
+directories:
+  output: release # NOT dist/: that is Vite's output
+  buildResources: build
+
+# Whitelist. NOTE (observed with electron-builder 26.15.3): a platform-level `files` list that
+# only had exclusions packaged the WHOLE repo (src/, docs/, steam_appid.txt). So each platform repeats
+# the whitelist and adds its own steamworks.js exclusions. Keep the four lists in sync.
+files:
+  - dist/**
+  - desktop/**
+  - steam/achievements.json # achievement allowlist read by desktop/main.cjs
+  - package.json
+  - "!**/*.map"
+  - "!node_modules/@types/**"
+  - "!node_modules/undici-types/**"
+
+asar: true
+# steamworks.js ships N-API .node files plus libsteam_api; native code cannot load from inside asar.
+asarUnpack:
+  - node_modules/steamworks.js/**
+npmRebuild: false # N-API prebuilt binaries, nothing to rebuild
+publish: null # no auto-updater (also stops resources/app-update.yml)
+
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false # the game is served from app://, never file://
+
+win:
+  target:
+    - target: dir
+      arch: [x64]
+  files:
+    - dist/**
+    - desktop/**
+    - steam/achievements.json
+    - package.json
+    - "!**/*.map"
+    - "!node_modules/@types/**"
+    - "!node_modules/undici-types/**"
+    - "!node_modules/steamworks.js/dist/{osx,linux64}/**"
+    - "!node_modules/steamworks.js/dist/win64/*.lib"
+  # Steamworks redistributable next to the exe as well (as the steamworks.js README recommends).
+  extraFiles:
+    - from: node_modules/steamworks.js/dist/win64/steam_api64.dll
+      to: steam_api64.dll
+
+mac:
+  target:
+    - target: dir
+      arch: [universal]
+  category: public.app-category.action-games
+  hardenedRuntime: true
+  # Identical Mach-O files in both arch trees (universal dylib + per-arch .node).
+  x64ArchFiles: "**/node_modules/steamworks.js/dist/osx/*"
+  files:
+    - dist/**
+    - desktop/**
+    - steam/achievements.json
+    - package.json
+    - "!**/*.map"
+    - "!node_modules/@types/**"
+    - "!node_modules/undici-types/**"
+    - "!node_modules/steamworks.js/dist/{win64,linux64}/**"
+  # Signing/notarisation: set CSC_LINK/CSC_KEY_PASSWORD and APPLE_* secrets (docs/STEAM.md).
+
+linux:
+  target:
+    - target: dir
+      arch: [x64]
+  executableName: shardstorm
+  category: Game
+  files:
+    - dist/**
+    - desktop/**
+    - steam/achievements.json
+    - package.json
+    - "!**/*.map"
+    - "!node_modules/@types/**"
+    - "!node_modules/undici-types/**"
+    - "!node_modules/steamworks.js/dist/{osx,win64}/**"

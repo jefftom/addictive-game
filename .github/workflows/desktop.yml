@@ -1,0 +1,147 @@
+# Desktop (Electron + Steamworks) builds for Steam.
+#
+# build:  on every OS, typecheck + tests + Vite build, then electron-builder writes the UNPACKED
+#         app folder that SteamPipe uploads. Each folder is uploaded as a .tar.gz artifact
+#         (tar keeps the executable bits that plain artifact zips drop).
+# deploy: OFF by default. Manual only (Run workflow -> deploy = true) AND the repository variable
+#         STEAM_DEPLOY_ENABLED must be "true". Uploads the three depots with game-ci/steam-deploy
+#         to a NON-default branch (beta by default). Promote to "default" by hand in Steamworks.
+#
+# Repository settings used (Settings -> Secrets and variables -> Actions), see docs/STEAM.md:
+#   vars.STEAM_DEPLOY_ENABLED   "true" to allow the deploy job
+#   vars.STEAM_APP_ID           real AppID (also stamped into desktop/build-flags.json)
+#   vars.STEAM_FIRST_DEPOT_ID   Windows depot id; macOS = +1, Linux = +2 (depot1..3 below)
+#   secrets.STEAM_USERNAME      dedicated builder account
+#   secrets.STEAM_CONFIG_VDF    base64 of config/config.vdf after one `steamcmd +login` with Steam Guard
+# and a GitHub environment named "steam" with required reviewers.
+name: desktop
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - 'steam/**'
+      - 'src/platform/**'
+      - 'electron-builder.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/desktop-smoke.mjs'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Upload to Steam (also needs vars.STEAM_DEPLOY_ENABLED == "true")'
+        type: boolean
+        default: false
+      branch:
+        description: 'Steam branch to set live (never "default")'
+        type: string
+        default: beta
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: --win
+            out: win-unpacked
+            exe: release/win-unpacked/SHARDSTORM.exe
+          - os: macos-latest
+            target: --mac
+            out: mac-universal
+            exe: release/mac-universal/SHARDSTORM.app/Contents/MacOS/SHARDSTORM
+          - os: ubuntu-latest
+            target: --linux
+            out: linux-unpacked
+            exe: release/linux-unpacked/shardstorm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck, unit tests, web build
+        run: npm run check
+      - name: Steam achievement table is up to date
+        run: node scripts/gen-steam-achievements.mjs --check
+
+      - name: Desktop smoke (dev Electron + Playwright, Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb
+          node scripts/desktop-smoke.mjs
+
+      - name: Stamp Steam release flags
+        if: vars.STEAM_APP_ID != ''
+        run: |
+          printf '{\n  "steamRelease": true,\n  "steamAppId": %s\n}\n' "${{ vars.STEAM_APP_ID }}" > desktop/build-flags.json
+          cat desktop/build-flags.json
+
+      - name: Package (unpacked dir)
+        run: npx electron-builder ${{ matrix.target }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false' # until signing secrets exist (docs/STEAM.md)
+
+      - name: Packaged smoke (Linux)
+        if: runner.os == 'Linux'
+        run: SHARDSTORM_SMOKE=1 SHARDSTORM_NO_STEAM=1 xvfb-run -a ${{ matrix.exe }} --no-sandbox
+      - name: Packaged smoke (Windows/macOS, informational)
+        if: runner.os != 'Linux'
+        continue-on-error: true # not yet verified on hosted runners
+        run: SHARDSTORM_SMOKE=1 SHARDSTORM_NO_STEAM=1 "${{ matrix.exe }}"
+
+      - name: Archive unpacked build
+        run: tar -czf ${{ matrix.out }}.tar.gz -C release ${{ matrix.out }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.out }}
+          path: ${{ matrix.out }}.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  deploy:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy && vars.STEAM_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest # steam-deploy is a Docker action
+    environment: steam # add required reviewers to this environment
+    steps:
+      - name: Refuse the default branch
+        if: inputs.branch == 'default' || inputs.branch == ''
+        run: |
+          echo "Set a beta branch; promote to default by hand in Steamworks." && exit 1
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Unpack depots
+        run: |
+          mkdir -p build
+          for f in artifacts/*/*.tar.gz; do tar -xzf "$f" -C build; done
+          ls -la build
+          # Release depots must not contain steam_appid.txt.
+          ! find build -name steam_appid.txt | grep -q .
+      - uses: game-ci/steam-deploy@50f6b29fc64922e19a16d202a88fe199d394b536 # v3.2.1
+        with:
+          username: ${{ secrets.STEAM_USERNAME }}
+          configVdf: ${{ secrets.STEAM_CONFIG_VDF }}
+          appId: ${{ vars.STEAM_APP_ID }}
+          firstDepotIdOverride: ${{ vars.STEAM_FIRST_DEPOT_ID }}
+          buildDescription: ${{ github.ref_name }} (${{ github.sha }})
+          rootPath: build
+          depot1Path: win-unpacked
+          depot2Path: mac-universal
+          depot3Path: linux-unpacked
+          releaseBranch: ${{ inputs.branch }}

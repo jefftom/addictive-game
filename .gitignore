@@ -10,3 +10,7 @@ coverage/
 
 # Agent git worktrees (tooling scratch space)
 .claude/worktrees/
+
+# Desktop (Electron) build output and SteamPipe logs
+release/
+steam-output/

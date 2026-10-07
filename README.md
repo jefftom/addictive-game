@@ -59,6 +59,11 @@ There are also guardrails: no real money, ads, loot boxes or energy timers; stre
 | `npm run sim` | Headless balance report: a bot plays dozens of runs ([details](#balance-simulation)) |
 | `npm run build` | Production build to `dist/` |
 | `npm run build:single` | Self-contained `dist-single/shardstorm.html` |
+| `npm run desktop:dev` | Build, then run the game in the Electron desktop shell |
+| `npm run desktop:smoke` | Build, then drive the real Electron window with Playwright (title screen, a run, save file, no-Steam fallback) |
+| `npm run desktop:pack` | Unpacked desktop build for this OS in `release/` |
+| `npm run desktop:dist` | Release check (typecheck, tests, achievement table) + unpacked desktop build for this OS |
+| `npm run steam:achievements` | Regenerate `steam/achievements.json` from `src/meta/achievements.ts` |
 
 Debug URL parameters: `?autoplay` lets the bot play the real game, and `?warp=180` fast-forwards a new run by 180 seconds (useful for inspecting bosses).
 
@@ -73,6 +78,9 @@ src/
   render/    canvas renderer, glow sprites, particles, effects, HUD, background
   audio/     procedural WebAudio SFX and music sequencer
   ui/        DOM menus, level-up cards, results screen, styles
+  platform/  web vs desktop (Steam) platform layer: saves, achievements, rich presence
+desktop/     Electron main process, sandboxed preload bridge, Steamworks wrapper, atomic save file
+steam/       SteamPipe VDF templates, achievements table, rich presence tokens, dev steam_appid.txt
 tests/       unit tests + balance simulation (*.sim.ts)
 e2e/         Playwright smoke tests
 ```
@@ -99,6 +107,8 @@ The bot is not a human. These numbers are a baseline for tuning, not a substitut
 
 - **GitHub Pages:** `.github/workflows/deploy.yml` builds and publishes on every push to `main`. One-time setup: **Settings → Pages → Source: GitHub Actions**.
 - **Anywhere else:** upload `dist/` (relative paths, so any sub-path works) or the single `dist-single/shardstorm.html`.
+
+- **Steam (desktop):** an Electron shell with Steamworks (achievements, rich presence, Auto-Cloud saves, overlay). See [docs/STEAM.md](docs/STEAM.md) for the full release guide and [steam/README.md](steam/README.md) for the SteamPipe files. `.github/workflows/desktop.yml` builds unpacked Windows, macOS and Linux apps; its Steam upload job is off by default.
 
 CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the Playwright tests on every PR, and attaches the single-file build as a downloadable artifact.
 

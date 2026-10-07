@@ -1,0 +1,26 @@
+"lang"
+{
+	"Language" "english"
+	"Tokens"
+	{
+		// Upload in Steamworks > Community > Rich Presence. Keys come from desktop/validate.cjs:
+		// steam_display (one of the #Status tokens), sector (1-4), ship (ship id), players (1-4), time (m:ss).
+		"#Status_Menu"      "On the bridge, pretending to read the manual"
+		"#Status_Hangar"    "In the fleet shipyard"
+		"#Status_Run"       "{#Sector_%sector%} · %time% · {#Ship_%ship%} · %players% pilot(s)"
+		"#Status_Victory"   "Survived the Shardstorm! Shields at 20%."
+		"#Status_Overtime"  "Overtime in the Gilded Throne ({#Ship_%ship%})"
+		"#Status_Results"   "Filing the after-action report"
+
+		"#Sector_1"         "The Turquoise Whorl"
+		"#Sector_2"         "The Garnet Nebula"
+		"#Sector_3"         "The Amethyst Abyss"
+		"#Sector_4"         "The Gilded Throne"
+
+		"#Ship_spark"       "the Glimmer of Hope"
+		"#Ship_vanguard"    "the Immovable Object"
+		"#Ship_tempest"     "the Already Gone"
+		"#Ship_bastion"     "the Big Warm Hug"
+		"#Ship_phantom"     "the Definitely Not Here"
+	}
+}
