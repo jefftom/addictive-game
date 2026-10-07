@@ -25,9 +25,10 @@ export function targetOf(world: World, e: Enemy): Player {
       best = p;
     }
   }
-  const cur = ps[e.tgt] ?? ps[0]!;
-  if (!best) return cur; // Only after a team wipe (gameOver).
-  if (cur !== best && world.isUp(cur)) {
+  // `cur` is undefined while the enemy has no target yet (tgt -1).
+  const cur = ps[e.tgt];
+  if (!best) return cur ?? ps[0]!; // Only after a team wipe (gameOver).
+  if (cur && cur !== best && world.isUp(cur)) {
     const dx = cur.x - e.x;
     const dy = cur.y - e.y;
     if (bestD2 > (dx * dx + dy * dy) * HYST2) return cur;
@@ -64,7 +65,11 @@ export function updateEnemies(world: World, dt: number): void {
       e.y = sp.y;
       e.kx = 0;
       e.ky = 0;
-      if (coop) p = targetOf(world, e);
+      if (coop) {
+        // A recycled enemy starts fresh: its old target says nothing about its new spot.
+        e.tgt = -1;
+        p = targetOf(world, e);
+      }
       dx = p.x - e.x;
       dy = p.y - e.y;
       d = Math.hypot(dx, dy) || 1;

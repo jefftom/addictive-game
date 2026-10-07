@@ -114,7 +114,9 @@ export class Director {
       this.budget -= cost;
       if (pack > 1) {
         const pt = world.spawnPoint(80);
-        for (let i = 0; i < pack; i++) world.spawnEnemy(kind, pt.x + rng.range(-40, 40), pt.y + rng.range(-40, 40));
+        const px = pt.x;
+        const py = pt.y;
+        for (let i = 0; i < pack; i++) world.spawnEnemy(kind, px + rng.range(-40, 40), py + rng.range(-40, 40));
       } else {
         const pt = world.spawnPoint(70);
         world.spawnEnemy(kind, pt.x, pt.y);
@@ -133,10 +135,13 @@ export class Director {
         const n = Math.round((12 + t / 10) * (this.cfg.daily === 'giants' ? 0.5 : 1) * this.scale.surge);
         const radius = Math.max(world.effHalfW(), world.effHalfH()) * 0.95 + 40;
         const c = world.teamCenter();
-        const p = { x: c.x, y: c.y };
+        const cx = c.x;
+        const cy = c.y;
         for (let i = 0; i < n; i++) {
           const a = offset + (i / n) * TAU;
-          world.spawnEnemy(kind, p.x + Math.cos(a) * radius, p.y + Math.sin(a) * radius);
+          // Co-op: points that would land on an edge pilot are pushed outward.
+          const r = world.clearRadius(cx, cy, a, radius);
+          world.spawnEnemy(kind, cx + Math.cos(a) * r, cy + Math.sin(a) * r);
         }
         world.events.push({ t: 'surge' });
       }
@@ -174,10 +179,11 @@ export class Director {
 
   private spawnBoss(world: World, kind: EnemyKind, title: string): void {
     const c = world.teamCenter();
-    const p = { x: c.x, y: c.y };
+    const cx = c.x;
+    const cy = c.y;
     const a = world.spawnRng.next() * TAU;
-    const d = Math.min(world.effHalfW(), world.effHalfH()) * 0.9 + 120;
-    const e = world.spawnEnemy(kind, p.x + Math.cos(a) * d, p.y + Math.sin(a) * d);
+    const d = world.clearRadius(cx, cy, a, Math.min(world.effHalfW(), world.effHalfH()) * 0.9 + 120);
+    const e = world.spawnEnemy(kind, cx + Math.cos(a) * d, cy + Math.sin(a) * d);
     if (e) {
       e.fireT = 2;
       e.summonT = 5;

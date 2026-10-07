@@ -98,11 +98,12 @@ export interface Enemy {
   aimY: number;
   fireT: number;
   summonT: number;
-  /** pid of the player this enemy is chasing (always 0 in solo). */
+  /** pid of the player this enemy is chasing (always 0 in solo; -1 in co-op until first targeted). */
   tgt: number;
   /** Last orbit-blade hit time, one entry per player (so two orbits never block each other). */
   orbitHitT: number[];
-  dashHitId: number;
+  /** Id of the last dash that hit this enemy, one entry per player (each dash hits once). */
+  dashHitId: number[];
   spawnT: number;
   dead: boolean;
 }

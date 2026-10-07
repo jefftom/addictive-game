@@ -206,6 +206,26 @@ describe('enemy targeting', () => {
     expect(e.tgt).toBe(0);
   });
 
+  it('a new enemy far away picks the nearest pilot, not P1 by default', () => {
+    const w = coopWorld(['spark', 'spark']);
+    quiet(w);
+    const enemies = [];
+    for (let i = 0; i < 120; i++) {
+      const a = (i / 120) * Math.PI * 2 + 0.01;
+      const e = w.spawnEnemy('drifter', Math.cos(a) * 800, Math.sin(a) * 800)!;
+      e.speed = 0;
+      enemies.push(e);
+    }
+    tick(w, 1);
+    let onP2 = 0;
+    for (const e of enemies) {
+      const want = Math.hypot(e.x - w.players[1]!.x, e.y) < Math.hypot(e.x - w.players[0]!.x, e.y) ? 1 : 0;
+      expect(e.tgt).toBe(want);
+      onP2 += want;
+    }
+    expect(onP2).toBe(60);
+  });
+
   it('does not jitter between two nearly equidistant pilots (hysteresis)', () => {
     const w = coopWorld();
     quiet(w);
@@ -352,6 +372,46 @@ describe('leash and zoom', () => {
     expect(w.zoom).toBeLessThan(1.01);
   });
 
+  it('a pilot walking away never tows a teammate (any pid, 2-4 pilots)', () => {
+    const cases: { ships: ShipId[]; inputs: ControlInput[] }[] = [
+      { ships: ['spark', 'spark'], inputs: [still, right] },
+      { ships: ['spark', 'spark'], inputs: [right, still] },
+      { ships: ['spark', 'spark', 'spark'], inputs: [still, left, still] },
+      { ships: ['spark', 'spark', 'spark', 'spark'], inputs: [still, still, still, right] },
+    ];
+    for (const { ships, inputs } of cases) {
+      const w = coopWorld(ships);
+      quiet(w);
+      const span = w.maxSpan().x;
+      const start = w.players.map((p) => p.x);
+      for (let i = 0; i < 60 * 20; i++) {
+        tick(w, 1, inputs);
+        const xs = w.players.map((p) => p.x);
+        expect(Math.max(...xs) - Math.min(...xs)).toBeLessThanOrEqual(span + 1e-9);
+      }
+      w.players.forEach((p, pid) => {
+        if (inputs[pid] === still) expect(p.x).toBe(start[pid]);
+      });
+      const xs = w.players.map((p) => p.x);
+      expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(span, 6);
+    }
+  });
+
+  it('pilots moving apart (and dashing) stay within the max span', () => {
+    const w = coopWorld(['spark', 'spark', 'spark']);
+    quiet(w);
+    const span = w.maxSpan();
+    const dashL: ControlInput = { mx: -1, my: 1, dash: true };
+    const dashR: ControlInput = { mx: 1, my: -1, dash: true };
+    for (let i = 0; i < 60 * 15; i++) {
+      tick(w, 1, i % 30 === 0 ? [dashL, still, dashR] : [left, { mx: 0, my: 1, dash: false }, right]);
+      const xs = w.players.map((p) => p.x);
+      const ys = w.players.map((p) => p.y);
+      expect(Math.max(...xs) - Math.min(...xs)).toBeLessThanOrEqual(span.x + 1e-9);
+      expect(Math.max(...ys) - Math.min(...ys)).toBeLessThanOrEqual(span.y + 1e-9);
+    }
+  });
+
   it('solo zoom stays exactly 1', () => {
     const w = new World(makeRunConfig({ seed: 3 }));
     for (let i = 0; i < 60 * 30 && !w.gameOver; i++) {
@@ -492,6 +552,172 @@ describe('spawn clearance', () => {
       if (!w.clearOfPlayers(pt.x, pt.y, SPAWN_CLEARANCE)) close++;
     }
     expect(close).toBeLessThanOrEqual(4);
+  });
+});
+
+describe('surge and boss clearance', () => {
+  const edgeWorld = (axis: 'x' | 'y'): World => {
+    const w = coopWorld(['spark', 'spark']);
+    quiet(w);
+    w.zoom = ZOOM_MAX;
+    const half = w.maxSpan()[axis] / 2;
+    w.players[0]!.x = axis === 'x' ? -half : 0;
+    w.players[0]!.y = axis === 'y' ? -half : 0;
+    w.players[1]!.x = axis === 'x' ? half : 0;
+    w.players[1]!.y = axis === 'y' ? half : 0;
+    return w;
+  };
+  const minDist = (w: World): number => {
+    let m = Infinity;
+    for (const e of w.enemies) for (const p of w.players) m = Math.min(m, Math.hypot(e.x - p.x, e.y - p.y));
+    return m;
+  };
+
+  it('surge rings keep SPAWN_CLEARANCE from pilots at the edge of a spread team', () => {
+    for (const axis of ['x', 'y'] as const) {
+      const w = edgeWorld(axis);
+      const d = w.director as unknown as { surgeT: number };
+      let surges = 0;
+      for (let i = 0; i < 20; i++) {
+        w.enemies.length = 0;
+        d.surgeT = 0;
+        w.director.update(w, DT);
+        surges += w.events.filter((ev) => ev.t === 'surge').length;
+        w.events.length = 0;
+        expect(w.enemies.length).toBeGreaterThan(0);
+        expect(minDist(w)).toBeGreaterThanOrEqual(SPAWN_CLEARANCE);
+      }
+      expect(surges).toBe(20);
+    }
+  });
+
+  it('a boss never enters on top of an edge pilot', () => {
+    for (const axis of ['x', 'y'] as const) {
+      const w = edgeWorld(axis);
+      const spawnBoss = (w.director as unknown as { spawnBoss(w: World, k: string, t: string): void }).spawnBoss.bind(w.director);
+      for (let i = 0; i < 40; i++) {
+        w.enemies.length = 0;
+        w.boss = null;
+        spawnBoss(w, 'warden', 'Test');
+        expect(w.enemies).toHaveLength(1);
+        expect(minDist(w)).toBeGreaterThanOrEqual(SPAWN_CLEARANCE);
+      }
+    }
+  });
+});
+
+describe('combat between pilots', () => {
+  it('two pilots dashing through the same enemy hit it once each', () => {
+    const w = coopWorld(['spark', 'spark']);
+    quiet(w);
+    for (const p of w.players) {
+      p.build.weapons.length = 0;
+      p.invuln = 1e9;
+      p.x = -35;
+      p.y = 0;
+    }
+    w.players[1]!.y = 10;
+    const e = w.spawnEnemy('warden', 120, 0)!;
+    e.hp = e.maxHp = 1e9;
+    e.speed = 0;
+    e.mass = 1e9;
+    const dash: ControlInput = { mx: 1, my: 0, dash: true };
+    const evs = [...tick(w, 1, [dash, dash]), ...tick(w, 30, [right, right])];
+    expect(evs.filter((ev) => ev.t === 'hit')).toHaveLength(2);
+    expect(w.players[0]!.run.damage).toBeGreaterThan(0);
+    expect(w.players[1]!.run.damage).toBeGreaterThan(0);
+  });
+
+  it('enemy bullets hurt an up P2, and P2 can graze them with a perfect dash', () => {
+    const w = coopWorld(['spark', 'spark']);
+    quiet(w);
+    const [p1, p2] = w.players;
+    p1!.x = -400;
+    p2!.invuln = 0;
+    w.fireBullet(p2!.x + 40, p2!.y, Math.PI, 300, 10);
+    const evs = tick(w, 20);
+    expect(evs.some((ev) => ev.t === 'hurt' && ev.pid === 1)).toBe(true);
+    expect(evs.some((ev) => ev.t === 'hurt' && ev.pid === 0)).toBe(false);
+    expect(p2!.hp).toBeLessThan(p2!.stats.maxHp);
+    expect(p1!.hp).toBe(p1!.stats.maxHp);
+
+    const hp = p2!.hp;
+    p2!.invuln = 0;
+    w.fireBullet(p2!.x + 60, p2!.y, Math.PI, 300, 10);
+    const evs2 = [...tick(w, 1, [still, { mx: 1, my: 0, dash: true }]), ...tick(w, 8)];
+    expect(evs2.some((ev) => ev.t === 'perfect' && ev.pid === 1)).toBe(true);
+    expect(p2!.hp).toBe(hp);
+  });
+
+  it('orbit blades keep a hit timer per pilot (two Vanguards both hit)', () => {
+    const w = coopWorld(['vanguard', 'vanguard']);
+    quiet(w);
+    for (const p of w.players) {
+      p.x = 0;
+      p.y = 0;
+      p.invuln = 1e9;
+    }
+    const e = w.spawnEnemy('brute', 70, 0)!;
+    e.hp = e.maxHp = 1e9;
+    e.speed = 0;
+    e.mass = 1e9;
+    let both = false;
+    for (let i = 0; i < 240 && !both; i++) {
+      tick(w, 1);
+      both = e.orbitHitT[0] === w.time && e.orbitHitT[1] === w.time;
+    }
+    expect(both).toBe(true);
+    expect(w.players[0]!.run.damage).toBeGreaterThan(0);
+    expect(w.players[1]!.run.damage).toBeGreaterThan(0);
+  });
+
+  it("follow rings and evolved lance beams track their owner, not P1", () => {
+    const w = coopWorld(['spark', 'spark']);
+    quiet(w);
+    const [p1, p2] = w.players;
+    p2!.build.weapons = [{ id: 'lance', level: 1, evolved: true, timer: 0, phase: 0 }];
+    const e = w.spawnEnemy('brute', p2!.x + 200, 0)!;
+    e.hp = e.maxHp = 1e9;
+    e.speed = 0;
+    w.addRing(p2!.x, p2!.y, 300, 2, 1, 0, true, '#fff', 0, 1);
+    tick(w, 1);
+    const ring = w.rings.find((r) => r.owner === 1)!;
+    const beam = w.beams.find((b) => b.owner === 1)!;
+    expect(ring).toBeDefined();
+    expect(beam).toBeDefined();
+    tick(w, 10, [still, { mx: 0, my: 1, dash: false }]);
+    expect(p2!.y).toBeGreaterThan(10);
+    for (const fx of [ring, beam]) {
+      expect(fx.x).toBe(p2!.x);
+      expect(fx.y).toBe(p2!.y);
+      expect(fx.y).not.toBe(p1!.y);
+    }
+  });
+
+  it('Nova Burst makes one ring per up pilot', () => {
+    const w = coopWorld(['spark', 'spark', 'spark']);
+    quiet(w);
+    down(w, 2);
+    w.rings.length = 0;
+    (w as unknown as { triggerMilestone(n: string): void }).triggerMilestone('NOVA BURST');
+    expect(w.rings.map((r) => r.owner)).toEqual([0, 1]);
+    expect(w.rings.map((r) => r.x)).toEqual([w.players[0]!.x, w.players[1]!.x]);
+  });
+
+  it('Vampiric Core heals only the pilot who owns it and lands the kill', () => {
+    const w = coopWorld(['spark', 'spark']);
+    quiet(w);
+    const [p1, p2] = w.players;
+    p2!.build.relics.push('vamp');
+    p1!.hp = 10;
+    p2!.hp = 10;
+    // Kills by P1 never trigger P2's relic.
+    for (let i = 0; i < 200; i++) w.killEnemy(w.spawnEnemy('drifter', 500, 0)!, false, 0);
+    expect(p1!.hp).toBe(10);
+    expect(p2!.hp).toBe(10);
+    for (let i = 0; i < 200; i++) w.killEnemy(w.spawnEnemy('drifter', 500, 0)!, false, 1);
+    expect(p2!.hp).toBeGreaterThan(10);
+    expect(p1!.hp).toBe(10);
   });
 });
 

@@ -6,6 +6,7 @@ import {
   CAM_MARGIN,
   GHOST_SPEED,
   LEASH_EDGE,
+  MAX_PLAYERS,
   REVIVE_DECAY,
   REVIVE_GROWTH,
   REVIVE_HP,
@@ -192,6 +193,11 @@ export class World {
   /** Global dash id sequence, so two players' dashes never share an id. */
   private dashSeq = 0;
   private readonly centerBuf = { x: 0, y: 0 };
+  private readonly spanBuf = { x: 0, y: 0 };
+  private readonly spawnBuf = { x: 0, y: 0 };
+  /** Each pilot's position before this tick's movement (leash reference). */
+  private readonly preX = new Float64Array(MAX_PLAYERS);
+  private readonly preY = new Float64Array(MAX_PLAYERS);
   private readonly velBuf = { x: 0, y: 0 };
 
   constructor(cfg: RunConfig, opts: WorldOptions = {}) {
@@ -485,6 +491,12 @@ export class World {
     this.director.update(this, dt);
     const many = Array.isArray(input);
     let anyUp = false;
+    if (this.coop) {
+      for (const p of this.players) {
+        this.preX[p.pid] = p.x;
+        this.preY[p.pid] = p.y;
+      }
+    }
     for (const p of this.players) {
       const inp = many ? ((input as readonly ControlInput[])[p.pid] ?? NO_INPUT) : p.pid === 0 ? (input as ControlInput) : NO_INPUT;
       this.updatePlayer(p, dt, inp);
@@ -673,8 +685,8 @@ export class World {
         const reach = dashing ? e.r + p.r + 8 : e.r + p.r * 0.8;
         if (dx * dx + dy * dy > reach * reach) continue;
         if (dashing) {
-          if (e.dashHitId !== p.dashId) {
-            e.dashHitId = p.dashId;
+          if (e.dashHitId[p.pid] !== p.dashId) {
+            e.dashHitId[p.pid] = p.dashId;
             this.perfectDash(p);
             const [dmg, crit] = this.rollDamage(DASH_BASE_DAMAGE * p.stats.dashDamage, p.pid);
             this.damageEnemy(e, dmg, crit, p.dashDirX, p.dashDirY, 420, true, p.pid);
@@ -792,20 +804,35 @@ export class World {
     }
   }
 
-  /** Largest allowed span of the present players' bounding box (leash), per axis. */
-  maxSpan(): { x: number; y: number } {
-    return {
-      x: 2 * (this.viewHalfW * ZOOM_MAX - LEASH_EDGE),
-      y: 2 * (this.viewHalfH * ZOOM_MAX - LEASH_EDGE),
-    };
+  /**
+   * Largest allowed span of the present players' bounding box (leash), per
+   * axis. Returns a shared scratch object: copy the values.
+   */
+  maxSpan(): Readonly<{ x: number; y: number }> {
+    const s = this.spanBuf;
+    s.x = 2 * (this.viewHalfW * ZOOM_MAX - LEASH_EDGE);
+    s.y = 2 * (this.viewHalfH * ZOOM_MAX - LEASH_EDGE);
+    return s;
   }
 
   /**
    * Co-op leash: keeps the present players' bounding box within the max-zoom
    * view. It blocks a pilot at the edge and never drags anyone else.
+   *
+   * Each pilot is first clamped against where the others stood before this
+   * tick's movement, so a pilot walking away is stopped instead of towing the
+   * rest. A second pass against current positions is a safety net for the rare
+   * tick where two pilots move apart at once.
    */
   private applyLeash(): void {
     const span = this.maxSpan();
+    const sx = span.x;
+    const sy = span.y;
+    this.leashPass(sx, sy, true);
+    this.leashPass(sx, sy, false);
+  }
+
+  private leashPass(sx: number, sy: number, before: boolean): void {
     for (const p of this.players) {
       if (!p.alive) continue;
       let oMinX = Infinity;
@@ -814,14 +841,16 @@ export class World {
       let oMaxY = -Infinity;
       for (const q of this.players) {
         if (q === p || !q.alive) continue;
-        if (q.x < oMinX) oMinX = q.x;
-        if (q.x > oMaxX) oMaxX = q.x;
-        if (q.y < oMinY) oMinY = q.y;
-        if (q.y > oMaxY) oMaxY = q.y;
+        const qx = before ? this.preX[q.pid]! : q.x;
+        const qy = before ? this.preY[q.pid]! : q.y;
+        if (qx < oMinX) oMinX = qx;
+        if (qx > oMaxX) oMaxX = qx;
+        if (qy < oMinY) oMinY = qy;
+        if (qy > oMaxY) oMaxY = qy;
       }
       if (oMinX === Infinity) continue;
-      const loX = oMaxX - span.x;
-      const hiX = oMinX + span.x;
+      const loX = oMaxX - sx;
+      const hiX = oMinX + sx;
       if (loX > hiX) p.x = (loX + hiX) / 2;
       else if (p.x < loX) {
         p.x = loX;
@@ -830,8 +859,8 @@ export class World {
         p.x = hiX;
         if (p.vx > 0) p.vx = 0;
       }
-      const loY = oMaxY - span.y;
-      const hiY = oMinY + span.y;
+      const loY = oMaxY - sy;
+      const hiY = oMinY + sy;
       if (loY > hiY) p.y = (loY + hiY) / 2;
       else if (p.y < loY) {
         p.y = loY;
@@ -948,9 +977,10 @@ export class World {
       aimY: 0,
       fireT: this.rng.range(1, 2.5),
       summonT: 6,
-      tgt: 0,
-      orbitHitT: this.players.map(() => -99),
-      dashHitId: -1,
+      // -1 in co-op: no current target yet, so the first pick is the nearest pilot.
+      tgt: this.coop ? -1 : 0,
+      orbitHitT: new Array<number>(this.players.length).fill(-99),
+      dashHitId: new Array<number>(this.players.length).fill(-1),
       spawnT: isBoss ? 0.8 : 0.35,
       dead: false,
     };
@@ -1088,8 +1118,11 @@ export class World {
     return best;
   }
 
-  /** A point just outside the visible area, biased toward where the team is heading. */
-  spawnPoint(margin = 70): { x: number; y: number } {
+  /**
+   * A point just outside the visible area, biased toward where the team is
+   * heading. Returns a shared scratch object: copy the values.
+   */
+  spawnPoint(margin = 70): Readonly<{ x: number; y: number }> {
     const center = this.teamCenter();
     const cx = center.x;
     const cy = center.y;
@@ -1101,7 +1134,8 @@ export class World {
     const hh = this.effHalfH();
     const speed = Math.hypot(vx, vy);
     const tries = this.coop ? SPAWN_RETRIES + 1 : 1;
-    let pt = { x: cx, y: cy };
+    let px = cx;
+    let py = cy;
     for (let attempt = 0; attempt < tries; attempt++) {
       let a = rng.next() * TAU;
       if (speed > 40 && rng.chance(0.35)) {
@@ -1111,11 +1145,51 @@ export class World {
       const s = Math.sin(a);
       const edge = Math.min(Math.abs(c) > 1e-6 ? hw / Math.abs(c) : Infinity, Math.abs(s) > 1e-6 ? hh / Math.abs(s) : Infinity);
       const d = edge + margin;
-      pt = { x: cx + c * d, y: cy + s * d };
+      px = cx + c * d;
+      py = cy + s * d;
       // Co-op: a point just off a spread team's view can sit on an edge pilot; try again.
-      if (!this.coop || this.clearOfPlayers(pt.x, pt.y, SPAWN_CLEARANCE)) break;
+      if (!this.coop || this.clearOfPlayers(px, py, SPAWN_CLEARANCE)) break;
     }
+    const pt = this.spawnBuf;
+    pt.x = px;
+    pt.y = py;
     return pt;
+  }
+
+  /**
+   * Distance along the ray from (cx, cy) at angle `a`, starting at `r`, where a
+   * spawn keeps SPAWN_CLEARANCE from every active pilot. Co-op only: used by
+   * surge rings and boss entries, which are placed around the team centre and
+   * could otherwise land on a pilot at the edge of a spread team. Draws no rng.
+   */
+  clearRadius(cx: number, cy: number, a: number, r: number): number {
+    if (!this.coop) return r;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    const c2 = SPAWN_CLEARANCE * SPAWN_CLEARANCE;
+    // A pilot whose clearance disc covers the point pushes it outward past the
+    // disc. A push can land in another pilot's disc, so repeat (at most once per
+    // pilot). Pilots stay inside the zoomed view, so the result stays well
+    // within the enemy recycle distance.
+    for (let pass = 0; pass < this.players.length; pass++) {
+      let moved = false;
+      for (const p of this.players) {
+        if (!this.isUp(p)) continue;
+        const dx = p.x - cx;
+        const dy = p.y - cy;
+        const along = dx * c + dy * s;
+        const perp2 = dx * dx + dy * dy - along * along;
+        if (perp2 >= c2) continue;
+        const half = Math.sqrt(c2 - perp2);
+        // The ray is inside this pilot's disc between along-half and along+half.
+        if (r > along - half && r < along + half) {
+          r = along + half + 1;
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+    return r;
   }
 
   /** True if no active pilot is within `dist` of (x, y). */
@@ -1494,42 +1568,47 @@ export class World {
       if (pk.dead) continue;
       pk.age += dt;
       const wide = pk.kind === 'xp' || pk.kind === 'core';
+      // One pass over the pilots, on squared pre-move distances: the nearest
+      // pilot with this pickup in magnet range, the nearest active pilot, and
+      // the nearest pilot close enough to collect it.
+      let q: PlayerState | null = null;
+      let qD2 = Infinity;
+      let near: PlayerState | null = null;
+      let nearD2 = Infinity;
+      let collector: PlayerState | null = null;
+      let collectD2 = Infinity;
+      for (const p of players) {
+        if (!this.isUp(p)) continue;
+        const dx = p.x - pk.x;
+        const dy = p.y - pk.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < nearD2) {
+          nearD2 = d2;
+          near = p;
+        }
+        const radius = wide ? p.stats.magnet : Math.min(p.stats.magnet, 60);
+        if (d2 < radius * radius && d2 < qD2) {
+          qD2 = d2;
+          q = p;
+        }
+        const cr = p.r + 12;
+        if (d2 < cr * cr && d2 < collectD2) {
+          collectD2 = d2;
+          collector = p;
+        }
+      }
+
       let target: PlayerState | null = null;
       const owner = pk.owner >= 0 ? players[pk.owner] : undefined;
       if (pk.magnetized && owner && this.isUp(owner)) {
         target = owner;
-      } else {
-        let bestD = Infinity;
-        let q: PlayerState | null = null;
-        for (const p of players) {
-          if (!this.isUp(p)) continue;
-          const d = Math.hypot(p.x - pk.x, p.y - pk.y);
-          const radius = wide ? p.stats.magnet : Math.min(p.stats.magnet, 60);
-          if (d < radius && d < bestD) {
-            bestD = d;
-            q = p;
-          }
-        }
-        if (q && pk.age > 0.15) {
-          pk.magnetized = true;
-          pk.owner = q.pid;
-          target = q;
-        } else if (pk.magnetized) {
-          target = this.nearestUpPlayer(pk.x, pk.y);
-          pk.owner = target ? target.pid : -1;
-        }
-      }
-
-      // Collection uses the pre-move distance (as in solo).
-      let collector: PlayerState | null = null;
-      let collectD = Infinity;
-      for (const p of players) {
-        if (!this.isUp(p)) continue;
-        const d = Math.hypot(p.x - pk.x, p.y - pk.y);
-        if (d < p.r + 12 && d < collectD) {
-          collectD = d;
-          collector = p;
-        }
+      } else if (q && pk.age > 0.15) {
+        pk.magnetized = true;
+        pk.owner = q.pid;
+        target = q;
+      } else if (pk.magnetized) {
+        target = near;
+        pk.owner = near ? near.pid : -1;
       }
 
       if (target) {
