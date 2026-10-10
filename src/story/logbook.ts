@@ -72,6 +72,16 @@ export function logbookProgress(entry: LogbookEntry, save: SaveData, ctx: Logboo
   return [Math.min(cur, goal), goal];
 }
 
+/**
+ * Progress bar fill in [0, 1]. Rank starts at 1, so a rank goal counts from there
+ * (a fresh save shows an empty bar for "Reach rank 3", not a third of one).
+ */
+export function logbookFraction(entry: LogbookEntry, cur: number, goal: number): number {
+  const base = entry.unlock.kind === 'rank' ? 1 : 0;
+  if (goal <= base) return cur >= goal ? 1 : 0;
+  return Math.min(1, Math.max(0, (cur - base) / (goal - base)));
+}
+
 export function isLogbookEntryMet(entry: LogbookEntry, save: SaveData, ctx: LogbookContext = {}): boolean {
   const [cur, goal] = logbookProgress(entry, save, ctx);
   return cur >= goal;
@@ -129,7 +139,8 @@ export function logbookHint(entry: LogbookEntry): string {
       return value === 1 ? 'Finish a co-op run' : `Finish ${value} co-op runs`;
     case 'boss': {
       const c = STORY.characters.find((ch) => ch.id === value);
-      return `Defeat ${c ? c.name : String(value)}`;
+      // Mid-sentence: "Defeat the Warden", not "Defeat The Warden".
+      return `Defeat ${(c ? c.name : String(value)).replace(/^The /, 'the ')}`;
     }
     case 'ship': {
       const ship = value as ShipId;

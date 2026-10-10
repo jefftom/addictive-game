@@ -14,13 +14,17 @@ import { currentStreak, dailyBonus, playedDailyToday, type DailyInfo } from '../
 import { missionDef, missionReward, missionText } from '../meta/missions';
 import { affordableUpgrades, coopBest, isShipUnlocked, nextCost, nextWorkshopGoal, workshopLevel, type RunSummary } from '../meta/progression';
 import { HARD_MODE_RANK, TRAILS, rankXpNeeded } from '../meta/rank';
-import type { SaveData, Settings, TrailId } from '../meta/save';
+import type { ChatterMode, SaveData, Settings, TrailId } from '../meta/save';
 import { SpriteCache } from '../render/sprites';
-import { STORY } from '../story/script';
+import { characterById, type ResolvedLine } from '../story/director';
+import { logbookFraction, logbookHint, logbookView, markLogSeen, unseenLogCount } from '../story/logbook';
+import { STORY, type CharacterDef, type LogbookEntry } from '../story/script';
+import { castRole, signatureLine } from './cast';
+import { OpeningCrawl } from './crawl';
 import { $, el, esc, focusables, moveFocus, pips } from './dom';
 import { LOBBY_COUNTDOWN, MIN_COOP_PILOTS, type CoopLobby, type RosterDevice } from './lobby';
 
-export type ScreenId = 'title' | 'hangar' | 'workshop' | 'records' | 'settings' | 'lobby' | 'levelup' | 'pause' | 'victory' | 'results' | 'hud';
+export type ScreenId = 'title' | 'hangar' | 'workshop' | 'records' | 'settings' | 'log' | 'crawl' | 'lobby' | 'levelup' | 'pause' | 'victory' | 'results' | 'hud';
 
 /** Mouse/touch actions on a lobby slot card. */
 export type LobbyMouseAction = 'left' | 'right' | 'ready' | 'leave';
@@ -68,6 +72,20 @@ export const pilotLabel = (pid: number): string => `P${pid + 1}`;
 const pilotColor = (pid: number): string => PLAYER_COLORS[pid % PLAYER_COLORS.length]!;
 const pilotMark = (pid: number): string => PLAYER_MARKS[pid % PLAYER_MARKS.length]!;
 
+/** Story bits for the results screen. */
+export interface ResultsStory {
+  /** Game-over quip under the score (absent on a victory). */
+  quip?: ResolvedLine;
+  /** Boss victory taunt, used as the header line when a capital ship destroyed the player. */
+  taunt?: ResolvedLine;
+  /** Ship's Log entries unlocked by this run. */
+  newLog: LogbookEntry[];
+  /** The player quit the run from the pause menu (no quip, "Retreated" header). */
+  retreat?: boolean;
+}
+
+type LogTab = 'entries' | 'cast' | 'fleet';
+
 export interface UiCallbacks {
   play(daily: boolean): void;
   /** Co-op "Play again" (same roster). */
@@ -88,6 +106,8 @@ export interface UiCallbacks {
   resetSave(): void;
   toTitle(): void;
   pause(): void;
+  /** Story state in the save changed (log entry read, intro seen): persist it. */
+  storyChanged(): void;
   sfx: {
     hover(): void;
     click(): void;
@@ -125,9 +145,13 @@ export class UI {
   /** Pause/victory/results of a co-op run also accept WASD + E (kbA). */
   private coopMenus = false;
 
+  private crawl: OpeningCrawl | null = null;
+  private logTab: LogTab = 'entries';
+  private logEntry: string | null = null;
+
   constructor(root: HTMLElement, cb: UiCallbacks) {
     this.cb = cb;
-    const ids: ScreenId[] = ['title', 'hangar', 'workshop', 'records', 'settings', 'lobby', 'levelup', 'pause', 'victory', 'results'];
+    const ids: ScreenId[] = ['title', 'hangar', 'workshop', 'records', 'settings', 'log', 'crawl', 'lobby', 'levelup', 'pause', 'victory', 'results'];
     for (const id of ids) {
       const s = el(`<section class="screen" id="screen-${id}" hidden></section>`);
       this.screens.set(id, s);
@@ -167,7 +191,7 @@ export class UI {
     if (id !== 'pause') this.pauseGrace = 0;
     this.pauseBtn.hidden = id !== 'hud';
     this.tutorialEl.style.visibility = id === 'hud' ? 'visible' : 'hidden';
-    this.topbar.hidden = !(id === 'title' || id === 'hangar' || id === 'workshop' || id === 'records');
+    this.topbar.hidden = !(id === 'title' || id === 'hangar' || id === 'workshop' || id === 'records' || id === 'log');
   }
 
   private screen(id: ScreenId): HTMLElement {
@@ -212,7 +236,7 @@ export class UI {
 
   private onKey(e: KeyboardEvent): void {
     const id = this.current;
-    if (id === 'hud') return;
+    if (id === 'hud' || id === 'crawl') return;
     // Slot-routed screens: Input sends each device's own keys through the app (menuAction).
     if (id === 'lobby') {
       if (e.code === 'Escape' && !e.repeat) {
@@ -279,7 +303,8 @@ export class UI {
     if (e.code === 'Escape' || (e.code === 'KeyP' && id === 'pause')) {
       if (id === 'pause') this.cb.resume();
       else if (id === 'settings') this.back();
-      else if (id === 'hangar' || id === 'workshop' || id === 'records') this.cb.toTitle();
+      else if (id === 'log' && this.closeLogReader()) return;
+      else if (id === 'hangar' || id === 'workshop' || id === 'records' || id === 'log') this.cb.toTitle();
       return;
     }
     if (id === 'title' && (e.code === 'Enter' || e.code === 'Space') && document.activeElement === document.body) {
@@ -326,6 +351,10 @@ export class UI {
   padNav(nav: { up: boolean; down: boolean; left: boolean; right: boolean; confirm: boolean; back: boolean; alt: boolean }): void {
     const id = this.current;
     if (id === 'hud') return;
+    if (id === 'crawl') {
+      if (nav.confirm || nav.back) this.crawl?.skip();
+      return;
+    }
     const s = this.screen(id as ScreenId);
     if (nav.up) moveFocus(s, 0, -1);
     if (nav.down) moveFocus(s, 0, 1);
@@ -340,7 +369,8 @@ export class UI {
     if (nav.back && !this.inGrace()) {
       if (id === 'pause') this.cb.resume();
       else if (id === 'settings') this.back();
-      else if (id === 'hangar' || id === 'workshop' || id === 'records') this.cb.toTitle();
+      else if (id === 'log' && this.closeLogReader()) return;
+      else if (id === 'hangar' || id === 'workshop' || id === 'records' || id === 'log') this.cb.toTitle();
     }
   }
 
@@ -380,6 +410,8 @@ export class UI {
     const affordable = affordableUpgrades(save);
     const ship = SHIPS[save.ship];
     const best = save.stats.bestScore;
+    const unread = unseenLogCount(save);
+    const logCount = save.story?.logUnlocked.length ?? 0;
     const missions = save.missions
       .map((m) => {
         const def = missionDef(m.def);
@@ -396,8 +428,8 @@ export class UI {
     s.className = 'screen scrim';
     s.innerHTML = `
       <div class="title-left">
-        <h1 class="logo"><span>NEON SURVIVAL</span>SHARD<br/>STORM</h1>
-        <p class="tagline">Weapons fire on their own. You steer, dash straight through the swarm, and chain kills into a combo. Survive 10:00.</p>
+        <h1 class="logo"><span>ALLIED BEACON FLEET</span>SHARD<br/>STORM</h1>
+        <p class="tagline">Captain one small starship against the Shardstorm, a crystal armada led by an overlord who writes poetry. Your guns fire on their own: steer, dash through the swarm, chain the combo and hold the line for 10:00.</p>
         <button class="btn btn-primary" data-act="play">Play <span class="key">${touch ? 'TAP' : 'ENTER'}</span></button>
         <div class="menu-grid">
           <button class="btn btn-gold wide" data-act="daily">
@@ -411,8 +443,9 @@ export class UI {
           }
           <button class="btn" data-act="hangar"><span>Hangar</span><span class="meta">${esc(ship.name)}</span></button>
           <button class="btn" data-act="workshop"><span>Workshop</span><span class="meta">${affordable > 0 ? `<span class="badge">${affordable} READY</span>` : `◈ ${formatNumber(save.cores)}`}</span></button>
+          <button class="btn" data-act="log"><span>Ship's Log</span><span class="meta">${unread > 0 ? `<span class="badge badge-ice">${unread} NEW</span>` : `${logCount}/${STORY.logbook.length}`}</span></button>
           <button class="btn" data-act="records"><span>Records</span><span class="meta">${Object.keys(save.achievements).length}/${ACHIEVEMENTS.length}</span></button>
-          <button class="btn" data-act="settings"><span>Settings</span><span class="meta"></span></button>
+          <button class="btn wide" data-act="settings"><span>Settings</span><span class="meta"></span></button>
         </div>
         <p class="hint">${touch ? 'Drag to move · tap DASH or a second finger to dash' : 'WASD / arrows to move · SPACE to dash · ESC to pause'}</p>
       </div>
@@ -433,6 +466,7 @@ export class UI {
     this.bind(s, '[data-act="hangar"]', () => this.showHangar(save));
     this.bind(s, '[data-act="workshop"]', () => this.showWorkshop(save));
     this.bind(s, '[data-act="records"]', () => this.showRecords(save));
+    this.bind(s, '[data-act="log"]', () => this.showLog(save));
     this.bind(s, '[data-act="settings"]', () => this.showSettings(save, 'title'));
     this.renderTopbar(save);
     this.show('title');
@@ -464,9 +498,14 @@ export class UI {
       const ach = def.unlockAchievement ? achievementDef(def.unlockAchievement) : null;
       const prog = ach?.progress?.(save);
       const w = WEAPONS[def.weapon];
-      return `<div class="panel card ship-card${save.ship === id ? ' selected' : ''}${unlocked ? '' : ' locked'}" data-ship="${id}">
+      const v = STORY.vessels[id];
+      const cap = characterById(STORY.pilots[id]);
+      return `<div class="panel card ship-card${save.ship === id ? ' selected' : ''}${unlocked ? '' : ' locked'}" data-ship="${id}" style="--sc:${def.color}">
         <div class="ship-art" data-art="${id}"></div>
+        <div class="ship-class">${esc(v.className)}</div>
         <div class="row"><h3 style="color:${def.color}">${esc(def.name)}</h3>${save.ship === id ? '<span class="badge badge-ice">SELECTED</span>' : ''}</div>
+        ${cap ? `<div class="ship-captain">${portrait(cap, 'sm')}<span>${esc(cap.name)}</span></div>` : ''}
+        <p class="ship-blurb">${esc(v.blurb)}</p>
         <div class="desc">${esc(def.trait)}<br/><span class="dim">Starts with <b style="color:${w.color}">${esc(w.name)}</b></span></div>
         ${
           unlocked
@@ -476,7 +515,7 @@ export class UI {
       </div>`;
     }).join('');
     s.innerHTML = `<div class="sub">
-      <div class="sub-head"><div><div class="eyebrow">Choose your ship</div><h2>Hangar</h2></div><button class="btn btn-sm" data-act="back">Back <span class="key">ESC</span></button></div>
+      <div class="sub-head"><div><div class="eyebrow">Allied Beacon Fleet · Choose your ship</div><h2>Hangar</h2></div><button class="btn btn-sm" data-act="back">Back <span class="key">ESC</span></button></div>
       <div class="grid-cards">${cards}</div>
     </div>`;
     s.querySelectorAll<HTMLElement>('[data-art]').forEach((n) => {
@@ -713,12 +752,17 @@ export class UI {
     const trails = (Object.keys(TRAILS) as TrailId[])
       .map((t) => `<option value="${t}" ${st.trail === t ? 'selected' : ''} ${save.rank < TRAILS[t].rank ? 'disabled' : ''}>${TRAILS[t].name}${save.rank < TRAILS[t].rank ? ` (rank ${TRAILS[t].rank})` : ''}</option>`)
       .join('');
+    const chatterLabels: Record<ChatterMode, string> = { all: 'All', important: 'Important only', off: 'Off' };
+    const chatter = (Object.keys(chatterLabels) as ChatterMode[])
+      .map((m) => `<option value="${m}" ${st.chatter === m ? 'selected' : ''}>${chatterLabels[m]}</option>`)
+      .join('');
     s.innerHTML = `<div class="sub">
       <div class="sub-head"><div><div class="eyebrow">Options</div><h2>Settings</h2></div><button class="btn btn-sm" data-act="back">Back <span class="key">ESC</span></button></div>
       <div class="panel settings-list">
         ${slider('master', 'Master volume', st.master)}
         ${slider('music', 'Music', st.music)}
         ${slider('sfx', 'Sound effects', st.sfx)}
+        <div class="setting"><label for="set-chatter">Crew chatter<small>Bridge-crew comms during a run</small></label><select id="set-chatter">${chatter}</select></div>
         ${slider('shake', 'Screen shake', st.shake)}
         ${toggle('flashes', 'Screen flashes', 'Turn off to reduce flashing effects', st.flashes)}
         ${toggle('damageNumbers', 'Damage numbers', 'Show numbers when enemies are hit', st.damageNumbers)}
@@ -744,6 +788,7 @@ export class UI {
       showFps: ($(s, '#set-showFps') as HTMLInputElement).checked,
       hardMode: ($(s, '#set-hardMode') as HTMLInputElement).checked,
       trail: ($(s, '#set-trail') as HTMLSelectElement).value as TrailId,
+      chatter: ($(s, '#set-chatter') as HTMLSelectElement).value as ChatterMode,
     });
     s.querySelectorAll('input, select').forEach((i) => i.addEventListener('input', () => this.cb.settingsChanged(read())));
     this.bind(s, '[data-act="back"]', () => this.back());
@@ -935,12 +980,14 @@ export class UI {
     const s = this.screen('victory');
     s.className = 'screen modal scrim-heavy';
     this.coopMenus = world.coop;
-    const text = world.coop
-      ? `Your squad of ${world.players.length} outlasted the storm with <b class="num">${formatNumber(world.score)}</b> points. Fly on together into <b>Overtime</b> for more score, or cash out now.`
-      : `You outlasted the storm with <b class="num">${formatNumber(world.score)}</b> points. Keep going into <b>Overtime</b> for more score, or cash out now.`;
-    s.innerHTML = `<div class="panel modal-box">
-      <div><div class="eyebrow">10:00 survived${world.coop ? ' · squad victory' : ''}</div><h2 style="color:var(--gold)">Victory</h2></div>
-      <p>${text}</p>
+    const v = STORY.victory;
+    const score = world.coop
+      ? `Your squad of ${world.players.length} held the line with <b class="num">${formatNumber(world.score)}</b> points. Fly on together into <b>Overtime</b> for more score, or cash out now.`
+      : `You held the line with <b class="num">${formatNumber(world.score)}</b> points. Keep going into <b>Overtime</b> for more score, or cash out now.`;
+    s.innerHTML = `<div class="panel modal-box victory-box">
+      <div><div class="eyebrow">Victory · 10:00 survived${world.coop ? ' · squad victory' : ''}</div><h2 class="victory-title">${esc(v.title)}</h2></div>
+      <div class="victory-text">${v.paragraphs.map((p, i) => `<p style="animation-delay:${(0.25 + i * 0.35).toFixed(2)}s">${esc(p)}</p>`).join('')}</div>
+      <p class="victory-score">${score}</p>
       <div class="modal-actions">
         <button class="btn btn-primary" data-act="continue">Continue into Overtime</button>
         <button class="btn btn-gold" data-act="cashout">Cash out</button>
@@ -954,7 +1001,7 @@ export class UI {
 
   // ───────────────────────── Results ─────────────────────────
 
-  showResults(sum: RunSummary, save: SaveData, touch: boolean): void {
+  showResults(sum: RunSummary, save: SaveData, touch: boolean, story: ResultsStory = { newLog: [] }): void {
     for (const t of this.resultTimers) window.clearTimeout(t);
     this.resultTimers = [];
     const r = sum.result;
@@ -963,7 +1010,7 @@ export class UI {
     const coop = (r.players ?? 1) > 1 && !!r.team;
     this.coopMenus = coop;
     const killedBoss = r.bossesKilled.map((k) => ENEMIES[k].name).join(', ');
-    const head = r.victory ? (coop ? 'Squad victory' : 'Victory') : 'Run over';
+    const head = r.victory ? (coop ? 'Squad victory' : 'Victory') : story.retreat ? 'Retreated' : coop ? 'Squad down' : 'Ship lost';
     const stamps = [
       sum.newBest.score ? (coop ? 'NEW SQUAD BEST' : 'NEW BEST SCORE') : '',
       sum.daily?.best && r.daily ? 'DAILY BEST' : '',
@@ -979,13 +1026,18 @@ export class UI {
       })
       .join('');
     const unlocks = [
+      ...story.newLog.map(
+        (e) =>
+          `<div class="unlock log-unlock"><b>NEW LOG ENTRY</b><span>${esc(e.title)}</span><button class="btn btn-sm" data-log="${esc(e.id)}">Read</button></div>`,
+      ),
       ...sum.rankUps.map((u) => `<div class="unlock"><b>RANK ${u.rank}</b><span>${esc(u.reward)}</span></div>`),
-      ...sum.unlockedShips.map((id) => `<div class="unlock"><b>NEW SHIP</b><span>${esc(SHIPS[id].name)} is ready in the Hangar</span></div>`),
+      ...sum.unlockedShips.map((id) => `<div class="unlock"><b>NEW SHIP</b><span>The ${esc(SHIPS[id].name)} has joined your fleet. Find it in the Hangar.</span></div>`),
       ...sum.achievements.map((a) => `<div class="unlock"><b>★</b><span>${esc(a.name)}: ${esc(a.text)}</span></div>`),
       ...sum.missionsCompleted.map((m) => `<div class="unlock"><b>✓</b><span>Mission complete: ${esc(m.text)}</span></div>`),
     ].join('');
 
     s.innerHTML = `<div class="sub">
+      ${story.taunt ? `<div class="res-taunt" style="--cc:${story.taunt.speaker.color}">${portrait(story.taunt.speaker, 'md')}<div><div class="res-taunt-name">${esc(story.taunt.speaker.name)}</div><q>${esc(story.taunt.text)}</q></div></div>` : ''}
       <div class="results-head">
         <div>
           <div class="eyebrow">${head} · ${formatTime(r.time)}${coop ? ` · Co-op · ${r.players} captains` : ''}${r.daily ? ' · Daily Run' : ''}${r.hard ? ' · Nightmare' : ''}</div>
@@ -1002,6 +1054,7 @@ export class UI {
         </div>
         <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">${stamps.map((t, i) => `<span class="stamp" style="animation-delay:${1.2 + i * 0.25}s">${t}</span>`).join('')}</div>
       </div>
+      ${!story.taunt && story.quip ? `<div class="res-quip" style="--cc:${story.quip.speaker.color}">${portrait(story.quip.speaker, 'sm')}<div><span class="res-quip-name">${esc(story.quip.speaker.name)}</span><q>${esc(story.quip.text)}</q></div></div>` : ''}
       ${sum.nearMiss ? `<div class="near-miss">${esc(sum.nearMiss)}</div>` : ''}
       <div class="result-actions">
         <button class="btn btn-primary" data-act="again">Play again <span class="key">${touch ? 'TAP' : coop ? 'ENTER · E · Ⓐ' : 'ENTER'}</span></button>
@@ -1045,8 +1098,10 @@ export class UI {
     });
     this.bind(s, '[data-act="workshop"]', () => this.showWorkshop(save));
     this.bind(s, '[data-act="menu"]', () => this.cb.toTitle());
+    this.bind(s, '[data-log]', (b) => this.showLog(save, { entry: b.dataset.log }));
     this.renderTopbar(save);
     this.show('results');
+
     this.focusFirst('results', '[data-act="again"]');
 
     // Count-up animations.
@@ -1129,4 +1184,242 @@ export class UI {
   setCoresTopbar(save: SaveData): void {
     this.renderTopbar(save);
   }
+
+  // ───────────────────────── Opening crawl ─────────────────────────
+
+  /** Plays the opening briefing over the attract mode; `then` runs once it closes. */
+  showCrawl(then: () => void): void {
+    this.crawl?.close();
+    const s = this.screen('crawl');
+    s.className = 'screen crawl-screen';
+    s.innerHTML = '';
+    this.show('crawl');
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    this.crawl = new OpeningCrawl(s, {
+      title: STORY.intro.title,
+      paragraphs: STORY.intro.paragraphs,
+      tick: () => this.cb.sfx.tick(0.25),
+      onDone: () => {
+        this.crawl = null;
+        then();
+      },
+    });
+  }
+
+  get crawlOpen(): boolean {
+    return !!this.crawl?.isOpen;
+  }
+
+  // ───────────────────────── Ship's Log ─────────────────────────
+
+  private narrow(): boolean {
+    return typeof matchMedia !== 'undefined' && matchMedia('(max-width: 860px)').matches;
+  }
+
+  /** Closes the phone-width log reader sheet; returns true if one was open (never on wide layouts). */
+  private closeLogReader(): boolean {
+    const split = this.screen('log').querySelector('.log-split.reading');
+    if (!split || !this.narrow()) return false;
+    split.classList.remove('reading');
+    this.screen('log').querySelector<HTMLElement>(`[data-entry="${this.logEntry ?? ''}"]`)?.focus({ preventScroll: true });
+    return true;
+  }
+
+  showLog(save: SaveData, opts: { tab?: LogTab; entry?: string; read?: boolean } = {}): void {
+    if (opts.tab) this.logTab = opts.tab;
+    if (opts.entry) {
+      this.logTab = 'entries';
+      this.logEntry = opts.entry;
+    }
+    const s = this.screen('log');
+    s.className = 'screen scrim-heavy';
+    const rows = logbookView(save);
+    const unlockedCount = rows.filter((r) => r.unlocked).length;
+    if (!this.logEntry || !rows.some((r) => r.entry.id === this.logEntry)) {
+      this.logEntry = (rows.find((r) => r.unlocked && !r.seen) ?? rows.find((r) => r.unlocked) ?? rows[0])?.entry.id ?? null;
+    }
+    // The reader is on screen on wide layouts, or when explicitly opened on narrow ones
+    // (only there is it a sheet that Esc/back closes first).
+    const reading = (!!opts.read || !!opts.entry) && this.narrow();
+    const readerVisible = this.logTab === 'entries' && (reading || !this.narrow());
+    const sel = rows.find((r) => r.entry.id === this.logEntry);
+    if (readerVisible && sel?.unlocked && !sel.seen) {
+      markLogSeen(save, sel.entry.id);
+      sel.seen = true;
+      this.cb.storyChanged();
+    }
+
+    const tabs: [LogTab, string, string][] = [
+      ['entries', 'Entries', `${unlockedCount}/${rows.length}`],
+      ['cast', 'Crew & cast', String(STORY.characters.length)],
+      ['fleet', 'Vessels', String(SHIP_IDS.length)],
+    ];
+    const tabHtml = tabs
+      .map(
+        ([id, label, meta]) =>
+          `<button class="tab${this.logTab === id ? ' on' : ''}" role="tab" aria-selected="${this.logTab === id}" data-tab="${id}"><span>${label}</span><span class="tab-meta">${
+            id === 'entries' && unseenLogCount(save) > 0 ? `<span class="badge badge-ice">${unseenLogCount(save)} NEW</span>` : `<span class="count">${meta}</span>`
+          }</span></button>`,
+      )
+      .join('');
+
+    let body = '';
+    if (this.logTab === 'entries') body = this.logEntriesHtml(rows, reading);
+    else if (this.logTab === 'cast') body = this.castHtml();
+    else body = this.fleetHtml(save);
+
+    s.innerHTML = `<div class="sub log-screen">
+      <div class="sub-head"><div><div class="eyebrow">Allied Beacon Fleet · Archives</div><h2>Ship's Log</h2></div>
+        <div class="head-actions"><button class="btn btn-sm btn-violet" data-act="intro"><span>Replay briefing</span><span aria-hidden="true">▶</span></button><button class="btn btn-sm" data-act="back">Back <span class="key">ESC</span></button></div></div>
+      <div class="tabs" role="tablist">${tabHtml}</div>
+      ${body}
+    </div>`;
+
+    this.bind(s, '[data-act="back"]', () => this.cb.toTitle());
+    this.bind(s, '[data-act="intro"]', () => this.showCrawl(() => this.showLog(save)));
+    this.bind(s, '[data-tab]', (b) => {
+      this.logTab = b.dataset.tab as LogTab;
+      this.showLog(save);
+      this.focusFirst('log', `[data-tab="${this.logTab}"]`);
+    });
+    this.bind(s, '[data-entry]', (b) => {
+      this.logEntry = b.dataset.entry!;
+      this.showLog(save, { read: true });
+      const reader = this.narrow() ? s.querySelector<HTMLElement>('[data-act="close-reader"]') : s.querySelector<HTMLElement>(`[data-entry="${this.logEntry}"]`);
+      reader?.focus({ preventScroll: true });
+    });
+    this.bind(s, '[data-act="close-reader"]', () => this.closeLogReader());
+    s.querySelectorAll<HTMLElement>('[data-art]').forEach((n) => {
+      const id = n.dataset.art as ShipId;
+      n.appendChild(this.shipArt(isShipUnlocked(save, id) ? SHIPS[id].color : '#4a4a66'));
+    });
+    this.renderTopbar(save);
+    const wasLog = this.current === 'log';
+    this.show('log');
+    if (!wasLog) this.focusFirst('log', opts.entry ? `[data-entry="${opts.entry}"]` : `[data-tab="${this.logTab}"]`);
+  }
+
+  private logEntriesHtml(rows: ReturnType<typeof logbookView>, reading: boolean): string {
+    const list = rows
+      .map((r, i) => {
+        const id = r.entry.id;
+        const [cur, goal] = r.progress;
+        const status = r.unlocked
+          ? r.seen
+            ? ''
+            : '<span class="badge badge-ice">NEW</span>'
+          : `<span class="log-lock" aria-label="Locked">🔒</span>`;
+        return `<button class="log-row${r.unlocked ? '' : ' locked'}${id === this.logEntry ? ' sel' : ''}" data-entry="${esc(id)}">
+          <span class="log-num">${String(i + 1).padStart(2, '0')}</span>
+          <span class="log-row-main"><span class="log-row-title">${esc(r.entry.title)}</span>${
+            r.unlocked ? '' : `<span class="log-hint">${esc(logbookHint(r.entry))}</span><span class="meter"><i style="width:${(logbookFraction(r.entry, cur, goal) * 100).toFixed(1)}%"></i></span>`
+          }</span>${status}
+        </button>`;
+      })
+      .join('');
+    const idx = rows.findIndex((r) => r.entry.id === this.logEntry);
+    const sel = rows[idx];
+    let reader = '';
+    if (sel) {
+      const num = String(idx + 1).padStart(2, '0');
+      if (sel.unlocked) {
+        reader = `<div class="eyebrow">Entry ${num} · Ship's log</div>
+          <h3 class="log-title">${esc(sel.entry.title)}</h3>
+          <p class="log-text">${esc(sel.entry.text)}</p>
+          <div class="log-sign">End of entry. Allied Beacon Fleet archives.</div>`;
+      } else {
+        const [cur, goal] = sel.progress;
+        reader = `<div class="eyebrow">Entry ${num} · Encrypted</div>
+          <h3 class="log-title">${esc(sel.entry.title)}</h3>
+          <div class="log-cipher" aria-hidden="true">${cipher(sel.entry.text)}</div>
+          <p class="log-unlock-hint"><b>To decrypt:</b> ${esc(logbookHint(sel.entry))}</p>
+          ${progressLabel(sel.entry, cur, goal) ? `<div class="rank-row"><span class="eyebrow">Progress</span><span class="dim num">${progressLabel(sel.entry, cur, goal)}</span></div>` : ''}
+          <div class="meter"><i style="width:${(logbookFraction(sel.entry, cur, goal) * 100).toFixed(1)}%"></i></div>`;
+      }
+    }
+    return `<div class="log-split${reading ? ' reading' : ''}">
+      <div class="log-list">${list}</div>
+      <article class="panel log-reader" tabindex="0">
+        <button class="btn btn-sm log-close" data-act="close-reader">Close</button>
+        ${reader}
+      </article>
+    </div>`;
+  }
+
+  private castHtml(): string {
+    const group = (title: string, ids: string[]) => {
+      const cards = ids
+        .map((id) => characterById(id))
+        .filter((c): c is CharacterDef => !!c)
+        .map(
+          (c) => {
+            const quote = signatureLine(c.id);
+            // Focusable so keyboard/gamepad navigation can scroll through the cast.
+            return `<div class="panel cast-card" tabindex="0" style="--cc:${c.color}">
+            ${portrait(c, 'md')}
+            <div><h3>${esc(c.name)}</h3><div class="cast-role">${esc(castRole(c))}</div>${quote ? `<q class="cast-quote">${esc(quote)}</q>` : ''}</div>
+          </div>`;
+          },
+        )
+        .join('');
+      return `<section class="cast-group"><div class="eyebrow">${esc(title)}</div><div class="grid-cards">${cards}</div></section>`;
+    };
+    const captains = SHIP_IDS.map((s) => STORY.pilots[s]);
+    const lattice = [STORY.villainId, 'warden', 'hydra', 'voidheart'];
+    const crew = STORY.characters.map((c) => c.id).filter((id) => !captains.includes(id) && !lattice.includes(id));
+    return `<div class="cast">
+      ${group('Bridge crew', crew)}
+      ${group('Captains of the fleet', captains)}
+      ${group(STORY.enemyName, lattice)}
+    </div>`;
+  }
+
+  private fleetHtml(save: SaveData): string {
+    const cards = SHIP_IDS.map((id) => {
+      const def = SHIPS[id];
+      const v = STORY.vessels[id];
+      const cap = characterById(STORY.pilots[id]);
+      const unlocked = isShipUnlocked(save, id);
+      return `<div class="panel card ship-card vessel${unlocked ? '' : ' locked'}" tabindex="0" style="--sc:${def.color}">
+        <div class="ship-art" data-art="${id}"></div>
+        <div class="ship-class">${esc(v.className)}</div>
+        <h3 style="color:${def.color}">${esc(def.name)}</h3>
+        ${cap ? `<div class="ship-captain">${portrait(cap, 'sm')}<span>${esc(cap.name)}</span></div>` : ''}
+        <p class="ship-blurb">${esc(v.blurb)}</p>
+        <div class="vessel-status">${unlocked ? 'In service' : `🔒 ${esc(def.unlockText)}`}</div>
+      </div>`;
+    }).join('');
+    return `<p class="dim log-fleet-intro">${esc(STORY.fleetName)}: five small ships against ${esc(STORY.enemyName.replace(/^The /, 'the '))}. Choose yours in the Hangar.</p>
+      <div class="grid-cards fleet">${cards}</div>`;
+  }
+}
+
+/** A character's glyph in a chamfered portrait chip tinted with their colour. */
+export function portrait(c: CharacterDef, size: 'sm' | 'md' | 'lg'): string {
+  return `<span class="portrait ${size}" style="--cc:${c.color}" aria-hidden="true">${esc(c.glyph)}</span>`;
+}
+
+/** Progress text for a locked log entry ('' for yes/no unlocks). */
+function progressLabel(entry: LogbookEntry, cur: number, goal: number): string {
+  const k = entry.unlock.kind;
+  if (k === 'boss' || k === 'ship') return '';
+  if (k === 'time') return `${formatTime(cur)} / ${formatTime(goal)}`;
+  return `${formatNumber(cur)} / ${formatNumber(goal)}`;
+}
+
+/** Scrambled stand-in text for an encrypted entry (stable per entry, keeps word shapes). */
+function cipher(text: string): string {
+  const glyphs = '▚▞▙▟▛▜░▒▓◇◈⌧';
+  let h = 7;
+  const words = text.split(/\s+/).slice(0, 34);
+  return words
+    .map((w) =>
+      [...w]
+        .map((ch) => {
+          h = (h * 31 + ch.charCodeAt(0)) % 9973;
+          return glyphs[h % glyphs.length];
+        })
+        .join(''),
+    )
+    .join(' ');
 }

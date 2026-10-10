@@ -2,6 +2,9 @@ import { SHIPS } from '../game/content/ships';
 import type { ShipId } from '../game/types';
 
 export type TrailId = 'default' | 'ember' | 'aurora' | 'prism';
+/** In-run comms: every line, only story/rare lines, or none. */
+export type ChatterMode = 'all' | 'important' | 'off';
+export const CHATTER_MODES: readonly ChatterMode[] = ['all', 'important', 'off'];
 
 export interface Settings {
   master: number;
@@ -14,6 +17,8 @@ export interface Settings {
   breakReminder: boolean;
   trail: TrailId;
   hardMode: boolean;
+  /** Crew chatter (story comms) filter. */
+  chatter: ChatterMode;
 }
 
 export interface MissionState {
@@ -167,6 +172,7 @@ export function defaultSettings(): Settings {
     breakReminder: true,
     trail: 'default',
     hardMode: false,
+    chatter: 'all',
   };
 }
 
@@ -233,6 +239,7 @@ export function migrate(raw: unknown): SaveData {
   if (!Number.isFinite(out.rank) || out.rank < 1) out.rank = 1;
   if (!(out.ship in SHIPS)) out.ship = 'spark';
   if (!['default', 'ember', 'aurora', 'prism'].includes(out.settings.trail)) out.settings.trail = 'default';
+  if (!CHATTER_MODES.includes(out.settings.chatter)) out.settings.chatter = 'all';
   out.story = normalizeStoryState(r.story);
   out.coop = normalizeCoopStats(r.coop);
   return out;

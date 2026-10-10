@@ -117,6 +117,11 @@ export interface CommsMessage {
   duration: number;
   /** Ship whose captain is speaking (for per-player tinting in co-op), else null. */
   ship: ShipId | null;
+  /**
+   * Player index whose captain is speaking, else null. Use this (not `ship`) to tag
+   * the speaker in co-op: two pilots may fly the same ship.
+   */
+  player: number | null;
 }
 
 export interface TriggerRule {
@@ -228,8 +233,12 @@ interface Queued {
 interface BarkContext {
   /** Ship whose captain voices '@pilot'. */
   pilotShip: ShipId;
+  /** Player index flying pilotShip. */
+  pilotPlayer: number;
   /** Ship whose captain's pilotBarks may be mixed in. */
   mixShip: ShipId;
+  /** Player index flying mixShip. */
+  mixPlayer: number;
   /** pilotBarks trigger to read for that captain (default: the bark's own trigger). */
   mixTrigger?: BarkTrigger;
 }
@@ -321,8 +330,8 @@ export class StoryDirector {
     }
     const opener: BarkTrigger = opts.daily ? 'daily_start' : this.coop ? 'coop_start' : 'run_start';
     this.queueSector(0);
-    const line = this.pickBark(opener, this.ctx());
-    this.enqueue(this.message(line, opener, PRIORITY.story));
+    const [line, voice] = this.pickBark(opener, this.ctx());
+    this.enqueue(this.message(line, opener, PRIORITY.story, voice));
   }
 
   /** Stops the run and clears every queued line (keeps shuffle bags, so the next run continues them). */
@@ -476,12 +485,12 @@ export class StoryDirector {
         break;
       case 'coopDown': {
         const helper = s.by ?? this.otherPlayer(s.player);
-        this.bark('coop_down', { pilotShip: this.shipOf(helper), mixShip: this.shipOf(s.player), mixTrigger: 'low_hp' });
+        this.bark('coop_down', { ...this.pair(helper, s.player), mixTrigger: 'low_hp' });
         break;
       }
       case 'coopRevive': {
         const helper = s.by ?? this.otherPlayer(s.player);
-        this.bark('coop_revive', { pilotShip: this.shipOf(helper), mixShip: this.shipOf(s.player), mixTrigger: 'revive' });
+        this.bark('coop_revive', { ...this.pair(helper, s.player), mixTrigger: 'revive' });
         break;
       }
     }
@@ -518,21 +527,30 @@ export class StoryDirector {
   }
 
   private queueSequence(lines: readonly Line[], keyBase: string, source: string, ship: ShipId): void {
-    lines.forEach((line, i) => this.enqueue(this.message(resolveLine(line, ship, `${keyBase}.${i}`), source, PRIORITY.story)));
+    lines.forEach((line, i) => this.enqueue(this.message(resolveLine(line, ship, `${keyBase}.${i}`), source, PRIORITY.story, this.local)));
   }
 
   private queueOneOf(lines: readonly Line[], keyBase: string, source: string, filter: (l: Line) => boolean): void {
     const idx = lines.map((l, i) => (filter(l) ? i : -1)).filter((i) => i >= 0);
     if (idx.length === 0) return;
     const i = idx[this.bag(`${keyBase}.repeat`, idx.length).draw(this.rng)]!;
-    this.enqueue(this.message(resolveLine(lines[i]!, this.shipOf(), `${keyBase}.${i}`), source, PRIORITY.story));
+    this.enqueue(this.message(resolveLine(lines[i]!, this.shipOf(), `${keyBase}.${i}`), source, PRIORITY.story, this.local));
   }
 
   // ---- barks ---------------------------------------------------------------
 
   private ctx(player?: number): BarkContext {
-    const ship = this.shipOf(player);
-    return { pilotShip: ship, mixShip: ship };
+    return this.pair(player, player);
+  }
+
+  /** Context where `pilot` voices shared '@pilot' lines and `mix`'s captain may chime in. */
+  private pair(pilot: number | undefined, mix: number | undefined): BarkContext {
+    return { pilotShip: this.shipOf(pilot), pilotPlayer: this.playerIndex(pilot), mixShip: this.shipOf(mix), mixPlayer: this.playerIndex(mix) };
+  }
+
+  /** Valid player index (falls back to the local player, like shipOf). */
+  private playerIndex(player?: number): number {
+    return player !== undefined && player >= 0 && player < this.players.length ? player : this.local;
   }
 
   private otherPlayer(player: number): number {
@@ -551,17 +569,18 @@ export class StoryDirector {
   }
 
   /** Picks a line for a trigger: the captain's own pool (pilotMix chance) or the shared pool. */
-  private pickBark(trigger: BarkTrigger, ctx: BarkContext): ResolvedLine {
+  /** Returns the line and the player index whose ship it was resolved for. */
+  private pickBark(trigger: BarkTrigger, ctx: BarkContext): [ResolvedLine, number] {
     const mixTrigger = ctx.mixTrigger ?? trigger;
     const captain = captainId(ctx.mixShip);
     const own = STORY.pilotBarks[captain]?.[mixTrigger];
     if (own && own.length > 0 && this.rng.chance(this.config.pilotMix)) {
       const i = this.bag(`pilot.${captain}.${mixTrigger}`, own.length).draw(this.rng);
-      return resolveLine(own[i]!, ctx.mixShip, `pilotBarks.${captain}.${mixTrigger}.${i}`);
+      return [resolveLine(own[i]!, ctx.mixShip, `pilotBarks.${captain}.${mixTrigger}.${i}`), ctx.mixPlayer];
     }
     const pool = STORY.barks[trigger];
     const i = this.bag(`barks.${trigger}`, pool.length).draw(this.rng);
-    return resolveLine(pool[i]!, ctx.pilotShip, `barks.${trigger}.${i}`);
+    return [resolveLine(pool[i]!, ctx.pilotShip, `barks.${trigger}.${i}`), ctx.pilotPlayer];
   }
 
   private canShowCommon(): boolean {
@@ -575,7 +594,8 @@ export class StoryDirector {
     if (rule.priority === PRIORITY.common && !this.canShowCommon()) return false;
     if (rule.priority === PRIORITY.rare && this.rareBlocked()) return false;
     if (rule.chance < 1 && !this.rng.chance(rule.chance)) return false;
-    this.enqueue(this.message(this.pickBark(trigger, ctx), trigger, rule.priority));
+    const [line, voice] = this.pickBark(trigger, ctx);
+    this.enqueue(this.message(line, trigger, rule.priority, voice));
     if (rule.cooldown > 0) this.cooldownUntil.set(trigger, this.time + rule.cooldown);
     return true;
   }
@@ -586,7 +606,20 @@ export class StoryDirector {
     return rare >= this.config.maxRareQueue;
   }
 
-  private message(line: ResolvedLine, source: string, priority: CommsPriority): CommsMessage {
+  /**
+   * `voice` = the player whose ship the line was resolved for. A captain line belongs
+   * to that player when the ships match (always true for '@pilot'); a captain named
+   * explicitly in the script falls back to the first player flying that ship.
+   */
+  private message(line: ResolvedLine, source: string, priority: CommsPriority, voice: number): CommsMessage {
+    let player: number | null = null;
+    if (line.ship !== null) {
+      if (this.players[voice] === line.ship) player = voice;
+      else {
+        const i = this.players.indexOf(line.ship);
+        player = i >= 0 ? i : null;
+      }
+    }
     return {
       id: `c${++this.seq}`,
       key: line.key,
@@ -596,6 +629,7 @@ export class StoryDirector {
       priority,
       duration: lineDuration(line.text),
       ship: line.ship,
+      player,
     };
   }
 

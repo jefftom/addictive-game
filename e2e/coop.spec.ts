@@ -21,6 +21,8 @@ const SEED_SAVE = {
   achievements: { survive3: 1, combo150: 1 },
   stats: { runs: 4, bestScore: 4321, bestTime: 200, bestCombo: 160 },
   tutorialDone: true,
+  // Skip the first-launch story crawl (covered by story.spec.ts).
+  story: { introSeen: true },
 };
 
 type Pilot = { x: number; y: number; ship: string; downed: boolean; dashId: number; build: number };
@@ -84,11 +86,11 @@ async function joinTwoAndLaunch(page: Page): Promise<void> {
   await expect(joined).toHaveCount(2);
   await expect(joined.nth(0)).toContainText('Keyboard · WASD');
   await expect(joined.nth(1)).toContainText('Keyboard · Arrows');
-  await expect(joined.nth(0).locator('h3')).toHaveText('Spark');
-  await expect(joined.nth(1).locator('h3')).toHaveText('Vanguard');
+  await expect(joined.nth(0).locator('h3')).toHaveText('Glimmer of Hope');
+  await expect(joined.nth(1).locator('h3')).toHaveText('Immovable Object');
   await page.keyboard.press('ArrowRight'); // P2 cycles ship; P1 is untouched
-  await expect(joined.nth(1).locator('h3')).toHaveText('Tempest');
-  await expect(joined.nth(0).locator('h3')).toHaveText('Spark');
+  await expect(joined.nth(1).locator('h3')).toHaveText('Already Gone');
+  await expect(joined.nth(0).locator('h3')).toHaveText('Glimmer of Hope');
   await page.keyboard.press('Space'); // P1 ready
   await expect(page.locator('#screen-lobby .lobby-status')).toContainText('P2');
   await page.keyboard.press('Enter'); // P2 ready
@@ -210,9 +212,9 @@ test('the lobby: leave, mouse controls and back to title', async ({ page }) => {
   await expect(joined.nth(0)).toContainText('Keyboard · WASD');
   await expect(joined.nth(0).locator('.slot-id')).toContainText('P1');
   // Mouse controls act for a slot too.
-  await expect(joined.nth(0).locator('h3')).toHaveText('Vanguard'); // keeps the ship it joined with
+  await expect(joined.nth(0).locator('h3')).toHaveText('Immovable Object'); // keeps the ship it joined with
   await joined.nth(0).locator('[data-lobby="right"]').click();
-  await expect(joined.nth(0).locator('h3')).toHaveText('Tempest');
+  await expect(joined.nth(0).locator('h3')).toHaveText('Already Gone');
   await joined.nth(0).locator('[data-lobby="leave"]').click();
   await expect(joined).toHaveCount(0);
   await page.keyboard.press('Escape');

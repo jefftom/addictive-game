@@ -1,4 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
+import { skipIntro } from './helpers';
+
+// These tests cover the game loop and menus; the first-launch story crawl has its own spec (story.spec.ts).
+test.beforeEach(async ({ page }) => {
+  await skipIntro(page);
+});
 
 /** Errors other than unreachable web fonts fail the test. */
 function trackErrors(page: Page): string[] {

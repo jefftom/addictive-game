@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-/** E2E_PORT lets parallel checkouts run the suite side by side (default 4173). */
+/** Preview port; override with E2E_PORT when 4173 is taken (e.g. parallel worktrees). */
 const PORT = Number(process.env.E2E_PORT) || 4173;
 
 export default defineConfig({

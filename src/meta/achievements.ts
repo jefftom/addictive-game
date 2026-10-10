@@ -16,22 +16,22 @@ const has = (run: RunResult | null, f: (r: RunResult) => boolean) => (run ? f(ru
 export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'first_run', name: 'Into the Storm', text: 'Finish your first run', check: (s) => s.stats.runs >= 1 },
   {
-    id: 'survive3', name: 'Gatecrasher', text: 'Survive 3:00 in a run (unlocks Vanguard)',
+    id: 'survive3', name: 'Gatecrasher', text: 'Survive 3:00 in a run (unlocks the Immovable Object)',
     check: (s) => s.stats.bestTime >= 180, progress: (s) => [Math.min(180, Math.floor(s.stats.bestTime)), 180],
   },
   { id: 'survive5', name: 'Holding the Line', text: 'Survive 5:00 in a run', check: (s) => s.stats.bestTime >= 300, progress: (s) => [Math.min(300, Math.floor(s.stats.bestTime)), 300] },
   { id: 'victory', name: 'Eye of the Storm', text: 'Survive 10:00', check: (s) => s.stats.victories >= 1 },
   {
-    id: 'combo150', name: 'Chain Reaction', text: 'Reach a 150 combo (unlocks Tempest)',
+    id: 'combo150', name: 'Chain Reaction', text: 'Reach a 150 combo (unlocks the Already Gone)',
     // bestCombo is solo-only, so the run itself also counts (a co-op team combo unlocks it).
     check: (s, r) => s.stats.bestCombo >= 150 || has(r, (x) => x.maxCombo >= 150), progress: (s) => [Math.min(150, s.stats.bestCombo), 150],
   },
   { id: 'combo500', name: 'Unbroken', text: 'Reach a 500 combo', check: (s, r) => s.stats.bestCombo >= 500 || has(r, (x) => x.maxCombo >= 500), progress: (s) => [Math.min(500, s.stats.bestCombo), 500] },
-  { id: 'warden', name: 'Gatekeeper', text: 'Defeat the Warden (unlocks Bastion)', check: (_s, r) => has(r, (x) => x.bossesKilled.includes('warden')) },
+  { id: 'warden', name: 'Gatekeeper', text: 'Defeat the Warden (unlocks the Big Warm Hug)', check: (_s, r) => has(r, (x) => x.bossesKilled.includes('warden')) },
   { id: 'hydra', name: 'Spiral Breaker', text: 'Defeat the Hydra', check: (_s, r) => has(r, (x) => x.bossesKilled.includes('hydra')) },
   { id: 'voidheart', name: 'Heartstopper', text: 'Defeat the Void Heart', check: (_s, r) => has(r, (x) => x.bossesKilled.includes('voidheart')) },
   {
-    id: 'perfect10', name: 'Untouchable Grace', text: '10 perfect dashes in one run (unlocks Phantom)',
+    id: 'perfect10', name: 'Untouchable Grace', text: '10 perfect dashes in one run (unlocks the Definitely Not Here)',
     check: (_s, r) => has(r, (x) => x.perfects >= 10),
   },
   { id: 'evolve', name: 'Metamorphosis', text: 'Evolve a weapon', check: (s) => s.stats.evolutions >= 1 },
