@@ -137,7 +137,7 @@ export interface DeviceLabels {
 
 export function deviceLabels(slot: InputSlot, allowCtrl = false): DeviceLabels {
   if (slot === 'kbA') {
-    return { name: 'Keyboard · WASD', move: 'WASD', dash: 'SPACE', join: 'SPACE', cycle: 'A / D', confirm: 'E', back: 'Q', reroll: 'R', picks: ['1', '2', '3'] };
+    return { name: 'Keyboard · WASD', move: 'WASD', dash: 'SPACE', join: 'SPACE', cycle: 'A/D', confirm: 'E', back: 'Q', reroll: 'R', picks: ['1', '2', '3'] };
   }
   if (slot === 'kbB') {
     return {
@@ -145,12 +145,12 @@ export function deviceLabels(slot: InputSlot, allowCtrl = false): DeviceLabels {
       move: 'ARROWS',
       dash: allowCtrl ? 'R-SHIFT / R-CTRL' : 'R-SHIFT',
       join: 'ENTER',
-      cycle: '← / →',
+      cycle: '←/→',
       confirm: 'ENTER',
       back: 'BKSP',
       reroll: 'BKSP',
       picks: ['NUM1', 'NUM2', 'NUM3'],
     };
   }
-  return { name: `Controller ${padIndex(slot) + 1}`, move: 'STICK', dash: 'Ⓐ', join: 'Ⓐ', cycle: 'D-PAD', confirm: 'Ⓐ', back: 'Ⓑ', reroll: 'Ⓧ', picks: null };
+  return { name: `Controller ${padIndex(slot) + 1}`, move: 'STICK', dash: 'Ⓐ', join: 'Ⓐ', cycle: 'STICK / D-PAD', confirm: 'Ⓐ', back: 'Ⓑ', reroll: 'Ⓧ', picks: null };
 }

@@ -964,6 +964,10 @@ select {
   --c: #b4ff6a;
 }
 
+.btn-coop .label {
+  white-space: nowrap;
+}
+
 .btn-coop .marks {
   font-size: 10px;
   letter-spacing: 0.3em;
@@ -1110,6 +1114,7 @@ select {
   --c: var(--pc);
   width: 100%;
   box-sizing: border-box;
+  white-space: nowrap;
 }
 
 .slot-ready.is-ready {
@@ -1131,11 +1136,16 @@ select {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  min-height: 28px;
+  min-height: 32px;
   gap: 8px;
-  font: 500 10.5px/1.3 var(--font-mono);
-  color: var(--faint);
+  font: 500 12px/1.35 var(--font-mono);
+  color: var(--dim);
   letter-spacing: 0.04em;
+}
+
+.slot-keys b {
+  font-weight: 700;
+  color: var(--text);
 }
 
 .slot-leave {
@@ -1231,11 +1241,15 @@ select {
 
 .lobby-foot .hint {
   margin: 0;
+  color: var(--dim);
 }
 
 .lobby-status {
   --k: 0;
   position: relative;
+  /* Fixed line box: the bigger countdown digit must not push the hints down. */
+  min-height: calc(1.56em + 16px);
+  box-sizing: border-box;
   font: 800 clamp(18px, 2.4vw, 24px) / 1.2 var(--font-display);
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1261,6 +1275,7 @@ select {
 
 .lobby-status b {
   font-size: 1.3em;
+  line-height: 1;
 }
 
 /* Co-op level-up */
@@ -1354,6 +1369,23 @@ select {
   border-color: var(--line);
 }
 
+/* Waiting captains keep their colour on the mark so they stay tell-apart-able. */
+.lu-chip.wait b {
+  color: var(--cc);
+  opacity: 0.65;
+}
+
+.lu-lost {
+  margin-top: 4px;
+  padding: 6px 12px;
+  font: 700 12px/1.3 var(--font-mono);
+  letter-spacing: 0.06em;
+  color: var(--rose);
+  background: color-mix(in srgb, var(--rose) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rose) 45%, transparent);
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+
 .coop-pick .offer:hover,
 .coop-pick .offer:focus-visible,
 .coop-pick .offer.focus {
@@ -1414,6 +1446,12 @@ select {
   background: rgba(255, 61, 110, 0.08);
 }
 
+.pause-note.ok {
+  color: var(--ice);
+  border-left-color: var(--ice);
+  background: rgba(127, 249, 255, 0.08);
+}
+
 .coop-panel {
   display: flex;
   flex-direction: column;
@@ -1465,8 +1503,26 @@ select {
   vertical-align: 1px;
 }
 
+.award-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font: 500 11.5px/1.3 var(--font-mono);
+  color: var(--dim);
+}
+
+.award-legend b {
+  color: var(--gold);
+  font-weight: 700;
+}
+
+.th-short {
+  display: none;
+}
+
 .award {
   display: inline-block;
+  cursor: help;
   font: 700 9.5px/1 var(--font-mono);
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1599,8 +1655,123 @@ select {
 }
 
 @media (max-width: 560px) {
+  /* Narrow lobby: a compact 2×2 grid, and the status line pinned to the bottom so the countdown is always seen. */
   .lobby {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .slot-card {
+    padding: 12px 10px;
+    gap: 8px;
+  }
+
+  .slot-top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .slot-id {
+    font-size: 17px;
+  }
+
+  .slot-dev {
+    text-align: left;
+    font-size: 9.5px;
+  }
+
+  .slot-art,
+  .slot-art canvas {
+    height: 56px;
+  }
+
+  .slot-art canvas {
+    width: 56px;
+  }
+
+  .slot-ship {
+    grid-template-columns: 28px minmax(0, 1fr) 28px;
+    gap: 4px;
+  }
+
+  .slot-arrow {
+    height: 30px;
+  }
+
+  .slot-name h3 {
+    font-size: 14px;
+  }
+
+  .slot-name span,
+  .slot-desc {
+    display: none;
+  }
+
+  .slot-ready {
+    padding-inline: 10px;
+    justify-content: space-between;
+    gap: 6px;
+  }
+
+  .slot-ready .k-word {
+    display: none;
+  }
+
+  .slot-keys {
+    flex-direction: column;
+    align-items: flex-start;
+    font-size: 11.5px;
+  }
+
+  .join-pulse,
+  .join-idle {
+    padding-top: 6px;
+    font-size: 14px;
+  }
+
+  .join-list li {
+    gap: 8px;
+    font-size: 11px;
+  }
+
+  .join-list .key {
+    min-width: 0;
+  }
+
+  .lobby-foot {
+    position: sticky;
+    bottom: calc(-1 * max(20px, env(safe-area-inset-bottom, 0px)));
+    z-index: 2;
+    margin-inline: calc(-1 * var(--gutter));
+    padding: 4px var(--gutter) max(14px, env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(180deg, rgba(5, 4, 15, 0), rgba(5, 4, 15, 0.92) 18px);
+  }
+
+  .lobby-foot .hint {
+    font-size: 11px;
+  }
+
+  .btn-coop .marks {
+    display: none;
+  }
+
+  .th-long {
+    display: none;
+  }
+
+  .th-short {
+    display: inline;
+  }
+
+  .coop-table th,
+  .coop-table td {
+    padding-inline: 5px;
+  }
+
+  .coop-table th:first-child,
+  .coop-table td:first-child {
+    padding-left: 10px;
   }
 
   .lu-who {

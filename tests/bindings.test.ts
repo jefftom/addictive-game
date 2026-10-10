@@ -73,5 +73,7 @@ describe('co-op key bindings', () => {
     expect(deviceLabels('kbB', true).dash).toContain('R-CTRL');
     expect(deviceLabels('pad1').name).toBe('Controller 2');
     expect(deviceLabels('pad1').picks).toBeNull();
+    // The stick steers menus as well as the d-pad, so the hint names both.
+    expect(deviceLabels('pad1').cycle).toBe('STICK / D-PAD');
   });
 });

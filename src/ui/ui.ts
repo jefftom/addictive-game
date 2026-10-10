@@ -40,6 +40,10 @@ export interface LobbyView {
 export interface CoopPickInfo {
   pid: number;
   device: RosterDevice;
+  /** The picker's controller is unplugged: any other captain may pick for them. */
+  lost: boolean;
+  /** Devices allowed to steer and pick (the picker's own, or every connected captain's when `lost`). */
+  allowed: readonly InputSlot[];
   ship: ShipId;
   /** Pilots in the run. */
   players: number;
@@ -49,6 +53,15 @@ export interface CoopPickInfo {
   round: { index: number; total: number } | null;
   allowCtrl: boolean;
 }
+
+/** Co-op results awards and what earns them (the legend under the Squadron report). */
+const AWARDS: readonly (readonly [string, string])[] = [
+  ['Top gun', 'most destroyed'],
+  ['Heavy hitter', 'most damage'],
+  ['Medic', 'most revives'],
+  ['Daredevil', 'most perfect dashes'],
+];
+const awardWhy = (name: string): string => AWARDS.find(([n]) => n === name)?.[1] ?? '';
 
 /** Pilot number label, e.g. "P2". */
 export const pilotLabel = (pid: number): string => `P${pid + 1}`;
@@ -101,10 +114,14 @@ export class UI {
   private tutorialEl: HTMLElement;
   private resultTimers: number[] = [];
   private shownAt = 0;
+  /** Anti-mash grace (ms) of the pause on screen: set when the game paused itself (a controller dropped). */
+  private pauseGrace = 0;
   private lastRunDaily = false;
   private lastRunCoop = false;
   /** Co-op level-up: the picker's device (only it may steer the cards). */
   private pickDevice: RosterDevice | null = null;
+  /** Devices that may steer the co-op level-up on screen. */
+  private pickSlots: readonly InputSlot[] = [];
   /** Pause/victory/results of a co-op run also accept WASD + E (kbA). */
   private coopMenus = false;
 
@@ -147,6 +164,7 @@ export class UI {
     if (this.current !== id) this.shownAt = performance.now();
     this.current = id;
     if (id !== 'levelup') this.pickDevice = null;
+    if (id !== 'pause') this.pauseGrace = 0;
     this.pauseBtn.hidden = id !== 'hud';
     this.tutorialEl.style.visibility = id === 'hud' ? 'visible' : 'hidden';
     this.topbar.hidden = !(id === 'title' || id === 'hangar' || id === 'workshop' || id === 'records');
@@ -188,7 +206,7 @@ export class UI {
    * mashed key/button cannot pick a card or skip the results by accident.
    */
   private inGrace(): boolean {
-    const grace = this.current === 'levelup' ? 350 : this.current === 'results' ? 900 : 0;
+    const grace = this.current === 'levelup' ? 350 : this.current === 'results' ? 900 : this.current === 'pause' ? this.pauseGrace : 0;
     return performance.now() - this.shownAt < grace;
   }
 
@@ -207,6 +225,10 @@ export class UI {
     const s = this.screen(id as ScreenId);
     const activates = e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space';
     if ((id === 'levelup' || id === 'results') && (e.code === 'Space' || (activates && (e.repeat || this.inGrace())))) {
+      e.preventDefault();
+      return;
+    }
+    if (id === 'pause' && activates && this.inGrace()) {
       e.preventDefault();
       return;
     }
@@ -278,7 +300,7 @@ export class UI {
    * handled by the buttons themselves and always accepted.
    */
   menuAction(slot: InputSlot, action: MenuAction): void {
-    if (this.current !== 'levelup' || this.pickDevice === null || slot !== this.pickDevice) return;
+    if (this.current !== 'levelup' || this.pickDevice === null || !this.pickSlots.includes(slot)) return;
     const s = this.screen('levelup');
     if (action === 'left' || action === 'right' || action === 'up' || action === 'down') {
       const dx = action === 'left' ? -1 : action === 'right' ? 1 : 0;
@@ -315,7 +337,7 @@ export class UI {
       else focusables(s)[0]?.focus();
     }
     if (nav.alt && id === 'levelup') this.cb.reroll();
-    if (nav.back) {
+    if (nav.back && !this.inGrace()) {
       if (id === 'pause') this.cb.resume();
       else if (id === 'settings') this.back();
       else if (id === 'hangar' || id === 'workshop' || id === 'records') this.cb.toTitle();
@@ -384,7 +406,7 @@ export class UI {
           </button>
           ${
             coopAvailable
-              ? `<button class="btn btn-coop wide" data-act="coop"><span>Co-op<span class="marks" aria-hidden="true">▲●■◆</span></span><span class="meta">${save.coop.runs > 0 ? `${formatNumber(save.coop.runs)} squad ${save.coop.runs === 1 ? 'run' : 'runs'} · ` : ''}2–4 captains · one screen</span></button>`
+              ? `<button class="btn btn-coop wide" data-act="coop"><span class="label">Co-op<span class="marks" aria-hidden="true">▲●■◆</span></span><span class="meta">${save.coop.runs > 0 ? `${formatNumber(save.coop.runs)} squad ${save.coop.runs === 1 ? 'run' : 'runs'}` : '2–4 captains · one screen'}</span></button>`
               : ''
           }
           <button class="btn" data-act="hangar"><span>Hangar</span><span class="meta">${esc(ship.name)}</span></button>
@@ -514,19 +536,19 @@ export class UI {
           <div class="slot-desc">${esc(def.trait)} <span class="dim">Starts with <b style="color:${w.color}">${esc(w.name)}</b>.</span></div>
           ${
             slot.ready
-              ? `<button class="btn btn-sm slot-ready is-ready" data-lobby="ready"><span>Ready ✓</span>${lab ? `<span class="key">${esc(lab.back)} cancel</span>` : ''}</button>`
+              ? `<button class="btn btn-sm slot-ready is-ready" data-lobby="ready"><span>Ready ✓</span>${lab ? `<span class="key">${esc(lab.back)}<span class="k-word"> cancel</span></span>` : ''}</button>`
               : `<button class="btn btn-sm slot-ready" data-lobby="ready"><span>Ready up</span>${lab ? `<span class="key">${esc(confirmKey)}</span>` : ''}</button>`
           }
-          <div class="slot-keys">${lab ? `<span>${esc(lab.cycle)} ship · ${esc(lab.dash)} dash</span>` : '<span>Flies itself</span>'}<button class="slot-leave" data-lobby="leave">${lab && !slot.ready ? `Leave · ${esc(lab.back)}` : 'Leave'}</button></div>
+          <div class="slot-keys">${lab ? `<span><b>${esc(lab.cycle)}</b> ship<br><b>${esc(lab.dash)}</b> dash</span>` : '<span>Flies itself</span>'}<button class="slot-leave" data-lobby="leave">${lab && !slot.ready ? `Leave · ${esc(lab.back)}` : 'Leave'}</button></div>
         </div>`;
       })
       .join('');
     s.innerHTML = `<div class="sub lobby-wrap">
-      <div class="sub-head"><div><div class="eyebrow">Local co-op · one screen · 2–4 captains</div><h2>Assemble the Squadron</h2></div><button class="btn btn-sm" data-act="back">Back <span class="key">ESC</span></button></div>
+      <div class="sub-head"><div><div class="eyebrow">Local co-op · one screen · 2–4 captains</div><h2>Assemble the Squadron</h2></div><button class="btn btn-sm" data-act="back">Back <span class="key">${view.pads.length > 0 ? 'ESC · Ⓑ' : 'ESC'}</span></button></div>
       <div class="lobby">${cards}</div>
       <div class="lobby-foot">
         <div class="lobby-status" id="lobby-status"></div>
-        <p class="hint">Shared XP and level-ups · every captain picks their own upgrades · fly close to a downed ally to revive them</p>
+        <p class="hint">Shared XP and level-ups · every captain picks their own upgrades · fly over a downed captain to revive them</p>
         <p class="hint">Gamepads are best for 3–4 captains${view.pads.length > 0 ? ` · ${view.pads.length} controller${view.pads.length === 1 ? '' : 's'} detected` : ' · press a button on a controller to wake it up'}</p>
         ${view.bots && lobby.joined().length < 4 ? '<button class="btn btn-sm" data-act="bot">Add bot</button>' : ''}
       </div>
@@ -629,14 +651,15 @@ export class UI {
     const rows: [string, string][] = [
       ['Runs', formatNumber(st.runs)],
       ['Best score', formatNumber(st.bestScore)],
-      ['Longest run', formatTime(st.bestTime)],
+      // Co-op runs count toward these lifetime records too; say so once there are any.
+      [save.coop.runs > 0 ? 'Longest run (any mode)' : 'Longest run', formatTime(st.bestTime)],
       ['Best combo', formatNumber(st.bestCombo)],
       ['Highest level', String(st.bestLevel)],
       ['Enemies destroyed', formatNumber(st.kills)],
       ['Bosses defeated', formatNumber(st.bossKills)],
       ['Perfect dashes', formatNumber(st.perfects)],
       ['Weapons evolved', formatNumber(st.evolutions)],
-      ['Victories', formatNumber(st.victories)],
+      [save.coop.runs > 0 ? 'Victories (all modes)' : 'Victories', formatNumber(st.victories)],
       ['Cores earned', formatNumber(st.coresEarned)],
       ['Time in the storm', formatTime(st.timePlayed)],
       ['Co-op runs', formatNumber(save.coop.runs)],
@@ -751,8 +774,9 @@ export class UI {
     const s = this.screen('levelup');
     const co = opts.pilot ?? null;
     this.pickDevice = co ? co.device : null;
+    this.pickSlots = co ? co.allowed : [];
     const pid = co ? co.pid : 0;
-    const keys = co ? (co.device === 'bot' ? null : deviceLabels(co.device, co.allowCtrl)) : null;
+    const keys = co && co.device !== 'bot' && !co.lost ? deviceLabels(co.device, co.allowCtrl) : null;
     s.className = `screen scrim-heavy${co ? ' coop-pick' : ''}`;
     if (co) s.style.setProperty('--pc', pilotColor(pid));
     else s.style.removeProperty('--pc');
@@ -799,7 +823,9 @@ export class UI {
       ? ''
       : keys
         ? `<div class="lu-hints">${esc(keys.picks ? `${keys.picks.join(' ')} take` : `${keys.cycle} choose`)} · ${esc(keys.confirm)} take selected · ${esc(keys.reroll)} reroll</div>`
-        : `<div class="lu-hints">${esc(pilotLabel(co.pid))} is a bot pilot and is choosing…</div>`;
+        : co.lost
+          ? `<div class="lu-hints">${co.allowed.length ? 'Any captain: your own pick keys · confirm takes selected · or click a card' : 'Click a card to pick'}</div>`
+          : `<div class="lu-hints">${esc(pilotLabel(co.pid))} is a bot pilot and is choosing…</div>`;
     const head = co
       ? this.coopLevelHead(co, opts)
       : `<div class="lu-head${opts.cache ? ' cache' : ''}"><div class="eyebrow">${opts.cache ? 'Elite cache opened' : `Level ${opts.level}`}</div><h2>${opts.cache ? 'CACHE' : 'LEVEL UP'}</h2></div>`;
@@ -843,6 +869,7 @@ export class UI {
       <div class="eyebrow">${esc(eyebrow)}</div>
       <h2>${opts.cache ? 'CACHE' : 'LEVEL UP'}</h2>
       ${chips}
+      ${co.lost && co.device !== 'bot' ? `<div class="lu-lost" role="status">⚠ ${esc(deviceLabels(co.device).name)} is disconnected · ${co.allowed.length ? 'any captain' : 'the mouse'} can pick for ${esc(pilotLabel(co.pid))}</div>` : ''}
     </div>`;
   }
 
@@ -867,7 +894,8 @@ export class UI {
     return `<span class="pilot-tag" style="--pc:${pilotColor(pid)}"><b>${pilotMark(pid)}</b> ${pilotLabel(pid)}<span>${esc(SHIPS[ship].name)}</span></span>`;
   }
 
-  showPause(world: World, save: SaveData, note = ''): void {
+  /** `note`: why the game paused itself (`noteOk`: good news, e.g. a controller came back). */
+  showPause(world: World, save: SaveData, note = '', noteOk = false): void {
     const s = this.screen('pause');
     s.className = 'screen modal scrim-heavy';
     this.coopMenus = world.coop;
@@ -883,7 +911,7 @@ export class UI {
       : `<div class="build-list">${this.buildChips(world, 0)}</div>`;
     s.innerHTML = `<div class="panel modal-box${world.coop ? ' wide' : ''}">
       <div><div class="eyebrow">${formatTime(world.time)} · Level ${world.level} · ${formatNumber(world.score)} pts${world.coop ? ` · ${world.players.length} captains` : ''}</div><h2>Paused</h2></div>
-      ${note ? `<div class="pause-note">${esc(note)}</div>` : ''}
+      ${note ? `<div class="pause-note${noteOk ? ' ok' : ''}" role="status">${esc(note)}</div>` : ''}
       ${build}
       <div class="modal-actions">
         <button class="btn btn-primary" data-act="resume">Resume <span class="key">${world.coop ? 'ESC · START' : 'ESC'}</span></button>
@@ -893,6 +921,11 @@ export class UI {
     </div>`;
     this.bind(s, '[data-act="resume"]', () => this.cb.resume());
     this.bind(s, '[data-act="settings"]', () => this.showSettings(save, 'pause'));
+    // A pause the game opened by itself (a controller dropped) ignores mashed confirm presses for a moment.
+    if (note && !noteOk) {
+      this.pauseGrace = 700;
+      this.shownAt = performance.now();
+    }
     this.bind(s, '[data-act="quit"]', () => this.cb.quitRun());
     this.show('pause');
     this.focusFirst('pause', '[data-act="resume"]');
@@ -934,7 +967,7 @@ export class UI {
     const stamps = [
       sum.newBest.score ? (coop ? 'NEW SQUAD BEST' : 'NEW BEST SCORE') : '',
       sum.daily?.best && r.daily ? 'DAILY BEST' : '',
-      sum.newBest.time && !sum.newBest.score ? 'LONGEST RUN' : '',
+      sum.newBest.time && !sum.newBest.score ? (coop ? 'LONGEST RUN · ANY MODE' : 'LONGEST RUN') : '',
     ].filter(Boolean);
     const goal = nextWorkshopGoal(save);
     const affordable = affordableUpgrades(save);
@@ -961,7 +994,7 @@ export class UI {
             coop
               ? sum.prevBest.score > 0
                 ? `Team score · squad best (${r.players} captains) ${formatNumber(Math.max(sum.prevBest.score, r.score))}`
-                : `Team score · your first ${r.players}-captain squad on the board`
+                : `Team score · first ${r.players}-captain squad record`
               : sum.prevBest.score > 0
                 ? `Best ${formatNumber(Math.max(sum.prevBest.score, r.score))}`
                 : 'Your first score on the board'
@@ -971,7 +1004,7 @@ export class UI {
       </div>
       ${sum.nearMiss ? `<div class="near-miss">${esc(sum.nearMiss)}</div>` : ''}
       <div class="result-actions">
-        <button class="btn btn-primary" data-act="again">Play again <span class="key">${touch ? 'TAP' : 'ENTER'}</span></button>
+        <button class="btn btn-primary" data-act="again">Play again <span class="key">${touch ? 'TAP' : coop ? 'ENTER · E · Ⓐ' : 'ENTER'}</span></button>
         <button class="btn btn-gold" data-act="workshop"><span>Workshop</span><span class="meta">${affordable > 0 ? `<span class="badge">${affordable} READY</span>` : goal ? `${formatNumber(goal.missing)} ◈ to go` : ''}</span></button>
         <button class="btn" data-act="menu">Menu</button>
       </div>
@@ -1067,10 +1100,14 @@ export class UI {
     award('Heavy hitter', (t) => t.damage);
     award('Medic', (t) => t.revivesGiven);
     award('Daredevil', (t) => t.perfects, 3);
+    const given = new Set(awards.flat());
+    const legend = AWARDS.filter(([name]) => given.has(name))
+      .map(([name, why]) => `<span><b>${esc(name)}</b> ${esc(why)}</span>`)
+      .join('');
     const rows = team
       .map(
         (t, i) => `<tr style="--pc:${pilotColor(i)}">
-          <td>${this.pilotTag(i, t.ship)}${awards[i]!.length ? `<span class="awards">${awards[i]!.map((a) => `<span class="award">${esc(a)}</span>`).join('')}</span>` : ''}</td>
+          <td>${this.pilotTag(i, t.ship)}${awards[i]!.length ? `<span class="awards">${awards[i]!.map((a) => `<span class="award" title="${esc(awardWhy(a))}">${esc(a)}</span>`).join('')}</span>` : ''}</td>
           <td class="num">${formatNumber(t.kills)}</td>
           <td class="num">${formatNumber(t.damage)}</td>
           <td class="num">${t.perfects}</td>
@@ -1082,9 +1119,10 @@ export class UI {
     return `<div class="panel coop-panel">
       <div class="rank-row"><h3>Squadron report</h3><span class="eyebrow">${team.length} captains</span></div>
       <div class="coop-scroll"><table class="coop-table">
-        <thead><tr><th>Captain</th><th>Destroyed</th><th>Damage</th><th>Perfect</th><th>Downs</th><th>Revives</th></tr></thead>
+        <thead><tr><th>Captain</th><th><span class="th-long">Destroyed</span><span class="th-short">Kills</span></th><th>Damage</th><th>Perfect</th><th>Downs</th><th>Revives</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
+      ${legend ? `<div class="award-legend">${legend}</div>` : ''}
     </div>`;
   }
 

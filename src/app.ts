@@ -61,6 +61,14 @@ export class App {
   /** Per-pilot bot streams (bot pilots, autoplay, warp). */
   private botRngs: Rng[] = [];
   private botPickT = 0;
+  /**
+   * Pilots whose controller dropped and who have not been shown the
+   * disconnect pause yet (a pad can drop on a level-up, victory or dying
+   * screen; the pause then comes as soon as the run is back in play).
+   */
+  private lossPending = new Set<number>();
+  /** Pilots named in the pause note on screen (so a reconnect can update it). */
+  private pauseLost: number[] = [];
   private victoryShown = false;
   private announced = new Set<string>();
   private missionCheckT = 0;
@@ -262,6 +270,7 @@ export class App {
     this.coop = squad ? { roster: squad } : null;
     this.lobby = null;
     this.currentPick = null;
+    this.clearLoss();
     this.botRngs = cfg.players.map(() => new Rng(randomSeed()));
     const best = squad ? coopBest(this.save, squad.length) : daily ? this.save.daily.best[info.date] ?? 0 : this.save.stats.bestScore;
     this.world = new World(cfg, { bestScore: best });
@@ -309,6 +318,7 @@ export class App {
 
   private pause(note = ''): void {
     if (this.state !== 'playing' || !this.world) return;
+    if (!note) this.pauseLost = [];
     this.state = 'paused';
     this.input.gameActive = false;
     this.input.releaseAll();
@@ -356,6 +366,7 @@ export class App {
     if (!w || !r) return;
     const p = w.players[r.pid]!;
     const n = w.players.length;
+    const device = this.coop?.roster[r.pid]?.device ?? 'bot';
     this.ui.showLevelUp(this.offers, {
       cache: r.cache,
       rerolls: p.rerolls,
@@ -365,7 +376,9 @@ export class App {
       pilot: this.coop
         ? {
             pid: r.pid,
-            device: this.coop.roster[r.pid]?.device ?? 'bot',
+            device,
+            lost: this.padLost(device),
+            allowed: this.pickSlots(r.pid),
             ship: p.ship,
             players: n,
             ships: w.players.map((q) => q.ship),
@@ -376,10 +389,28 @@ export class App {
     });
   }
 
+  /** True if `device` is a roster controller that is currently unplugged. */
+  private padLost(device: RosterDevice): boolean {
+    return isPadSlot(device) && !this.input.padConnected(padIndex(device));
+  }
+
+  /**
+   * Devices that may pick for `pid`: their own, or, when their controller is
+   * unplugged, any other captain's connected device (a pads-only couch must
+   * never get stuck on a level-up nobody can answer).
+   */
+  private pickSlots(pid: number): InputSlot[] {
+    const roster = this.coop?.roster ?? [];
+    const own = roster[pid]?.device ?? 'bot';
+    if (own === 'bot') return [];
+    if (!this.padLost(own)) return [own];
+    return roster.map((r) => r.device).filter((d): d is InputSlot => d !== 'bot' && !this.padLost(d));
+  }
+
   /** True if `slot` may act for the current picker (mouse/touch/autoplay pass no slot). */
   private isPicker(slot: InputSlot | undefined): boolean {
     if (slot === undefined || !this.coop || !this.currentPick) return true;
-    return this.coop.roster[this.currentPick.pid]?.device === slot;
+    return this.pickSlots(this.currentPick.pid).includes(slot);
   }
 
   private pick(i: number, slot?: InputSlot): void {
@@ -428,6 +459,7 @@ export class App {
     this.lastCoopRoster = this.coop ? this.coop.roster.map((r) => ({ ...r })) : null;
     this.coop = null;
     this.currentPick = null;
+    this.clearLoss();
     this.state = 'results';
     this.input.setMode('solo');
     this.input.menuMode = 'none';
@@ -449,6 +481,7 @@ export class App {
     this.coop = null;
     this.lobby = null;
     this.currentPick = null;
+    this.clearLoss();
     this.input.setMode('solo');
     this.input.menuMode = 'none';
     this.input.gameActive = false;
@@ -525,15 +558,74 @@ export class App {
     else this.openCoop(present);
   }
 
+  /**
+   * A roster controller dropped. In play: pause at once with a note. On a
+   * level-up, victory or dying screen: remember it and pause as soon as the
+   * run is back in play; a level-up on screen re-renders so another captain
+   * can pick for them.
+   */
   private onSlotLost(slot: InputSlot): void {
     const pid = this.coop?.roster.findIndex((r) => r.device === slot) ?? -1;
     if (pid < 0) return;
-    const who = pilotLabel(pid);
-    this.ui.toast(`${who}'s controller disconnected`, '⚠');
-    if (this.state === 'playing') this.pause(`${who}'s controller disconnected. Reconnect it to keep flying; until then ${who}'s ship holds position and keeps firing.`);
+    if (this.state === 'paused') {
+      this.refreshLossNote();
+      return;
+    }
+    this.lossPending.add(pid);
+    if (this.state === 'playing') {
+      this.pauseForLoss();
+      return;
+    }
+    this.ui.toast(`${pilotLabel(pid)}'s controller disconnected`, '⚠');
+    if (this.state === 'levelup' && this.currentPick) this.showPick(true);
+  }
+
+  /** Pilots of the live run whose controller is unplugged right now. */
+  private lostPilots(): number[] {
+    const roster = this.coop?.roster ?? [];
+    return roster.flatMap((r, pid) => (this.padLost(r.device) ? [pid] : []));
+  }
+
+  private lossNote(lost: readonly number[], back: readonly number[]): string {
+    const names = (ps: readonly number[]) => ps.map(pilotLabel).join(' and ');
+    if (lost.length) {
+      const who = names(lost);
+      const one = lost.length === 1;
+      return `${who}'s controller${one ? '' : 's'} disconnected. Reconnect ${one ? 'it' : 'them'} to keep flying; until then ${who}'s ship${one ? '' : 's'} hold${one ? 's' : ''} position and keep${one ? 's' : ''} firing.`;
+    }
+    return back.length ? `${names(back)}'s controller ${back.length === 1 ? 'is' : 'are'} back. Resume when ready.` : '';
+  }
+
+  /** Shows the disconnect pause for every pending loss whose pad is still missing. */
+  private pauseForLoss(): void {
+    const lost = this.lostPilots().filter((pid) => this.lossPending.has(pid));
+    this.lossPending.clear();
+    if (!lost.length) return;
+    this.pauseLost = this.lostPilots();
+    this.pause(this.lossNote(this.pauseLost, []));
+  }
+
+  /** Keeps the pause note in step with controllers dropping or coming back. */
+  private refreshLossNote(): void {
+    if (this.state !== 'paused' || !this.world || !this.coop) return;
+    const lost = this.lostPilots();
+    const back = this.pauseLost.filter((pid) => !lost.includes(pid));
+    if (!lost.length && !back.length) return;
+    this.pauseLost = [...new Set([...this.pauseLost, ...lost])].sort((a, b) => a - b);
+    this.ui.showPause(this.world, this.save, this.lossNote(lost, back), lost.length === 0);
+  }
+
+  private clearLoss(): void {
+    this.lossPending.clear();
+    this.pauseLost = [];
   }
 
   private onPadsChanged(): void {
+    if (this.coop) {
+      for (const pid of [...this.lossPending]) if (!this.padLost(this.coop.roster[pid]!.device)) this.lossPending.delete(pid);
+      if (this.state === 'paused') this.refreshLossNote();
+      else if (this.state === 'levelup' && this.currentPick) this.showPick(true);
+    }
     if (this.state === 'lobby' && this.lobby) {
       // A controller that disconnects in the lobby gives up its slot.
       for (const s of this.lobby.joined()) {
@@ -555,7 +647,7 @@ export class App {
   /** Co-op feedback the renderer does not show yet: downs, revives, last stand. */
   private coopToasts(events: readonly GameEvent[]): void {
     for (const ev of events) {
-      if (ev.t === 'downed') this.ui.toast(`${pilotLabel(ev.pid)} is down! Fly over them to revive.`, '✚');
+      if (ev.t === 'downed') this.ui.toast(`${pilotLabel(ev.pid)} is down! Fly over ${pilotLabel(ev.pid)} to revive.`, '✚');
       else if (ev.t === 'revived') this.ui.toast(`${pilotLabel(ev.pid)} is back in the fight (thanks, ${pilotLabel(ev.by)})`, '✦', true);
       else if (ev.t === 'laststand') this.ui.toast(`Last captain standing: ${pilotLabel(ev.pid)}`, '⚠');
     }
@@ -621,6 +713,9 @@ export class App {
   private stepGame(realDt: number): void {
     const w = this.world!;
     let simDt = 0;
+
+    // A controller that dropped on a level-up, victory or dying screen pauses as soon as play is back.
+    if (this.state === 'playing' && this.lossPending.size > 0) this.pauseForLoss();
 
     if (this.state === 'playing') {
       this.sessionPlay += realDt;

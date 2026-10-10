@@ -220,3 +220,76 @@ test('the lobby: leave, mouse controls and back to title', async ({ page }) => {
   expect(await page.evaluate(() => (window as unknown as { shardstorm: { state: string } }).shardstorm.state)).toBe('title');
   expect(errors).toEqual([]);
 });
+
+/** Fake standard-mapping gamepads the page polls through `navigator.getGamepads`. */
+async function fakePads(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    type Pad = { index: number; connected: boolean; id: string; mapping: string; axes: number[]; buttons: { pressed: boolean; value: number }[] };
+    const pads: (Pad | null)[] = [null, null, null, null];
+    const g = window as unknown as Record<string, unknown>;
+    g.__plug = (i: number) => {
+      pads[i] = { index: i, connected: true, id: `fake ${i}`, mapping: 'standard', axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })) };
+    };
+    g.__unplug = (i: number) => {
+      pads[i] = null;
+    };
+    g.__btn = (i: number, b: number, down: boolean) => {
+      const p = pads[i];
+      if (p) p.buttons[b] = { pressed: down, value: down ? 1 : 0 };
+    };
+    Object.defineProperty(navigator, 'getGamepads', { value: () => pads.slice(), configurable: true });
+  });
+}
+
+async function padPress(page: Page, i: number, button: number): Promise<void> {
+  const btn = (down: boolean) =>
+    page.evaluate(([i, b, d]) => (window as unknown as { __btn: (i: number, b: number, d: boolean) => void }).__btn(i, b, d), [i, button, down] as const);
+  await btn(true);
+  await page.waitForTimeout(90);
+  await btn(false);
+  await page.waitForTimeout(90);
+}
+
+const plug = (page: Page, i: number, on: boolean) =>
+  page.evaluate(([i, on]) => (window as unknown as Record<string, (i: number) => void>)[on ? '__plug' : '__unplug']!(i), [i, on] as const);
+
+test('a controller that drops on a level-up: another captain picks for it, then the run pauses until it is back', async ({ page }) => {
+  const errors = trackErrors(page);
+  await fakePads(page);
+  await page.goto('/');
+  await plug(page, 0, true);
+  await plug(page, 1, true);
+  await page.locator('#screen-title [data-act="coop"]').click();
+  await expect(page.locator('#screen-lobby')).toBeVisible();
+  await expect(page.locator('#screen-lobby [data-act="back"]')).toContainText('Ⓑ');
+  for (const i of [0, 1]) await padPress(page, i, 0); // join
+  await expect(page.locator('#screen-lobby .slot-card:not(.empty)')).toHaveCount(2);
+  for (const i of [0, 1]) await padPress(page, i, 0); // ready
+  await expect.poll(async () => (await snap(page)).state, { timeout: 6000 }).toBe('playing');
+  await onWorld(page, 'for (const p of w.players) p.invuln = 1e9; w.addXp(w.xpNext, 0);');
+  await expect(page.locator('#screen-levelup .lu-who')).toContainText('P1');
+
+  // P2's controller drops during P1's pick: no pause yet (a level-up is on screen).
+  await plug(page, 1, false);
+  await expect(page.locator('#toasts')).toContainText("P2's controller disconnected");
+  await page.waitForTimeout(400);
+  await padPress(page, 0, 0); // P1 takes the focused card
+  await expect(page.locator('#screen-levelup .lu-who')).toContainText('P2');
+  await expect(page.locator('#screen-levelup .lu-lost')).toContainText('Controller 2 is disconnected');
+  await page.waitForTimeout(400);
+  const before = await snap(page);
+  await padPress(page, 0, 0); // P1's controller picks for P2
+  await padPress(page, 0, 0); // a mashed press must not dismiss the pause that follows
+  await expect.poll(async () => (await snap(page)).state).toBe('paused');
+  expect((await snap(page)).pilots[1]!.build).toBe(before.pilots[1]!.build + 1);
+  await expect(page.locator('#screen-pause .pause-note')).toContainText("P2's controller disconnected");
+  await page.waitForTimeout(300);
+  expect((await snap(page)).state).toBe('paused');
+
+  // Plugging it back in updates the note; Start resumes.
+  await plug(page, 1, true);
+  await expect(page.locator('#screen-pause .pause-note.ok')).toContainText("P2's controller is back");
+  await padPress(page, 1, 9);
+  await expect.poll(async () => (await snap(page)).state).toBe('playing');
+  expect(errors).toEqual([]);
+});
