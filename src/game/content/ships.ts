@@ -38,7 +38,7 @@ export const SHIPS: Record<ShipId, ShipDef> = {
   },
   bastion: {
     id: 'bastion', name: 'Big Warm Hug', color: '#6fd2ff', weapon: 'nova',
-    trait: 'Dashing ends in a shockwave. +20 HP.',
+    trait: '+20 HP. Dash end: 26-damage knockback blast.',
     unlockText: 'Defeat the Warden',
     unlockAchievement: 'warden',
     apply: (s) => { s.maxHp += 20; },

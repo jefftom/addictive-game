@@ -67,6 +67,13 @@ test("the Ship's Log lists chapters, the cast and vessels, and replays the brief
   expect(errors).toEqual([]);
 });
 
+/** Ends the current run as a loss (every pilot destroyed). */
+const wipe = (page: Page) =>
+  page.evaluate(() => {
+    const w = (window as unknown as { shardstorm: { world: { player: unknown; teamWipe(p: unknown): void } } }).shardstorm.world;
+    w.teamWipe(w.player);
+  });
+
 test('finishing a run unlocks and announces the first log entry, with a game-over quip', async ({ page }) => {
   const errors = trackErrors(page);
   await skipIntro(page);
@@ -74,10 +81,10 @@ test('finishing a run unlocks and announces the first log entry, with a game-ove
   await page.locator('#screen-title [data-act="play"]').click();
   await expect.poll(() => appState(page)).toBe('playing');
   await page.waitForTimeout(500);
-  await page.locator('#pause-btn').click();
-  await page.locator('#screen-pause [data-act="quit"]').click();
+  await wipe(page);
   const results = page.locator('#screen-results');
   await expect(results).toBeVisible();
+  await expect(results.locator('.results-head .eyebrow')).toContainText(/ship lost/i);
   await expect(results.locator('.res-quip q')).not.toBeEmpty();
   const entry = results.locator('.log-unlock');
   await expect(entry).toHaveCount(1);
@@ -131,5 +138,111 @@ test('the crew chatter setting persists and silences comms', async ({ page }) =>
   await expect.poll(() => appState(page)).toBe('playing');
   await page.waitForTimeout(1500);
   await expect(page.locator('#comms')).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test('quitting from the pause menu reads as a retreat, without a game-over quip', async ({ page }) => {
+  const errors = trackErrors(page);
+  await skipIntro(page);
+  await page.goto('/');
+  await page.locator('#screen-title [data-act="play"]').click();
+  await expect.poll(() => appState(page)).toBe('playing');
+  await page.waitForTimeout(300);
+  await page.locator('#pause-btn').click();
+  await page.locator('#screen-pause [data-act="quit"]').click();
+  const results = page.locator('#screen-results');
+  await expect(results).toBeVisible();
+  await expect(results.locator('.results-head .eyebrow')).toContainText(/retreated/i);
+  await expect(results.locator('.res-quip')).toHaveCount(0);
+  await expect(results.locator('.res-taunt')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test('a tap that skips the crawl does not also press the button underneath', async ({ page, isMobile }) => {
+  test.skip(!isMobile, 'touch click-through only happens on touch screens');
+  const errors = trackErrors(page);
+  await page.goto('/');
+  await expect(page.locator('#crawl')).toBeVisible();
+  // Where the title's Play button will appear once the crawl closes.
+  const play = await page.evaluate(() => {
+    const s = document.querySelector<HTMLElement>('#screen-title')!;
+    s.hidden = false;
+    const r = s.querySelector('[data-act="play"]')!.getBoundingClientRect();
+    s.hidden = true;
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  });
+  await page.waitForTimeout(900);
+  await page.touchscreen.tap(play.x, play.y);
+  await expect(page.locator('#crawl')).toHaveCount(0);
+  await expect(page.locator('#screen-title')).toBeVisible();
+  await page.waitForTimeout(400);
+  expect(await appState(page)).toBe('title');
+  expect(errors).toEqual([]);
+});
+
+test("a veteran save's Ship's Log is filled in on launch", async ({ page }) => {
+  const errors = trackErrors(page);
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      'shardstorm.save',
+      JSON.stringify({
+        story: { introSeen: true },
+        rank: 8,
+        stats: { runs: 60, bestTime: 640, bestCombo: 300, victories: 3 },
+        achievements: { warden: 1, hydra: 1, voidheart: 1 },
+      }),
+    );
+  });
+  await page.goto('/');
+  await expect(page.locator('#screen-title [data-act="log"] .badge')).toContainText('NEW');
+  expect((await savedJson(page)).story.logUnlocked.length).toBeGreaterThan(5);
+  await page.locator('#screen-title [data-act="log"]').click();
+  await expect(page.locator('#screen-log .log-row').first()).not.toHaveClass(/locked/);
+  expect(errors).toEqual([]);
+});
+
+test("one Escape leaves the Ship's Log after reading an entry on a wide screen", async ({ page, isMobile }) => {
+  test.skip(!!isMobile, 'keyboard');
+  await skipIntro(page);
+  await page.goto('/');
+  await page.locator('#screen-title [data-act="log"]').click();
+  await page.locator('#screen-log [data-entry]').nth(2).click();
+  await expect(page.locator('#screen-log .log-row').nth(2)).toHaveClass(/sel/);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#screen-title')).toBeVisible();
+});
+
+test('dying in Overtime after a victory never shows the boss "you lost" taunt', async ({ page, isMobile }) => {
+  test.skip(!!isMobile, 'same code path on every device');
+  const errors = trackErrors(page);
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('shardstorm.save')) localStorage.setItem('shardstorm.save', JSON.stringify({ story: { introSeen: true }, tutorialDone: true }));
+  });
+  await page.goto('/?warp=3');
+  await page.locator('#screen-title [data-act="play"]').click();
+  type W = { time: number; boss: unknown; player: { x: number; y: number }; spawnEnemy(k: string, x: number, y: number): unknown };
+  for (let i = 0; i < 40 && (await appState(page)) !== 'victory'; i++) {
+    if ((await appState(page)) === 'levelup') await page.locator('#screen-levelup .offer').first().click();
+    await page.evaluate(() => {
+      const w = (window as unknown as { shardstorm: { world: W | null } }).shardstorm.world;
+      if (w && w.time < 599) w.time = 599.8;
+    });
+    await page.waitForTimeout(250);
+  }
+  await expect(page.locator('#screen-victory')).toBeVisible();
+  await page.waitForTimeout(800);
+  await page.locator('#screen-victory [data-act="continue"]').click();
+  await expect.poll(() => appState(page)).toBe('playing');
+  await page.evaluate(() => {
+    const w = (window as unknown as { shardstorm: { world: W } }).shardstorm.world;
+    if (!w.boss) w.spawnEnemy('warden', w.player.x + 300, w.player.y);
+  });
+  expect(await page.evaluate(() => !!(window as unknown as { shardstorm: { world: W } }).shardstorm.world.boss)).toBe(true);
+  await wipe(page);
+  const results = page.locator('#screen-results');
+  await expect(results).toBeVisible();
+  await expect(results.locator('.results-head .eyebrow')).toContainText(/victory/i);
+  await expect(results.locator('.res-taunt')).toHaveCount(0);
+  await expect(results.locator('.res-quip')).toHaveCount(0);
   expect(errors).toEqual([]);
 });

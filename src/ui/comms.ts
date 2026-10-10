@@ -48,6 +48,8 @@ export function prefersReducedMotion(): boolean {
 export class CommsPanel {
   readonly root: HTMLElement;
   private shownId: string | null = null;
+  /** Message whose markup is in the panel (survives a hide, so a pause doesn't replay it). */
+  private mountedId: string | null = null;
   private textShown!: HTMLElement;
   private textRest!: HTMLElement;
   private timerEl!: HTMLElement;
@@ -55,8 +57,8 @@ export class CommsPanel {
   private full = '';
   private typed = -1;
   private hideTimer = 0;
-  /** Ships per player index (co-op tags the speaking captain with P1..P4). */
-  private ships: readonly ShipId[] = [];
+  /** Number of pilots in the run (co-op tags the speaking captain with P1..P4). */
+  private players = 1;
   private coop = false;
 
   constructor(parent: HTMLElement = document.body) {
@@ -69,7 +71,7 @@ export class CommsPanel {
 
   /** The pilots of the current run (call at run start). */
   setRun(ships: readonly ShipId[], coop: boolean): void {
-    this.ships = ships;
+    this.players = ships.length;
     this.coop = coop;
   }
 
@@ -83,7 +85,10 @@ export class CommsPanel {
    * panel freezes while the run is paused.
    */
   show(msg: CommsMessage, elapsed: number): void {
-    if (msg.id !== this.shownId) this.mount(msg);
+    if (msg.id !== this.shownId) {
+      if (msg.id === this.mountedId) this.resume(msg);
+      else this.mount(msg);
+    }
     const reduced = prefersReducedMotion();
     const cps = TYPE_CPS[msg.priority] ?? 60;
     const n = reduced ? this.full.length : Math.min(this.full.length, Math.floor(Math.max(0, elapsed - 0.12) * cps));
@@ -103,7 +108,7 @@ export class CommsPanel {
   hide(): void {
     if (this.shownId === null) return;
     this.shownId = null;
-    this.root.classList.remove('in');
+    this.root.classList.remove('in', 'resume');
     this.root.classList.add('out');
     document.body.classList.remove('comms-on');
     window.clearTimeout(this.hideTimer);
@@ -115,25 +120,35 @@ export class CommsPanel {
   /** Hides immediately (run ended, menus). */
   clear(): void {
     this.shownId = null;
+    this.mountedId = null;
     window.clearTimeout(this.hideTimer);
     this.root.hidden = true;
-    this.root.classList.remove('in', 'out');
+    this.root.classList.remove('in', 'out', 'resume');
     document.body.classList.remove('comms-on');
+  }
+
+  /** Brings back the line that was showing before a pause/level-up: a quick fade, no re-announce. */
+  private resume(msg: CommsMessage): void {
+    window.clearTimeout(this.hideTimer);
+    this.shownId = msg.id;
+    this.root.hidden = false;
+    this.root.classList.remove('out', 'in');
+    void this.root.offsetWidth;
+    this.root.classList.add('resume');
+    document.body.classList.add('comms-on');
   }
 
   private mount(msg: CommsMessage): void {
     window.clearTimeout(this.hideTimer);
     this.shownId = msg.id;
+    this.mountedId = msg.id;
     this.full = msg.text;
     this.typed = -1;
     const sp = msg.speaker;
     const hostile = HOSTILE.has(sp.id);
     const prio = msg.priority === PRIORITY.story ? 'story' : msg.priority === PRIORITY.rare ? 'rare' : 'common';
-    let tag = '';
-    if (this.coop && msg.ship) {
-      const idx = this.ships.indexOf(msg.ship);
-      if (idx >= 0) tag = `<span class="comms-tag">P${idx + 1}</span>`;
-    }
+    // Tag by player index, not ship: two pilots may fly the same ship.
+    const tag = this.coop && msg.player !== null && msg.player < this.players ? `<span class="comms-tag">P${msg.player + 1}</span>` : '';
     const eyebrow = prio === 'story' ? `<span class="comms-eyebrow">${hostile ? 'Hostile transmission' : 'Incoming transmission'}</span>` : '';
     this.root.className = `comms prio-${prio}${hostile ? ' hostile' : ''}`;
     this.root.style.setProperty('--cc', sp.color);

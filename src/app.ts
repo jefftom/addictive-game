@@ -70,6 +70,8 @@ export class App {
     if (this.save.missions.length < 3) refillMissions(this.save, this.metaRng);
     if (!isShipUnlocked(this.save, this.save.ship)) this.save.ship = 'spark';
     this.applySettings(this.save.settings);
+    // Saves from before the Ship's Log (or progress made outside a run) unlock their entries quietly.
+    if (checkLogbook(this.save).length > 0) writeSave(this.save);
 
     this.input.attach(canvas);
     this.input.dashButtonHit = (x, y) => {
@@ -338,7 +340,7 @@ export class App {
     result.daily = this.dailyRun;
     if (this.dailyRun) result.dailyDate = this.dailyDate;
     const summary = applyRun(this.save, result, this.metaRng);
-    const story = this.resultsStory(w, result.victory);
+    const story = this.resultsStory(w, result.victory, !w.gameOver && !result.victory);
     writeSave(this.save);
     this.storyLink.endRun();
     this.comms.clear();
@@ -356,12 +358,17 @@ export class App {
   }
 
   /** Results-screen story: boss taunt or game-over quip (persisted rotation), and new log entries. */
-  private resultsStory(w: World, victory: boolean): ResultsStory {
+  private resultsStory(w: World, victory: boolean, retreat: boolean): ResultsStory {
     const ship = w.players[0]?.ship ?? this.save.ship;
     const out: ResultsStory = { newLog: checkLogbook(this.save, { coopRun: w.coop }) };
-    if (this.killedBy) {
+    // A won run (cashed out, or lost later in Overtime) never gets the "you lost" lines,
+    // and neither does a run the player quit from the pause menu.
+    if (victory) return out;
+    if (retreat) {
+      out.retreat = true;
+    } else if (this.killedBy) {
       out.taunt = pickBossVictoryTaunt(this.storyRng, this.killedBy, ship);
-    } else if (!victory) {
+    } else {
       const history = this.save.story?.quipHistory ?? [];
       const quip = pickGameOverQuip(this.storyRng, ship, history);
       recordQuip(this.save, quip.key);
@@ -399,6 +406,8 @@ export class App {
     if (ok) {
       const unlocked = checkAchievements(this.save, null);
       for (const a of unlocked) this.ui.toast(`Achievement: ${a.name}`, '★', true);
+      // A Workshop purchase can unlock a ship, and with it that ship's log entry.
+      for (const e of checkLogbook(this.save)) this.ui.toast(`New log entry: ${e.title}`, '✦', true);
       writeSave(this.save);
     }
     return ok;

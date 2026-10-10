@@ -30,6 +30,38 @@ export function focusables(root: ParentNode): HTMLElement[] {
   );
 }
 
+/** Rect fields moveFocus reads (DOMRect satisfies it). */
+export interface FocusRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Spatial-navigation score of moving from `a` to `b` in direction (dx, dy); lower is
+ * better, Infinity when `b` is not in that direction. The sideways cost uses the gap
+ * between the two rects (0 when they overlap), so a wide button never outranks the row
+ * directly under it just because their centres line up.
+ */
+export function focusScore(a: FocusRect, b: FocusRect, dx: number, dy: number): number {
+  const ax = a.left + a.width / 2;
+  const ay = a.top + a.height / 2;
+  const vx = b.left + b.width / 2 - ax;
+  const vy = b.top + b.height / 2 - ay;
+  const along = vx * dx + vy * dy;
+  if (along <= 4) return Infinity;
+  const gap = (a0: number, a1: number, b0: number, b1: number) => Math.max(0, b0 - a1, a0 - b1);
+  const xGap = gap(a.left, a.left + a.width, b.left, b.left + b.width);
+  const yGap = gap(a.top, a.top + a.height, b.top, b.top + b.height);
+  // Edge-to-edge distance along the move, and the sideways offset across it.
+  const alongGap = dy !== 0 ? yGap : xGap;
+  const sideGap = dy !== 0 ? xGap : yGap;
+  const across = Math.abs(vx * dy - vy * dx);
+  // Centre distances only break ties (e.g. between two buttons under a wide one).
+  return alongGap + sideGap * 2.2 + (along + across) * 0.05;
+}
+
 /** Moves focus to the nearest focusable in a direction (spatial navigation). */
 export function moveFocus(root: ParentNode, dx: number, dy: number): void {
   const items = focusables(root);
@@ -40,21 +72,11 @@ export function moveFocus(root: ParentNode, dx: number, dy: number): void {
     return;
   }
   const a = current.getBoundingClientRect();
-  const ax = a.left + a.width / 2;
-  const ay = a.top + a.height / 2;
   let best: HTMLElement | null = null;
   let bestScore = Infinity;
   for (const it of items) {
     if (it === current) continue;
-    const b = it.getBoundingClientRect();
-    const bx = b.left + b.width / 2;
-    const by = b.top + b.height / 2;
-    const vx = bx - ax;
-    const vy = by - ay;
-    const along = vx * dx + vy * dy;
-    if (along <= 4) continue;
-    const across = Math.abs(vx * dy - vy * dx);
-    const score = along + across * 2.2;
+    const score = focusScore(a, it.getBoundingClientRect(), dx, dy);
     if (score < bestScore) {
       bestScore = score;
       best = it;

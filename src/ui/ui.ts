@@ -15,8 +15,9 @@ import { HARD_MODE_RANK, TRAILS, rankXpNeeded } from '../meta/rank';
 import type { ChatterMode, SaveData, Settings, TrailId } from '../meta/save';
 import { SpriteCache } from '../render/sprites';
 import { characterById, type ResolvedLine } from '../story/director';
-import { logbookHint, logbookView, markLogSeen, unseenLogCount } from '../story/logbook';
+import { logbookFraction, logbookHint, logbookView, markLogSeen, unseenLogCount } from '../story/logbook';
 import { STORY, type CharacterDef, type LogbookEntry } from '../story/script';
+import { castRole, signatureLine } from './cast';
 import { OpeningCrawl } from './crawl';
 import { $, el, esc, focusables, moveFocus, pips } from './dom';
 
@@ -30,6 +31,8 @@ export interface ResultsStory {
   taunt?: ResolvedLine;
   /** Ship's Log entries unlocked by this run. */
   newLog: LogbookEntry[];
+  /** The player quit the run from the pause menu (no quip, "Retreated" header). */
+  retreat?: boolean;
 }
 
 type LogTab = 'entries' | 'cast' | 'fleet';
@@ -664,7 +667,7 @@ export class UI {
     const s = this.screen('results');
     s.className = 'screen scrim-heavy';
     const killedBoss = r.bossesKilled.map((k) => ENEMIES[k].name).join(', ');
-    const head = r.victory ? 'Victory' : 'Ship lost';
+    const head = r.victory ? 'Victory' : story.retreat ? 'Retreated' : 'Ship lost';
     const stamps = [
       sum.newBest.score ? 'NEW BEST SCORE' : '',
       sum.daily?.best && r.daily ? 'DAILY BEST' : '',
@@ -808,10 +811,10 @@ export class UI {
     return typeof matchMedia !== 'undefined' && matchMedia('(max-width: 860px)').matches;
   }
 
-  /** Closes the phone-width log reader sheet; returns true if one was open. */
+  /** Closes the phone-width log reader sheet; returns true if one was open (never on wide layouts). */
   private closeLogReader(): boolean {
     const split = this.screen('log').querySelector('.log-split.reading');
-    if (!split) return false;
+    if (!split || !this.narrow()) return false;
     split.classList.remove('reading');
     this.screen('log').querySelector<HTMLElement>(`[data-entry="${this.logEntry ?? ''}"]`)?.focus({ preventScroll: true });
     return true;
@@ -830,8 +833,9 @@ export class UI {
     if (!this.logEntry || !rows.some((r) => r.entry.id === this.logEntry)) {
       this.logEntry = (rows.find((r) => r.unlocked && !r.seen) ?? rows.find((r) => r.unlocked) ?? rows[0])?.entry.id ?? null;
     }
-    // The reader is on screen on wide layouts, or when explicitly opened on narrow ones.
-    const reading = !!opts.read || !!opts.entry;
+    // The reader is on screen on wide layouts, or when explicitly opened on narrow ones
+    // (only there is it a sheet that Esc/back closes first).
+    const reading = (!!opts.read || !!opts.entry) && this.narrow();
     const readerVisible = this.logTab === 'entries' && (reading || !this.narrow());
     const sel = rows.find((r) => r.entry.id === this.logEntry);
     if (readerVisible && sel?.unlocked && !sel.seen) {
@@ -899,11 +903,11 @@ export class UI {
           ? r.seen
             ? ''
             : '<span class="badge badge-ice">NEW</span>'
-          : `<span class="log-lock" aria-label="Locked">⌧</span>`;
+          : `<span class="log-lock" aria-label="Locked">🔒</span>`;
         return `<button class="log-row${r.unlocked ? '' : ' locked'}${id === this.logEntry ? ' sel' : ''}" data-entry="${esc(id)}">
           <span class="log-num">${String(i + 1).padStart(2, '0')}</span>
           <span class="log-row-main"><span class="log-row-title">${esc(r.entry.title)}</span>${
-            r.unlocked ? '' : `<span class="log-hint">${esc(logbookHint(r.entry))}</span><span class="meter"><i style="width:${((cur / Math.max(1, goal)) * 100).toFixed(1)}%"></i></span>`
+            r.unlocked ? '' : `<span class="log-hint">${esc(logbookHint(r.entry))}</span><span class="meter"><i style="width:${(logbookFraction(r.entry, cur, goal) * 100).toFixed(1)}%"></i></span>`
           }</span>${status}
         </button>`;
       })
@@ -925,12 +929,12 @@ export class UI {
           <div class="log-cipher" aria-hidden="true">${cipher(sel.entry.text)}</div>
           <p class="log-unlock-hint"><b>To decrypt:</b> ${esc(logbookHint(sel.entry))}</p>
           ${progressLabel(sel.entry, cur, goal) ? `<div class="rank-row"><span class="eyebrow">Progress</span><span class="dim num">${progressLabel(sel.entry, cur, goal)}</span></div>` : ''}
-          <div class="meter"><i style="width:${((cur / Math.max(1, goal)) * 100).toFixed(1)}%"></i></div>`;
+          <div class="meter"><i style="width:${(logbookFraction(sel.entry, cur, goal) * 100).toFixed(1)}%"></i></div>`;
       }
     }
     return `<div class="log-split${reading ? ' reading' : ''}">
       <div class="log-list">${list}</div>
-      <article class="panel log-reader">
+      <article class="panel log-reader" tabindex="0">
         <button class="btn btn-sm log-close" data-act="close-reader">Close</button>
         ${reader}
       </article>
@@ -943,10 +947,14 @@ export class UI {
         .map((id) => characterById(id))
         .filter((c): c is CharacterDef => !!c)
         .map(
-          (c) => `<div class="panel cast-card" style="--cc:${c.color}">
+          (c) => {
+            const quote = signatureLine(c.id);
+            // Focusable so keyboard/gamepad navigation can scroll through the cast.
+            return `<div class="panel cast-card" tabindex="0" style="--cc:${c.color}">
             ${portrait(c, 'md')}
-            <div><h3>${esc(c.name)}</h3><div class="cast-role">${esc(castRole(c))}</div><p class="cast-voice">${esc(c.voice)}</p></div>
-          </div>`,
+            <div><h3>${esc(c.name)}</h3><div class="cast-role">${esc(castRole(c))}</div>${quote ? `<q class="cast-quote">${esc(quote)}</q>` : ''}</div>
+          </div>`;
+          },
         )
         .join('');
       return `<section class="cast-group"><div class="eyebrow">${esc(title)}</div><div class="grid-cards">${cards}</div></section>`;
@@ -967,13 +975,13 @@ export class UI {
       const v = STORY.vessels[id];
       const cap = characterById(STORY.pilots[id]);
       const unlocked = isShipUnlocked(save, id);
-      return `<div class="panel card ship-card vessel${unlocked ? '' : ' locked'}" style="--sc:${def.color}">
+      return `<div class="panel card ship-card vessel${unlocked ? '' : ' locked'}" tabindex="0" style="--sc:${def.color}">
         <div class="ship-art" data-art="${id}"></div>
         <div class="ship-class">${esc(v.className)}</div>
         <h3 style="color:${def.color}">${esc(def.name)}</h3>
         ${cap ? `<div class="ship-captain">${portrait(cap, 'sm')}<span>${esc(cap.name)}</span></div>` : ''}
         <p class="ship-blurb">${esc(v.blurb)}</p>
-        <div class="vessel-status">${unlocked ? 'In service' : `Locked · ${esc(def.unlockText)}`}</div>
+        <div class="vessel-status">${unlocked ? 'In service' : `🔒 ${esc(def.unlockText)}`}</div>
       </div>`;
     }).join('');
     return `<p class="dim log-fleet-intro">${esc(STORY.fleetName)}: five small ships against ${esc(STORY.enemyName.replace(/^The /, 'the '))}. Choose yours in the Hangar.</p>
@@ -984,11 +992,6 @@ export class UI {
 /** A character's glyph in a chamfered portrait chip tinted with their colour. */
 export function portrait(c: CharacterDef, size: 'sm' | 'md' | 'lg'): string {
   return `<span class="portrait ${size}" style="--cc:${c.color}" aria-hidden="true">${esc(c.glyph)}</span>`;
-}
-
-/** Role line for the cast list: keeps the explanation, drops the ship-id tag. */
-function castRole(c: CharacterDef): string {
-  return c.role.replace(/\s*\((spark|vanguard|tempest|bastion|phantom)\)/g, '').replace(/;\s*/g, ' · ');
 }
 
 /** Progress text for a locked log entry ('' for yes/no unlocks). */

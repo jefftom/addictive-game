@@ -71,7 +71,9 @@ export class OpeningCrawl {
     </div>`);
     parent.appendChild(this.root);
     window.addEventListener('keydown', this.onKey, { capture: true });
-    this.root.addEventListener('pointerdown', this.onPointer);
+    // Close on `click`, not `pointerdown`: on touch screens the click that follows a
+    // tap would otherwise land on whatever screen appears underneath the crawl.
+    this.root.addEventListener('click', this.onPointer);
     this.run();
   }
 
@@ -99,8 +101,9 @@ export class OpeningCrawl {
     // Reduced motion shows a static, scrollable page: only its buttons close it on touch/click.
     if (this.reduced && !(e instanceof KeyboardEvent) && !(e.target as HTMLElement | null)?.closest?.('button')) return;
     if (e instanceof KeyboardEvent) {
-      // Modifier-only presses and OS shortcuts don't count as "skip".
+      // Modifier-only presses, browser/OS shortcuts and function keys pass straight through.
       if (['Shift', 'Control', 'Alt', 'Meta', 'Tab'].includes(e.key)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey || /^F\d{1,2}$/.test(e.key)) return;
       // The reduced-motion page scrolls with the arrow / page keys.
       if (this.reduced && !['Escape', 'Enter', 'NumpadEnter', 'Space'].includes(e.code)) return;
       e.preventDefault();
