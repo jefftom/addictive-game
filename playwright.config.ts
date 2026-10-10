@@ -10,8 +10,6 @@ export default defineConfig({
   reporter: process.env.CI ? [['github'], ['list']] : 'list',
   use: {
     baseURL: `http://localhost:${PORT}`,
-    // Google Fonts may be unreachable in sandboxes; the game falls back to system fonts.
-    ignoreHTTPSErrors: true,
     trace: 'retain-on-failure',
   },
   projects: [

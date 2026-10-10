@@ -117,4 +117,4 @@ CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the Playwr
 
 ## Credits
 
-Everything visual and audible is procedural, with no image or audio assets. Fonts: [Tektur](https://fonts.google.com/specimen/Tektur), [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) and [Kode Mono](https://fonts.google.com/specimen/Kode+Mono) from Google Fonts (SIL Open Font License), with system-font fallbacks when offline.
+Everything visual and audible is procedural, with no image or audio assets. Fonts: [Tektur](https://fonts.google.com/specimen/Tektur), [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) and [Kode Mono](https://fonts.google.com/specimen/Kode+Mono) (SIL Open Font License), bundled in `src/assets/fonts/` (latin subset, from the [Fontsource](https://fontsource.org) packages), so the game makes no third-party requests and works offline. Their licence ships with every build as `licenses/fonts-OFL.txt`.

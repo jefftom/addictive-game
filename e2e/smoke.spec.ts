@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
   await skipIntro(page);
 });
 
-/** Errors other than unreachable web fonts fail the test. */
+/** Errors other than failed resource loads (such as a missing favicon) fail the test. */
 function trackErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -124,6 +124,30 @@ test('menus open and close', async ({ page }) => {
     await page.locator(`#screen-${screen} [data-act="back"]`).click();
     await expect(page.locator('#screen-title')).toBeVisible();
   }
+  expect(errors).toEqual([]);
+});
+
+test('the web build uses its bundled fonts, makes no third-party requests and has no desktop-only controls', async ({ page, baseURL }) => {
+  const errors = trackErrors(page);
+  const origin = new URL(baseURL!).origin;
+  const remote: string[] = [];
+  page.on('request', (r) => {
+    if (!r.url().startsWith(origin) && !r.url().startsWith('data:')) remote.push(r.url());
+  });
+  await page.goto('/');
+  await expect(page.locator('#screen-title')).toBeVisible();
+  const loaded = () =>
+    page.evaluate(async () => {
+      await document.fonts.ready;
+      return [...new Set([...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family))].sort();
+    });
+  await expect.poll(loaded).toEqual(['Chakra Petch', 'Kode Mono', 'Tektur']);
+  expect(remote).toEqual([]);
+  // "Quit to desktop" and the fullscreen setting exist only in the desktop (Electron) build.
+  await expect(page.locator('#screen-title [data-act="quit"]')).toHaveCount(0);
+  await page.locator('#screen-title [data-act="settings"]').click();
+  await expect(page.locator('#screen-settings')).toBeVisible();
+  await expect(page.locator('#set-fullscreen')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 

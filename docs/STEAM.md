@@ -345,7 +345,7 @@ the game outside Steam.
 5. Set price, regional pricing, launch discount and release date, then press **Release**.
 6. Licences: ship credits including the MIT licence of steamworks.js, Electron/Chromium
    (`LICENSES.chromium.html` is already in every build), the Steamworks SDK redistributable terms,
-   and the Google Fonts (SIL OFL).
+   and the bundled fonts' SIL OFL (already shipped as `dist/licenses/fonts-OFL.txt`).
 
 ---
 
@@ -358,9 +358,6 @@ the game outside Steam.
   Deck, Steam's own UI works regardless.
 - The overlay switch `--in-process-gpu` means a GPU crash takes the whole game down instead of
   restarting the GPU process.
-- **Fonts:** `index.html` loads Google Fonts. Offline, the game falls back to system fonts. Bundle
-  the three fonts locally before release for a consistent look offline (the desktop CSP already
-  allows both the Google hosts and local files).
 - steamworks.js has had no npm release since 2024-08. It is pinned to 0.4.0 and the lockfile
   integrity hash is checked by `npm ci`.
 

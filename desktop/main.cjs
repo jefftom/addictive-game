@@ -148,9 +148,9 @@ function startFullscreen() {
 const CSP = [
   "default-src 'self'",
   "script-src 'self'",
-  // Google Fonts are linked from index.html; they fail gracefully offline (system font fallback).
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' data: https://fonts.gstatic.com",
+  // Fonts are bundled in dist/assets (src/assets/fonts): no third-party hosts at all.
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self'",
   "img-src 'self' data: blob:",
   "media-src 'self' data: blob:",
   "connect-src 'self'",
