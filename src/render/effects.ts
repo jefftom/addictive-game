@@ -129,6 +129,84 @@ export class Callouts {
   }
 }
 
+interface Card {
+  kicker: string;
+  title: string;
+  sub: string;
+  color: string;
+  life: number;
+  maxLife: number;
+}
+
+/**
+ * Sector title card after a galaxy warp, in the callout style: a small
+ * kicker ("SECTOR TWO"), the sector name with a neon glow, and its subtitle.
+ * Landscape: upper fifth, above the callout stack (the comms panel is at the
+ * bottom). Portrait: the comms panel docks at the top, so the card sits below
+ * the ship instead.
+ */
+export class SectorCard {
+  private card: Card | null = null;
+
+  /** `subtitle` is the story's "Sector Two: past the First Gate" form; it splits into kicker and line. */
+  show(title: string, subtitle: string, color: string, life = 2.8): void {
+    const cut = subtitle.indexOf(':');
+    const kicker = cut >= 0 ? subtitle.slice(0, cut) : '';
+    const sub = cut >= 0 ? subtitle.slice(cut + 1).trim() : subtitle;
+    this.card = { kicker: kicker.toUpperCase(), title: title.toUpperCase(), sub, color, life, maxLife: life };
+  }
+
+  update(dt: number): void {
+    if (!this.card) return;
+    this.card.life -= dt;
+    if (this.card.life <= 0) this.card = null;
+  }
+
+  draw(ctx: CanvasRenderingContext2D, w: number, h: number, ui: number): void {
+    const c = this.card;
+    if (!c) return;
+    const age = c.maxLife - c.life;
+    const inK = Math.min(1, age / 0.35);
+    const outK = Math.min(1, c.life / 0.6);
+    // Never wider than the screen (long names on a phone held upright).
+    const px = Math.min(34 * ui, (w * 0.9) / Math.max(8, c.title.length * 0.78));
+    const s = ease.outBack(inK);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = Math.min(inK * 1.5, outK);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.translate(w / 2, h * (h > w ? 0.64 : 0.2));
+    if (c.kicker) {
+      ctx.font = `600 ${12 * ui}px ${FONT_MONO}`;
+      ctx.fillStyle = 'rgba(234,242,255,0.75)';
+      ctx.fillText(c.kicker.split('').join(' '), 0, -px * 0.95);
+    }
+    ctx.save();
+    ctx.scale(s, s);
+    ctx.font = `900 ${px}px ${FONT_DISPLAY}`;
+    ctx.shadowColor = c.color;
+    ctx.shadowBlur = 24 * ui;
+    ctx.fillStyle = c.color;
+    ctx.fillText(c.title, 0, 0);
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 1.2 * ui;
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.strokeText(c.title, 0, 0);
+    ctx.restore();
+    if (c.sub) {
+      ctx.font = `600 ${14 * ui}px ${FONT_MONO}`;
+      ctx.fillStyle = 'rgba(234,242,255,0.85)';
+      ctx.fillText(c.sub, 0, px * 0.85);
+    }
+    ctx.restore();
+  }
+
+  clear(): void {
+    this.card = null;
+  }
+}
+
 interface Arc {
   points: number[];
   life: number;

@@ -17,8 +17,9 @@ import { HARD_MODE_RANK, TRAILS } from './meta/rank';
 import { resultFromWorld } from './meta/result';
 import { clearSave, defaultSave, loadSave, writeSave, type SaveData, type Settings } from './meta/save';
 import { detectBridge } from './platform/platform';
+import type { GalaxyEvent } from './render/galaxy';
 import { Renderer } from './render/renderer';
-import { StoryDirector, bossIdFromName, pickBossVictoryTaunt, pickGameOverQuip } from './story/director';
+import { StoryDirector, bossIdFromName, pickBossVictoryTaunt, pickGameOverQuip, sectorInfo } from './story/director';
 import { checkLogbook, markIntroSeen, recordQuip } from './story/logbook';
 import { StoryRunLink } from './story/runlink';
 import type { BossId } from './story/script';
@@ -101,6 +102,7 @@ export class App {
 
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     this.renderer = new Renderer(canvas);
+    this.renderer.onGalaxy = (e) => this.onGalaxy(e);
     this.save = loadSave();
     if (this.save.missions.length < 3) refillMissions(this.save, this.metaRng);
     if (!isShipUnlocked(this.save, this.save.ship)) this.save.ship = 'spark';
@@ -232,6 +234,21 @@ export class App {
     // Fallback for a renderer without zoom support (the solo camera): zoom 1.
     const k = r.scale * r.dpr;
     return [(p.x - r.camX) * k + r.w / 2, (p.y - r.camY) * k + r.h / 2];
+  }
+
+  /**
+   * Galaxy warp cues: the audio riser on the spool, then the boom and the
+   * sector title card on the punch. (The story's arrival comms come from the
+   * sim's 'sector' event through the run link.)
+   */
+  private onGalaxy(e: GalaxyEvent): void {
+    if (e.t === 'warp-spool') {
+      this.audio.warpRiser(e.punchIn);
+    } else if (e.t === 'warp-punch') {
+      this.audio.warpBoom();
+      const info = sectorInfo(e.to);
+      this.renderer.showSectorCard(e.to, info.name, info.subtitle);
+    }
   }
 
   private onResize(): void {
