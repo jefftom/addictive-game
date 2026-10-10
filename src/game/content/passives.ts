@@ -1,3 +1,4 @@
+import { pow } from '../../core/dmath';
 import type { PassiveId, Rarity, RelicId, Stats } from '../types';
 
 export interface PassiveDef {
@@ -22,7 +23,7 @@ export const PASSIVES: Record<PassiveId, PassiveDef> = {
   overclock: {
     id: 'overclock', name: 'Overclock', icon: '⟳', color: '#7ff9ff',
     text: '−8% weapon cooldown',
-    apply: (s, l) => { s.cooldown *= Math.pow(0.92, l); },
+    apply: (s, l) => { s.cooldown *= pow(0.92, l); },
   },
   amp: {
     id: 'amp', name: 'Amplifier', icon: '◉', color: '#a6ffef',
@@ -62,7 +63,7 @@ export const PASSIVES: Record<PassiveId, PassiveDef> = {
   dashcoil: {
     id: 'dashcoil', name: 'Dash Coil', icon: '⚡', color: '#c9b8ff',
     text: '−12% dash cooldown, +25% dash damage',
-    apply: (s, l) => { s.dashCooldown *= Math.pow(0.88, l); s.dashDamage *= 1 + 0.25 * l; },
+    apply: (s, l) => { s.dashCooldown *= pow(0.88, l); s.dashDamage *= 1 + 0.25 * l; },
   },
   crit: {
     id: 'crit', name: 'Targeting Matrix', icon: '⌖', color: '#ff9f6b',

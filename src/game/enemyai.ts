@@ -1,3 +1,4 @@
+import { atan2, cos, exp, hypot, sin } from '../core/dmath';
 import { TAU } from '../core/math';
 import { TARGET_HYSTERESIS } from './content/coop';
 import type { Enemy, Player } from './types';
@@ -41,7 +42,7 @@ export function updateEnemies(world: World, dt: number): void {
   // Chrono Field is team-wide (does not stack).
   const slow = world.teamHasRelic('chrono') ? 0.88 : 1;
   const farLimit = Math.max(world.effHalfW(), world.effHalfH()) * 1.5 + 350;
-  const decay = Math.exp(-KNOCK_DECAY * dt);
+  const decay = exp(-KNOCK_DECAY * dt);
   const coop = world.coop;
   const center = world.teamCenter();
   const cx = center.x;
@@ -55,10 +56,10 @@ export function updateEnemies(world: World, dt: number): void {
     let p = targetOf(world, e);
     let dx = p.x - e.x;
     let dy = p.y - e.y;
-    let d = Math.hypot(dx, dy) || 1;
+    let d = hypot(dx, dy) || 1;
 
     // Enemies left far behind the team view are recycled ahead of the team.
-    const far = coop ? Math.hypot(e.x - cx, e.y - cy) : d;
+    const far = coop ? hypot(e.x - cx, e.y - cy) : d;
     if (!e.boss && far > farLimit) {
       const sp = world.spawnPoint(60);
       e.x = sp.x;
@@ -72,7 +73,7 @@ export function updateEnemies(world: World, dt: number): void {
       }
       dx = p.x - e.x;
       dy = p.y - e.y;
-      d = Math.hypot(dx, dy) || 1;
+      d = hypot(dx, dy) || 1;
     }
 
     const ux = dx / d;
@@ -81,13 +82,13 @@ export function updateEnemies(world: World, dt: number): void {
 
     switch (e.kind) {
       case 'swarmling': {
-        const wob = Math.sin(world.time * 6 + e.id) * 0.45;
+        const wob = sin(world.time * 6 + e.id) * 0.45;
         const mx = ux - uy * wob;
         const my = uy + ux * wob;
-        const m = Math.hypot(mx, my) || 1;
+        const m = hypot(mx, my) || 1;
         e.x += (mx / m) * speed * dt;
         e.y += (my / m) * speed * dt;
-        e.angle = Math.atan2(my, mx);
+        e.angle = atan2(my, mx);
         break;
       }
       case 'dasher':
@@ -108,7 +109,7 @@ export function updateEnemies(world: World, dt: number): void {
       default:
         e.x += ux * speed * dt;
         e.y += uy * speed * dt;
-        if (e.kind === 'drifter') e.angle = Math.atan2(uy, ux);
+        if (e.kind === 'drifter') e.angle = atan2(uy, ux);
         else e.angle += e.spin * dt;
         break;
     }
@@ -161,7 +162,7 @@ function updateDasher(e: Enemy, ux: number, uy: number, d: number, speed: number
     case 0: // approach
       e.x += ux * speed * dt;
       e.y += uy * speed * dt;
-      e.angle = Math.atan2(uy, ux);
+      e.angle = atan2(uy, ux);
       if (d < 270 && e.stateT <= 0 && e.spawnT <= 0) {
         e.state = 1;
         e.stateT = 0.6;
@@ -174,7 +175,7 @@ function updateDasher(e: Enemy, ux: number, uy: number, d: number, speed: number
         e.aimX = ux;
         e.aimY = uy;
       }
-      e.angle = Math.atan2(e.aimY, e.aimX);
+      e.angle = atan2(e.aimY, e.aimX);
       if (e.stateT <= 0) {
         e.state = 2;
         e.stateT = 0.42;
@@ -211,7 +212,7 @@ function updateShooter(world: World, e: Enemy, ux: number, uy: number, d: number
   e.fireT -= dt;
   if (e.fireT <= 0 && d < 560 && e.spawnT <= 0) {
     e.fireT = e.elite ? 1.4 : 2.4;
-    const a = Math.atan2(uy, ux);
+    const a = atan2(uy, ux);
     if (e.elite) {
       for (let i = -1; i <= 1; i++) world.fireBullet(e.x, e.y, a + i * 0.22, 220, 10);
     } else {
@@ -229,7 +230,7 @@ function burst(world: World, e: Enemy, n: number, speed: number, offset: number,
 function summonRing(world: World, e: Enemy, kind: 'swarmling' | 'dasher' | 'drifter', n: number, radius: number): void {
   for (let i = 0; i < n; i++) {
     const a = (i / n) * TAU;
-    world.spawnEnemy(kind, e.x + Math.cos(a) * radius, e.y + Math.sin(a) * radius);
+    world.spawnEnemy(kind, e.x + cos(a) * radius, e.y + sin(a) * radius);
   }
 }
 

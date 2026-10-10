@@ -1,3 +1,4 @@
+import { atan2, cos, hypot, sin } from '../core/dmath';
 import { SpatialGrid } from '../core/grid';
 import { TAU, clamp, damp, ease } from '../core/math';
 import { Rng } from '../core/rng';
@@ -559,7 +560,7 @@ export class World {
       const k = damp(16, dt);
       p.vx += (input.mx * speed - p.vx) * k;
       p.vy += (input.my * speed - p.vy) * k;
-      const mag = Math.hypot(input.mx, input.my);
+      const mag = hypot(input.mx, input.my);
       if (mag > 0.15) {
         p.facingX = input.mx / mag;
         p.facingY = input.my / mag;
@@ -582,7 +583,7 @@ export class World {
       p.dashRecharge = 0;
     }
 
-    const mag = Math.hypot(input.mx, input.my);
+    const mag = hypot(input.mx, input.my);
     if (mag > 0.15) {
       p.facingX = input.mx / mag;
       p.facingY = input.my / mag;
@@ -595,7 +596,7 @@ export class World {
       if (mag <= 0.15) {
         const target = this.nearestEnemy(p.x, p.y, 400);
         if (target) {
-          const d = Math.hypot(target.x - p.x, target.y - p.y) || 1;
+          const d = hypot(target.x - p.x, target.y - p.y) || 1;
           dx = (target.x - p.x) / d;
           dy = (target.y - p.y) / d;
         }
@@ -724,7 +725,7 @@ export class World {
     p.run.hitsTaken++;
     p.run.damageTaken += dmg;
     this.noHitT = 0;
-    const d = Math.hypot(p.x - sx, p.y - sy) || 1;
+    const d = hypot(p.x - sx, p.y - sy) || 1;
     p.vx += ((p.x - sx) / d) * 260;
     p.vy += ((p.y - sy) / d) * 260;
     if (this.combo > 0) {
@@ -1084,10 +1085,10 @@ export class World {
       const n = e.elite ? 4 : 2;
       for (let i = 0; i < n; i++) {
         const a = (i / n) * TAU + this.rng.next();
-        const child = this.spawnEnemy('splitling', e.x + Math.cos(a) * 12, e.y + Math.sin(a) * 12);
+        const child = this.spawnEnemy('splitling', e.x + cos(a) * 12, e.y + sin(a) * 12);
         if (child) {
-          child.kx = Math.cos(a) * 220;
-          child.ky = Math.sin(a) * 220;
+          child.kx = cos(a) * 220;
+          child.ky = sin(a) * 220;
           child.spawnT = 0;
         }
       }
@@ -1139,17 +1140,17 @@ export class World {
     const rng = this.posRng;
     const hw = this.effHalfW();
     const hh = this.effHalfH();
-    const speed = Math.hypot(vx, vy);
+    const speed = hypot(vx, vy);
     const tries = this.coop ? SPAWN_RETRIES + 1 : 1;
     let px = cx;
     let py = cy;
     for (let attempt = 0; attempt < tries; attempt++) {
       let a = rng.next() * TAU;
       if (speed > 40 && rng.chance(0.35)) {
-        a = Math.atan2(vy, vx) + rng.range(-0.9, 0.9);
+        a = atan2(vy, vx) + rng.range(-0.9, 0.9);
       }
-      const c = Math.cos(a);
-      const s = Math.sin(a);
+      const c = cos(a);
+      const s = sin(a);
       const edge = Math.min(Math.abs(c) > 1e-6 ? hw / Math.abs(c) : Infinity, Math.abs(s) > 1e-6 ? hh / Math.abs(s) : Infinity);
       const d = edge + margin;
       px = cx + c * d;
@@ -1171,8 +1172,8 @@ export class World {
    */
   clearRadius(cx: number, cy: number, a: number, r: number): number {
     if (!this.coop) return r;
-    const c = Math.cos(a);
-    const s = Math.sin(a);
+    const c = cos(a);
+    const s = sin(a);
     const c2 = SPAWN_CLEARANCE * SPAWN_CLEARANCE;
     // A pilot whose clearance disc covers the point pushes it outward past the
     // disc. A push can land in another pilot's disc, so repeat (at most once per
@@ -1218,8 +1219,8 @@ export class World {
     this.bullets.push({
       x,
       y,
-      vx: Math.cos(angle) * sp,
-      vy: Math.sin(angle) * sp,
+      vx: cos(angle) * sp,
+      vy: sin(angle) * sp,
       r,
       damage: damage * this.director.dmgMult(this.time) * (this.cfg.hardMode ? 1.25 : 1),
       life: 6,
@@ -1284,15 +1285,15 @@ export class World {
           pr.targetId = target ? target.id : -1;
         }
         if (target) {
-          const desired = Math.atan2(target.y - pr.y, target.x - pr.x);
-          const cur = Math.atan2(pr.vy, pr.vx);
+          const desired = atan2(target.y - pr.y, target.x - pr.x);
+          const cur = atan2(pr.vy, pr.vx);
           let diff = desired - cur;
           while (diff > Math.PI) diff -= TAU;
           while (diff < -Math.PI) diff += TAU;
           const turn = Math.max(-pr.turn * dt, Math.min(pr.turn * dt, diff));
           const na = cur + turn;
-          pr.vx = Math.cos(na) * pr.speed;
-          pr.vy = Math.sin(na) * pr.speed;
+          pr.vx = cos(na) * pr.speed;
+          pr.vy = sin(na) * pr.speed;
         }
       }
       pr.x += pr.vx * dt;
@@ -1319,7 +1320,7 @@ export class World {
           break;
         }
         const [dmg, crit] = this.rollDamage(pr.damage, pr.owner);
-        const sp = Math.hypot(pr.vx, pr.vy) || 1;
+        const sp = hypot(pr.vx, pr.vy) || 1;
         this.damageEnemy(e, dmg, crit, pr.vx / sp, pr.vy / sp, 90, false, pr.owner);
         pr.hits.push(e.id);
         pr.pierce--;
@@ -1345,7 +1346,7 @@ export class World {
       if (dx * dx + dy * dy <= rr * rr) hits.push(e);
     }
     for (const e of hits) {
-      const d = Math.hypot(e.x - x, e.y - y) || 1;
+      const d = hypot(e.x - x, e.y - y) || 1;
       const [dmg, crit] = this.rollDamage(base, owner);
       this.damageEnemy(e, dmg, crit, (e.x - x) / d, (e.y - y) / d, 160, false, owner);
     }
@@ -1377,7 +1378,7 @@ export class World {
       }
       for (const e of victims) {
         ring.hit.add(e.id);
-        const d = Math.hypot(e.x - ring.x, e.y - ring.y) || 1;
+        const d = hypot(e.x - ring.x, e.y - ring.y) || 1;
         const [dmg, crit] = this.rollDamage(ring.damage, ring.owner);
         this.damageEnemy(e, dmg, crit, (e.x - ring.x) / d, (e.y - ring.y) / d, ring.knock, false, ring.owner);
       }
@@ -1401,7 +1402,7 @@ export class World {
             if (e.dead || e.boss) continue;
             const dx = m.x - e.x;
             const dy = m.y - e.y;
-            const d = Math.hypot(dx, dy);
+            const d = hypot(dx, dy);
             if (d > pullR || d < 4) continue;
             const f = (420 / e.mass) * dt;
             e.x += (dx / d) * Math.min(f, d - 4);
@@ -1449,11 +1450,11 @@ export class World {
         b.y = p.y;
       }
       if (b.t > b.duration) continue;
-      const cx = b.x + (Math.cos(b.angle) * b.length) / 2;
-      const cy = b.y + (Math.sin(b.angle) * b.length) / 2;
+      const cx = b.x + (cos(b.angle) * b.length) / 2;
+      const cy = b.y + (sin(b.angle) * b.length) / 2;
       const n = this.grid.query(cx, cy, b.length / 2 + 64, buf);
-      const ux = Math.cos(b.angle);
-      const uy = Math.sin(b.angle);
+      const ux = cos(b.angle);
+      const uy = sin(b.angle);
       const victims: Enemy[] = [];
       for (let k = 0; k < n; k++) {
         const e = this.enemies[buf[k]!]!;
@@ -1539,8 +1540,8 @@ export class World {
       kind,
       x,
       y,
-      vx: Math.cos(a) * sp,
-      vy: Math.sin(a) * sp,
+      vx: cos(a) * sp,
+      vy: sin(a) * sp,
       value,
       magnetized: false,
       age: 0,
@@ -1621,7 +1622,7 @@ export class World {
       if (target) {
         const dx = target.x - pk.x;
         const dy = target.y - pk.y;
-        const d = Math.hypot(dx, dy) || 1;
+        const d = hypot(dx, dy) || 1;
         const radius = wide ? target.stats.magnet : Math.min(target.stats.magnet, 60);
         const speed = Math.min(1400, 260 + pk.age * 900 + (radius / d) * 60);
         pk.vx = (dx / d) * speed;
@@ -1649,7 +1650,7 @@ export class World {
       pk.age += dt;
       const dx = p.x - pk.x;
       const dy = p.y - pk.y;
-      const d = Math.hypot(dx, dy) || 1;
+      const d = hypot(dx, dy) || 1;
       const radius = pk.kind === 'xp' || pk.kind === 'core' ? magnet : Math.min(magnet, 60);
       if (!pk.magnetized && d < radius && pk.age > 0.15) pk.magnetized = true;
       if (pk.magnetized && p.alive) {
@@ -1706,7 +1707,7 @@ export class World {
     const hh = this.effHalfH() + 40;
     for (const e of this.enemies) {
       if (e.dead || Math.abs(e.x - cx) > hw || Math.abs(e.y - cy) > hh) continue;
-      const d = Math.hypot(e.x - cx, e.y - cy) || 1;
+      const d = hypot(e.x - cx, e.y - cy) || 1;
       const dmg = e.boss || e.elite ? e.maxHp * 0.1 : e.hp + 1;
       this.damageEnemy(e, dmg, false, (e.x - cx) / d, (e.y - cy) / d, 300, false, pid);
     }

@@ -1,3 +1,4 @@
+import { pow } from '../core/dmath';
 import { PASSIVES, RELICS } from './content/passives';
 import { SHIPS } from './content/ships';
 import { WORKSHOP } from './content/workshop';
@@ -73,5 +74,5 @@ export function computeStats(
 /** XP required to go from `level` to `level + 1`. */
 export function xpForLevel(level: number): number {
   const l = level - 1;
-  return Math.round(4 + l * 6 + Math.pow(l, 1.95) * 0.6);
+  return Math.round(4 + l * 6 + pow(l, 1.95) * 0.6);
 }

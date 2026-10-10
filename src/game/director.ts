@@ -1,3 +1,4 @@
+import { cos, pow, sin } from '../core/dmath';
 import { TAU, clamp } from '../core/math';
 import { coopScaling, type CoopScaling } from './content/coop';
 import { BOSS_SCHEDULE, ENEMIES, SPAWNABLE, VICTORY_TIME } from './content/enemies';
@@ -35,7 +36,7 @@ export class Director {
 
   /** Threat points per second. */
   rate(t: number): number {
-    let r = 1.2 + 0.03 * t + 0.45 * Math.pow(t / 60, 2);
+    let r = 1.2 + 0.03 * t + 0.45 * pow(t / 60, 2);
     if (this.cfg.daily === 'swarm') r *= 1.6;
     if (this.cfg.daily === 'giants') r *= 0.5;
     if (this.cfg.hardMode) r *= 1.15;
@@ -43,7 +44,7 @@ export class Director {
   }
 
   hpMult(t: number): number {
-    let m = 1 + t / 100 + Math.pow(t / 220, 2.4);
+    let m = 1 + t / 100 + pow(t / 220, 2.4);
     if (t > VICTORY_TIME) m += (t - VICTORY_TIME) / 20;
     return m * this.scale.hp;
   }
@@ -84,7 +85,7 @@ export class Director {
       for (let i = 0; i < n; i++) {
         const a = offset + (i / n) * TAU;
         const d = 330 + rng.range(-30, 60);
-        world.spawnEnemy('drifter', p.x + Math.cos(a) * d, p.y + Math.sin(a) * d);
+        world.spawnEnemy('drifter', p.x + cos(a) * d, p.y + sin(a) * d);
       }
     }
 
@@ -141,7 +142,7 @@ export class Director {
           const a = offset + (i / n) * TAU;
           // Co-op: points that would land on an edge pilot are pushed outward.
           const r = world.clearRadius(cx, cy, a, radius);
-          world.spawnEnemy(kind, cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+          world.spawnEnemy(kind, cx + cos(a) * r, cy + sin(a) * r);
         }
         world.events.push({ t: 'surge' });
       }
@@ -183,7 +184,7 @@ export class Director {
     const cy = c.y;
     const a = world.spawnRng.next() * TAU;
     const d = world.clearRadius(cx, cy, a, Math.min(world.effHalfW(), world.effHalfH()) * 0.9 + 120);
-    const e = world.spawnEnemy(kind, cx + Math.cos(a) * d, cy + Math.sin(a) * d);
+    const e = world.spawnEnemy(kind, cx + cos(a) * d, cy + sin(a) * d);
     if (e) {
       e.fireT = 2;
       e.summonT = 5;

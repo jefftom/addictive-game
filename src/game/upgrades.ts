@@ -1,3 +1,4 @@
+import { pow } from '../core/dmath';
 import { MAX_PASSIVE_LEVEL, MAX_PASSIVES, PASSIVES, PASSIVE_IDS, RARITY_WEIGHT, RELICS, RELIC_IDS } from './content/passives';
 import { MAX_WEAPONS, MAX_WEAPON_LEVEL, WEAPONS } from './content/weapons';
 import type { PassiveId, Rarity, RelicId, WeaponId } from './types';
@@ -80,7 +81,7 @@ export function offerCandidates(world: World, cache: boolean, pid = 0): Candidat
       if (build.relics.includes(id)) continue;
       const rarity = RELICS[id].rarity;
       const tier = rarity === 'legendary' ? 2 : rarity === 'epic' ? 1.5 : 1;
-      let weight = RARITY_WEIGHT[rarity] * 0.35 * Math.pow(luck, tier);
+      let weight = RARITY_WEIGHT[rarity] * 0.35 * pow(luck, tier);
       if (cache) weight *= 4;
       out.push({ offer: { kind: 'relic', id }, weight });
     }

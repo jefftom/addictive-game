@@ -1,3 +1,4 @@
+import { atan2, cos, hypot, sin } from '../core/dmath';
 import { TAU } from '../core/math';
 import { weaponStats, type WeaponStats } from './content/weapons';
 import type { Enemy, WeaponInstance } from './types';
@@ -47,7 +48,7 @@ function firePulse(world: World, p: PlayerState, w: WeaponInstance, st: WeaponSt
   const s = p.stats;
   const target = world.nearestEnemy(p.x, p.y, 470);
   if (!target) return false;
-  const base = Math.atan2(target.y - p.y, target.x - p.x);
+  const base = atan2(target.y - p.y, target.x - p.x);
   const count = st.count + s.amount;
   const spread = w.evolved ? 0.06 : 0.14;
   if (w.evolved) w.phase = (w.phase + 1) % 2;
@@ -58,10 +59,10 @@ function firePulse(world: World, p: PlayerState, w: WeaponInstance, st: WeaponSt
     world.projectiles.push({
       kind: 'bolt',
       weapon: 'pulse',
-      x: p.x + Math.cos(a) * 14,
-      y: p.y + Math.sin(a) * 14,
-      vx: Math.cos(a) * speed,
-      vy: Math.sin(a) * speed,
+      x: p.x + cos(a) * 14,
+      y: p.y + sin(a) * 14,
+      vx: cos(a) * speed,
+      vy: sin(a) * speed,
       r: 5 * st.area * Math.sqrt(s.area),
       damage: st.damage,
       pierce: st.pierce,
@@ -84,15 +85,15 @@ function updateOrbit(world: World, p: PlayerState, w: WeaponInstance, st: Weapon
   const pid = p.pid;
   w.phase += st.speed * dt * Math.sqrt(1 / cdMult);
   const count = st.count + s.amount;
-  const radius = st.extra * s.area * (w.evolved ? 1 + Math.sin(world.time * 2.2) * 0.14 : 1);
+  const radius = st.extra * s.area * (w.evolved ? 1 + sin(world.time * 2.2) * 0.14 : 1);
   const bladeR = 10 * st.area * Math.sqrt(s.area);
   const hitCd = st.cooldown * cdMult;
   const buf = world.queryBuf;
   const victims: Enemy[] = [];
   for (let i = 0; i < count; i++) {
     const a = w.phase + (i / count) * TAU;
-    const bx = p.x + Math.cos(a) * radius;
-    const by = p.y + Math.sin(a) * radius;
+    const bx = p.x + cos(a) * radius;
+    const by = p.y + sin(a) * radius;
     world.blades.push({ x: bx, y: by, r: bladeR, pid });
     const n = world.grid.query(bx, by, bladeR + 64, buf);
     for (let k = 0; k < n; k++) {
@@ -108,7 +109,7 @@ function updateOrbit(world: World, p: PlayerState, w: WeaponInstance, st: Weapon
     }
   }
   for (const e of victims) {
-    const d = Math.hypot(e.x - p.x, e.y - p.y) || 1;
+    const d = hypot(e.x - p.x, e.y - p.y) || 1;
     const [dmg, crit] = world.rollDamage(st.damage, pid);
     world.damageEnemy(e, dmg, crit, (e.x - p.x) / d, (e.y - p.y) / d, 160, false, pid);
   }
@@ -147,7 +148,7 @@ function fireArc(world: World, p: PlayerState, w: WeaponInstance, st: WeaponStat
       }
       const dx = target.x - from.x;
       const dy = target.y - from.y;
-      const d = Math.hypot(dx, dy) || 1;
+      const d = hypot(dx, dy) || 1;
       const hit = target;
       from = { x: hit.x, y: hit.y };
       world.damageEnemy(hit, dmg, crit, dx / d, dy / d, 60, false, p.pid);
@@ -164,7 +165,7 @@ function fireSeeker(world: World, p: PlayerState, w: WeaponInstance, st: WeaponS
   if (!target) return false;
   const count = st.count + s.amount;
   const speed = st.speed * s.projSpeed;
-  const base = Math.atan2(p.facingY, p.facingX) + Math.PI;
+  const base = atan2(p.facingY, p.facingX) + Math.PI;
   for (let i = 0; i < count; i++) {
     const a = base + (i - (count - 1) / 2) * 0.5 + world.rng.range(-0.15, 0.15);
     world.projectiles.push({
@@ -172,8 +173,8 @@ function fireSeeker(world: World, p: PlayerState, w: WeaponInstance, st: WeaponS
       weapon: 'seeker',
       x: p.x,
       y: p.y,
-      vx: Math.cos(a) * speed,
-      vy: Math.sin(a) * speed,
+      vx: cos(a) * speed,
+      vy: sin(a) * speed,
       r: 6,
       damage: st.damage,
       pierce: 0,
@@ -197,8 +198,8 @@ function fireMines(world: World, p: PlayerState, w: WeaponInstance, st: WeaponSt
     const a = world.rng.next() * TAU;
     const d = i === 0 ? 0 : world.rng.range(50, 110);
     world.mines.push({
-      x: p.x + Math.cos(a) * d,
-      y: p.y + Math.sin(a) * d,
+      x: p.x + cos(a) * d,
+      y: p.y + sin(a) * d,
       armT: 0.4,
       life: st.duration * s.duration,
       radius: st.area * s.area,
@@ -216,13 +217,13 @@ function fireMines(world: World, p: PlayerState, w: WeaponInstance, st: WeaponSt
 function fireLance(world: World, p: PlayerState, w: WeaponInstance, st: WeaponStats): boolean {
   const s = p.stats;
   let angle: number;
-  const moving = Math.hypot(p.vx, p.vy) > 30;
+  const moving = hypot(p.vx, p.vy) > 30;
   if (moving) {
-    angle = Math.atan2(p.facingY, p.facingX);
+    angle = atan2(p.facingY, p.facingX);
   } else {
     const target = world.nearestEnemy(p.x, p.y, 600);
     if (!target) return false;
-    angle = Math.atan2(target.y - p.y, target.x - p.x);
+    angle = atan2(target.y - p.y, target.x - p.x);
   }
   const count = st.count;
   for (let i = 0; i < count; i++) {
