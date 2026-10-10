@@ -15,6 +15,15 @@ const isName = (n) => typeof n === 'string' && n.length > 0 && n.length <= 64;
 
 /** @type {null | (() => unknown)} */
 let flushHandler = null;
+/** @type {null | ((on: boolean) => void)} */
+let fullscreenHandler = null;
+ipcRenderer.on('ss:fullscreen', (_e, on) => {
+  try {
+    if (fullscreenHandler) fullscreenHandler(on === true);
+  } catch {
+    /* a game-side error must not break the bridge */
+  }
+});
 ipcRenderer.on('ss:flush', async () => {
   try {
     if (flushHandler) await flushHandler();
@@ -59,6 +68,10 @@ contextBridge.exposeInMainWorld(
     /** Registers the callback main awaits (max 500 ms) before quitting, to flush the save. */
     onFlushRequest: (fn) => {
       flushHandler = typeof fn === 'function' ? fn : null;
+    },
+    /** Called with the new state whenever the window enters or leaves fullscreen (F11, Alt+Enter, menu). */
+    onFullscreenChange: (fn) => {
+      fullscreenHandler = typeof fn === 'function' ? fn : null;
     },
     /** on: true/false sets, undefined toggles. Resolves with the new state. */
     setFullscreen: (on) => inv('win:fullscreen', typeof on === 'boolean' ? on : undefined),

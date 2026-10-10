@@ -6,9 +6,10 @@
  * to browser behaviour when that bridge is missing. Nothing in src/ may import
  * 'electron' or 'steamworks.js' (tests/platform.test.ts enforces this).
  *
- * Integration (later wave):
- *   main.ts:  `await initPlatform();` before `new App(...)` (hydrates the desktop save)
- *   save.ts:  in `storage()`, `return platform().storage;`
+ * Wiring:
+ *   main.ts:  `await initPlatform()` before `new App(..., platform)` (hydrates the desktop save)
+ *   save.ts:  `storage()` returns `platform().storage`
+ *   app.ts:   a PlatformLink (./link.ts) reports achievements, rich presence and run ends
  */
 import { createDesktopPlatform } from './desktop';
 import type { Presence } from './presence';
@@ -55,6 +56,8 @@ export interface DesktopBridge {
     write(json: string): Promise<boolean>;
   };
   onFlushRequest(fn: (() => unknown) | null): void;
+  /** Main reports window fullscreen changes (F11, Alt+Enter, the macOS menu). Optional: older shells lack it. */
+  onFullscreenChange?(fn: ((on: boolean) => void) | null): void;
   setFullscreen(on?: boolean): Promise<boolean>;
   toggleFullscreen(): Promise<boolean>;
   quit(): Promise<boolean>;
@@ -83,6 +86,10 @@ export interface Platform {
   quit(): void;
   /** Resolves with the new fullscreen state. */
   toggleFullscreen(): Promise<boolean>;
+  /** Sets fullscreen (desktop: the window, remembered by the shell); resolves with the new state. */
+  setFullscreen(on: boolean): Promise<boolean>;
+  /** One listener for fullscreen changes made outside the game (F11, Alt+Enter); null removes it. */
+  onFullscreenChange(fn: ((on: boolean) => void) | null): void;
   /** Writes pending saves now (call before quitting / on pagehide). */
   flush(): Promise<void>;
 }

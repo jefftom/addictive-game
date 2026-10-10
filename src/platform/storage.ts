@@ -9,7 +9,7 @@
  * - `hydrate()` runs once at boot, before `loadSave()`: the file is the source of truth
  *   on desktop, so its contents are copied into localStorage.
  *
- * Adoption in save.ts is one line: `return platform().storage;` in `storage()`.
+ * src/meta/save.ts reads and writes through `platform().storage` (see platform.ts).
  */
 
 /** Same shape as the `Storage` interface in src/meta/save.ts. */

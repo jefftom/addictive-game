@@ -358,6 +358,12 @@ function createWindow() {
   win.on('closed', () => {
     win = null;
   });
+  // F11, Alt+Enter, the macOS menu and setFullscreen() all end here: keep the game's Settings in step.
+  const notifyFullscreen = (on) => {
+    if (win && !win.isDestroyed()) win.webContents.send('ss:fullscreen', on);
+  };
+  win.on('enter-full-screen', () => notifyFullscreen(true));
+  win.on('leave-full-screen', () => notifyFullscreen(false));
   wc.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\//.test(url)) void shell.openExternal(url);
     return { action: 'deny' };

@@ -61,7 +61,7 @@ There are also guardrails: no real money, ads, loot boxes or energy timers; stre
 | `npm run build` | Production build to `dist/` |
 | `npm run build:single` | Self-contained `dist-single/shardstorm.html` |
 | `npm run desktop:dev` | Build, then run the game in the Electron desktop shell |
-| `npm run desktop:smoke` | Build, then drive the real Electron window with Playwright (title screen, a run, save file, no-Steam fallback) |
+| `npm run desktop:smoke` | Build, then drive the real Electron window with Playwright (title screen, bundled fonts, fullscreen setting and F11, a run, save file and its migration, quit flush, Steam Deck, no-Steam fallback) |
 | `npm run desktop:pack` | Unpacked desktop build for this OS in `release/` |
 | `npm run desktop:dist` | Release check (typecheck, tests, achievement table) + unpacked desktop build for this OS |
 | `npm run steam:achievements` | Regenerate `steam/achievements.json` from `src/meta/achievements.ts` |
@@ -111,7 +111,7 @@ The bot is not a human. These numbers are a baseline for tuning, not a substitut
 - **GitHub Pages:** `.github/workflows/deploy.yml` builds and publishes on every push to `main`. One-time setup: **Settings → Pages → Source: GitHub Actions**.
 - **Anywhere else:** upload `dist/` (relative paths, so any sub-path works) or the single `dist-single/shardstorm.html`.
 
-- **Steam (desktop):** an Electron shell with Steamworks (achievements, rich presence, Auto-Cloud saves, overlay). See [docs/STEAM.md](docs/STEAM.md) for the full release guide and [steam/README.md](steam/README.md) for the SteamPipe files. `.github/workflows/desktop.yml` builds unpacked Windows, macOS and Linux apps; its Steam upload job is off by default.
+- **Steam (desktop):** an Electron shell with Steamworks (achievements, rich presence, Auto-Cloud saves, overlay, a fullscreen setting and "Quit to desktop"); without a Steam client it runs the same game with saves in a local file. See [docs/STEAM.md](docs/STEAM.md) for the full release guide and [steam/README.md](steam/README.md) for the SteamPipe files. `.github/workflows/desktop.yml` builds unpacked Windows, macOS and Linux apps; its Steam upload job is off by default.
 
 CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the Playwright tests on every PR, and attaches the single-file build as a downloadable artifact.
 

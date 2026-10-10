@@ -1,9 +1,9 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it, vi } from 'vitest';
-import { ACHIEVEMENTS } from '../src/meta/achievements';
-import { SAVE_KEY } from '../src/meta/save';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ACHIEVEMENTS, achievementDef } from '../src/meta/achievements';
+import { SAVE_KEY, defaultSave, loadSave, writeSave } from '../src/meta/save';
 import {
   COOP_ACHIEVEMENTS,
   STEAM_ACHIEVEMENTS,
@@ -14,7 +14,8 @@ import {
   toSteamNames,
 } from '../src/platform/achievements';
 import { createDesktopPlatform } from '../src/platform/desktop';
-import { createPlatform, detectBridge, type DesktopBridge, type PlatformInfo } from '../src/platform/platform';
+import { PRESENCE_EVERY, PlatformLink, presenceFor, type PresenceSnapshot } from '../src/platform/link';
+import { createPlatform, detectBridge, platform, setPlatformForTests, type DesktopBridge, type Platform, type PlatformInfo } from '../src/platform/platform';
 import {
   createPresenceThrottle,
   formatPresenceTime,
@@ -59,7 +60,7 @@ const flushMicrotasks = () => new Promise((r) => setTimeout(r, 0));
 
 function fakeBridge(file: string | null = null) {
   const calls: { ch: string; arg?: unknown }[] = [];
-  const state = { file, flushHandler: null as null | (() => unknown) };
+  const state = { file, flushHandler: null as null | (() => unknown), fullscreenHandler: null as null | ((on: boolean) => void) };
   const info: PlatformInfo = {
     apiVersion: 1, os: 'linux', arch: 'x64', appVersion: '1.0.0', electron: '44.6.0', chrome: '152', packaged: false,
     steam: true, steamDeck: false, overlay: true, playerName: 'Starling', language: 'english', buildId: 7, fullscreen: true, leaderboards: false,
@@ -90,6 +91,9 @@ function fakeBridge(file: string | null = null) {
     },
     onFlushRequest: (fn) => {
       state.flushHandler = fn;
+    },
+    onFullscreenChange: (fn) => {
+      state.fullscreenHandler = fn;
     },
     setFullscreen: (on) => rec('fullscreen', on ?? false, on),
     toggleFullscreen: () => rec('toggleFullscreen', false),
@@ -372,5 +376,242 @@ describe('web bundle isolation', () => {
       const src = readFileSync(f, 'utf8');
       expect(src, f).not.toMatch(/from\s+['"](electron|steamworks\.js)['"]|require\(\s*['"](electron|steamworks\.js)['"]\s*\)|import\(\s*['"](electron|steamworks\.js)['"]/);
     }
+  });
+});
+
+/** A Platform double that records what the game reports to it. */
+function recordingPlatform(): { p: Platform; log: { unlocked: string[][]; synced: string[][]; presence: (Presence | null)[]; flushes: number } } {
+  const log = { unlocked: [] as string[][], synced: [] as string[][], presence: [] as (Presence | null)[], flushes: 0 };
+  const p: Platform = {
+    ...createPlatform({}),
+    kind: 'desktop',
+    unlockAchievements: (ids) => void log.unlocked.push([...ids]),
+    syncAchievements: (ids) => void log.synced.push([...ids]),
+    setPresence: (x) => void log.presence.push(x),
+    flush: async () => void log.flushes++,
+  };
+  return { p, log };
+}
+
+describe('save routing through the platform', () => {
+  afterEach(() => setPlatformForTests(null));
+
+  it('loadSave/writeSave use platform().storage: synchronous for the game, mirrored to the file later', async () => {
+    const clock = fakeClock();
+    const { bridge, state } = fakeBridge();
+    const local = memoryStorage();
+    const p = createDesktopPlatform(bridge, local, { storage: { timers: clock } });
+    setPlatformForTests(p);
+    await p.init();
+    expect(platform()).toBe(p);
+    const s = defaultSave();
+    s.cores = 42;
+    expect(writeSave(s)).toBe(true);
+    expect(JSON.parse(local.getItem(SAVE_KEY)!).cores).toBe(42);
+    expect(loadSave().cores).toBe(42);
+    expect(state.file).toBeNull(); // debounced
+    clock.advance(500);
+    await flushMicrotasks();
+    expect(JSON.parse(state.file!).cores).toBe(42);
+  });
+
+  it('desktop boot: the save file (Steam Auto-Cloud) wins over localStorage', async () => {
+    const local = memoryStorage();
+    local.setItem(SAVE_KEY, JSON.stringify({ ...defaultSave(), cores: 5 }));
+    const p = createDesktopPlatform(fakeBridge(JSON.stringify({ ...defaultSave(), cores: 9 })).bridge, local);
+    setPlatformForTests(p);
+    await p.init();
+    expect(p.hydrated()).toBe('file');
+    expect(loadSave().cores).toBe(9);
+  });
+
+  it('desktop first launch: an old localStorage save is migrated to the save file, once', async () => {
+    const local = memoryStorage();
+    local.setItem(SAVE_KEY, JSON.stringify({ ...defaultSave(), cores: 7, achievements: { first_run: 1 } }));
+    const first = fakeBridge(null);
+    const p = createDesktopPlatform(first.bridge, local);
+    setPlatformForTests(p);
+    await p.init();
+    expect(p.hydrated()).toBe('migrated-local');
+    await p.flush();
+    expect(JSON.parse(first.state.file!).cores).toBe(7);
+    expect(loadSave().achievements.first_run).toBe(1);
+
+    // Next launch: the file exists now, so a stale local copy no longer counts.
+    local.setItem(SAVE_KEY, JSON.stringify({ ...defaultSave(), cores: 1 }));
+    const second = fakeBridge(first.state.file);
+    const q = createDesktopPlatform(second.bridge, local);
+    setPlatformForTests(q);
+    await q.init();
+    expect(q.hydrated()).toBe('file');
+    expect(loadSave().cores).toBe(7);
+    expect(second.calls.some((c) => c.ch === 'save:write')).toBe(false);
+  });
+
+  it('the quit handshake writes a pending save without waiting for the debounce', async () => {
+    const clock = fakeClock();
+    const { bridge, state } = fakeBridge();
+    const p = createDesktopPlatform(bridge, memoryStorage(), { storage: { timers: clock } });
+    setPlatformForTests(p);
+    await p.init();
+    writeSave({ ...defaultSave(), cores: 77 });
+    await state.flushHandler!();
+    expect(JSON.parse(state.file!).cores).toBe(77);
+  });
+
+  it('web: the same key in localStorage, so existing saves (and e2e seeding) keep working', () => {
+    const local = memoryStorage();
+    local.setItem(SAVE_KEY, JSON.stringify({ story: { introSeen: true }, cores: 3 }));
+    setPlatformForTests(createPlatform({ localStorage: local }));
+    expect(platform().kind).toBe('web');
+    const s = loadSave();
+    expect(s.cores).toBe(3);
+    expect(s.story?.introSeen).toBe(true);
+    s.cores = 4;
+    writeSave(s);
+    expect(JSON.parse(local.getItem(SAVE_KEY)!).cores).toBe(4);
+  });
+});
+
+describe('platform link (what the App reports)', () => {
+  it('reports newly earned achievements by id and re-syncs the earned ones once per session', () => {
+    const { p, log } = recordingPlatform();
+    const link = new PlatformLink(p);
+    link.syncAchievements(['first_run', 'warden']);
+    link.syncAchievements(['victory']); // second call in the same session: ignored
+    expect(log.synced).toEqual([['first_run', 'warden']]);
+    link.unlocked([]);
+    link.unlocked([achievementDef('victory')!, achievementDef('squad')!]);
+    expect(log.unlocked).toEqual([['victory', 'squad']]);
+    link.runEnded();
+    expect(log.flushes).toBe(1);
+  });
+
+  it('desktop: unlocks reach the bridge as Steam names, and a run end retries the queue and writes the save', async () => {
+    const clock = fakeClock();
+    const { bridge, calls, state } = fakeBridge();
+    const p = createDesktopPlatform(bridge, memoryStorage(), { storage: { timers: clock } });
+    const link = new PlatformLink(p);
+    link.syncAchievements(['first_run', 'not_an_achievement']);
+    link.unlocked([achievementDef('warden')!]);
+    p.storage.setItem(SAVE_KEY, '{"runs":1}');
+    link.runEnded();
+    await flushMicrotasks();
+    expect(calls.filter((c) => c.ch === 'ach:sync').map((c) => c.arg)).toEqual([['ACH_FIRST_RUN']]);
+    expect(calls.filter((c) => c.ch === 'ach:activate').map((c) => c.arg)).toEqual(['ACH_WARDEN']);
+    expect(calls.some((c) => c.ch === 'ach:flush')).toBe(true);
+    expect(state.file).toBe('{"runs":1}'); // written at once, not after the debounce
+  });
+
+  it('re-evaluates rich presence about once a second', () => {
+    const link = new PlatformLink(recordingPlatform().p);
+    expect(link.presenceDue(0)).toBe(true);
+    expect(link.presenceDue(PRESENCE_EVERY / 2)).toBe(false);
+    expect(link.presenceDue(PRESENCE_EVERY / 2)).toBe(true);
+    expect(link.presenceDue(1 / 60)).toBe(false);
+  });
+
+  it('is a safe no-op on the web platform', async () => {
+    const link = new PlatformLink(createPlatform({}));
+    expect(() => {
+      link.syncAchievements(['first_run']);
+      link.unlocked([achievementDef('first_run')!]);
+      link.runEnded();
+      link.setPresence({ state: 'title', ship: 'spark', run: null });
+    }).not.toThrow();
+  });
+});
+
+describe('rich presence mapping (steam.md 2.5)', () => {
+  const run = (over: Partial<NonNullable<PresenceSnapshot['run']>> = {}): NonNullable<PresenceSnapshot['run']> => ({
+    time: 252, sector: 1, players: 1, overtime: false, boss: null, ...over,
+  });
+
+  it('title and menus, the shipyard (Hangar, Workshop) and the co-op lobby', () => {
+    expect(presenceFor({ state: 'title', screen: 'title', ship: 'spark', run: null })).toEqual({ mode: 'menu' });
+    expect(presenceFor({ state: 'title', screen: 'records', ship: 'spark', run: null })).toEqual({ mode: 'menu' });
+    expect(presenceFor({ state: 'title', screen: 'hangar', ship: 'bastion', run: null })).toEqual({ mode: 'hangar', ship: 'bastion' });
+    expect(presenceFor({ state: 'title', screen: 'workshop', ship: 'spark', run: null })).toEqual({ mode: 'hangar', ship: 'spark' });
+    expect(presenceFor({ state: 'lobby', screen: 'lobby', ship: 'spark', run: null })).toEqual({ mode: 'hangar', ship: 'spark' });
+  });
+
+  it('solo and co-op runs carry the sector, clock, ship and pilot count', () => {
+    expect(presenceFor({ state: 'playing', ship: 'tempest', run: run() })).toEqual({
+      mode: 'run', sector: 2, ship: 'tempest', players: 1, time: '4:12',
+    });
+    expect(presenceFor({ state: 'playing', ship: 'spark', run: run({ players: 3, sector: 0, time: 61 }) })).toEqual({
+      mode: 'run', sector: 1, ship: 'spark', players: 3, time: '1:01',
+    });
+    for (const state of ['levelup', 'paused', 'dying'] as const) {
+      expect(presenceFor({ state, ship: 'spark', run: run() }).mode).toBe('run');
+    }
+  });
+
+  it('boss fight, victory screen, Overtime and results', () => {
+    expect(presenceFor({ state: 'playing', ship: 'spark', run: run({ boss: 'hydra' }) })).toMatchObject({ mode: 'boss', boss: 'hydra', sector: 2 });
+    // world.victory is already true on the victory screen: that screen is not Overtime yet.
+    expect(presenceFor({ state: 'victory', ship: 'spark', run: run({ time: 600, sector: 3, overtime: true }) }).mode).toBe('victory');
+    expect(presenceFor({ state: 'playing', ship: 'phantom', run: run({ time: 640, sector: 3, overtime: true, boss: 'voidheart' }) })).toMatchObject({
+      mode: 'overtime', sector: 4, ship: 'phantom',
+    });
+    expect(presenceFor({ state: 'results', ship: 'vanguard', run: null, lastPlayers: 2 })).toEqual({ mode: 'results', ship: 'vanguard', players: 2 });
+  });
+
+  it('a boss presence without a known boss is sent as a plain run', () => {
+    expect(sanitizePresence({ mode: 'boss', boss: 'warden', sector: 2 })).toEqual({ mode: 'boss', boss: 'warden', sector: 2 });
+    expect(sanitizePresence({ mode: 'boss', boss: 'mothership' })).toEqual({ mode: 'run' });
+    expect(runPresence({ time: 10, ship: 'spark', boss: null }).mode).toBe('run');
+  });
+
+  it('throttled on desktop: mode changes go out at once, same-mode updates at most every 10 s', () => {
+    const clock = fakeClock();
+    const { bridge, calls } = fakeBridge();
+    const link = new PlatformLink(createDesktopPlatform(bridge, memoryStorage(), { clock }));
+    const sent = () => calls.filter((c) => c.ch === 'presence:set').map((c) => c.arg as Presence);
+    link.setPresence({ state: 'title', screen: 'title', ship: 'spark', run: null });
+    link.setPresence({ state: 'playing', ship: 'spark', run: run({ time: 1 }) });
+    link.setPresence({ state: 'playing', ship: 'spark', run: run({ time: 2 }) });
+    link.setPresence({ state: 'playing', ship: 'spark', run: run({ time: 3 }) });
+    expect(sent().map((p) => p.mode)).toEqual(['menu', 'run']);
+    link.setPresence({ state: 'playing', ship: 'spark', run: run({ time: 4, boss: 'warden' }) });
+    expect(sent().map((p) => p.mode)).toEqual(['menu', 'run', 'boss']);
+    clock.advance(10_000);
+    expect(sent()).toHaveLength(3); // nothing new queued since the boss update
+  });
+});
+
+describe('fullscreen', () => {
+  it('desktop: the setting goes through the bridge and F11 changes are reported back', async () => {
+    const { bridge, calls, state } = fakeBridge();
+    const p = createDesktopPlatform(bridge, memoryStorage());
+    const seen: boolean[] = [];
+    p.onFullscreenChange((on) => seen.push(on));
+    expect(await p.setFullscreen(false)).toBe(false);
+    expect(calls.find((c) => c.ch === 'fullscreen')?.arg).toBe(false);
+    state.fullscreenHandler!(true); // main: the window entered fullscreen (F11)
+    expect(seen).toEqual([true]);
+    expect(p.info().fullscreen).toBe(true);
+  });
+
+  it('web: uses the Fullscreen API when the page has one', async () => {
+    let fsEl: object | null = null;
+    const listeners: (() => void)[] = [];
+    const document = {
+      get fullscreenElement() {
+        return fsEl;
+      },
+      documentElement: { requestFullscreen: async () => void (fsEl = {}) },
+      exitFullscreen: async () => void (fsEl = null),
+      addEventListener: (_t: string, fn: () => void) => void listeners.push(fn),
+    };
+    const p = createPlatform({ document });
+    const seen: boolean[] = [];
+    p.onFullscreenChange((on) => seen.push(on));
+    expect(await p.setFullscreen(true)).toBe(true);
+    listeners.forEach((fn) => fn());
+    expect(await p.toggleFullscreen()).toBe(false);
+    listeners.forEach((fn) => fn());
+    expect(seen).toEqual([true, false]);
+    expect(p.canQuit).toBe(false);
   });
 });

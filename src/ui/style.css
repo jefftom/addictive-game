@@ -701,6 +701,12 @@ input[type='range'] {
   background: var(--ice);
 }
 
+/* Desktop build on Steam Deck: fullscreen is locked on. */
+#set-fullscreen:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .toggle:focus-visible,
 input[type='range']:focus-visible,
 select:focus-visible {

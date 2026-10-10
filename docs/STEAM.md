@@ -20,7 +20,7 @@ the Steamworks UI before relying on them.
 - [13. Building and uploading (SteamPipe and CI)](#13-building-and-uploading-steampipe-and-ci)
 - [14. Review and release](#14-review-and-release)
 - [15. Known limitations](#15-known-limitations)
-- [16. Wiring the platform layer into the game (next step)](#16-wiring-the-platform-layer-into-the-game-next-step)
+- [16. How the game uses the platform layer](#16-how-the-game-uses-the-platform-layer)
 - [17. Troubleshooting](#17-troubleshooting)
 
 ---
@@ -34,7 +34,7 @@ desktop/steam.cjs       the ONLY module that loads steamworks.js; never throws, 
 desktop/savefile.cjs    atomic JSON save in <userData>/save/ (Auto-Cloud syncs this folder)
 desktop/validate.cjs    validation of every renderer request (allowlists, sizes, formats)
 desktop/build-flags.json  {"steamRelease": false, "steamAppId": 0}; CI stamps the real values
-src/platform/           web/desktop platform layer used by the game (pure, unit tested)
+src/platform/           web/desktop platform layer the game runs on (saves, achievements, presence)
 steam/                  achievements.json, rich presence tokens, SteamPipe VDFs, dev steam_appid.txt
 electron-builder.yml    unpacked Windows / macOS (universal) / Linux builds, asar, fuses, no updater
 .github/workflows/desktop.yml  matrix build + optional manual Steam upload
@@ -61,9 +61,14 @@ JSON objects of at most 1 MiB, and only pages served from `app://game/` may call
 sets the Electron fuses `RunAsNode`, `NODE_OPTIONS`, `--inspect`, and file-protocol privileges off,
 and turns asar integrity and asar-only loading on.
 
-**Window:** fullscreen by default (always on Steam Deck). F11 or Alt+Enter toggles it (on macOS
-also Ctrl+Cmd+F), and the choice is remembered in `<userData>/desktop-settings.json`. Launch with
-`--windowed` (or `SHARDSTORM_WINDOWED=1`) to force a window. No menu bar on Windows and Linux.
+**Window:** fullscreen by default (always on Steam Deck). The **Fullscreen** switch in Settings,
+F11 or Alt+Enter toggle it (on macOS also Ctrl+Cmd+F), and the choice is remembered in
+`<userData>/desktop-settings.json` (machine-specific, so it is not part of the cloud save). On Steam
+Deck the switch is shown locked on. Launch with `--windowed` (or `SHARDSTORM_WINDOWED=1`) to force a
+window. No menu bar on Windows and Linux. The title screen has **Quit to desktop**.
+
+**Fonts:** Tektur, Chakra Petch and Kode Mono are bundled (`src/assets/fonts/`, latin WOFF2), so the
+game never contacts a third-party host and the CSP allows only the app's own files.
 
 **Logs:** `<userData>/logs/main.log`, rewritten on every launch. Ask players for it in bug reports.
 
@@ -169,11 +174,12 @@ Then **Publish**. If an achievement changes in `src/meta/achievements.ts`, run
 `npm run steam:achievements`, commit the JSON, and update Steamworks. The desktop main process
 refuses any API name that is not in the JSON.
 
-How unlocking behaves: an unlock that Steam rejects (for example because the player's stats have not
-arrived yet just after launch) is queued and retried every 2 seconds for up to 60 seconds, and again
-at the end of each run and before quitting. At startup the game should call `syncAchievements` with
-everything the local save has earned ([section 16](#16-wiring-the-platform-layer-into-the-game-next-step)),
-which also covers offline play and achievements earned before the Steam release.
+How unlocking behaves: the game reports every achievement as it is earned (end of a run, Workshop
+purchases). An unlock that Steam rejects (for example because the player's stats have not arrived yet
+just after launch) is queued and retried every 2 seconds for up to 60 seconds, and again at the end
+of each run and before quitting. At startup the game re-syncs everything the local save has earned,
+once per session, which also covers offline play, non-Steam launches and achievements earned before
+the Steam release. Steam skips the ones it already has.
 
 ---
 
@@ -185,11 +191,35 @@ the uploaded file they only see "Playing SHARDSTORM". The game sends at most one
 seconds, plus one on every mode change. With more than one local pilot it also sets
 `steam_player_group_size`, which groups the players in the friends list.
 
+| Where the player is | `steam_display` | Other keys |
+| --- | --- | --- |
+| Title screen, Records, Settings, Ship's Log | `#Status_Menu` | |
+| Hangar, Workshop, co-op lobby | `#Status_Hangar` | |
+| In a run (solo or co-op, also paused or on a level-up) | `#Status_Run` | `sector`, `time`, `ship`, `players` |
+| A capital ship is on the field | `#Status_Boss` | `boss` (`warden`, `hydra`, `voidheart`) and the run keys |
+| The 10:00 victory screen | `#Status_Victory` | run keys |
+| Overtime | `#Status_Overtime` | run keys |
+| Results screen | `#Status_Results` | `ship`, `players` |
+
+`ship` is P1's ship in co-op. The final boss's token is worded without its name, so friends'
+lists do not spoil it (its achievement is hidden for the same reason).
+
 ---
 
 ## 8. Steam Cloud (Auto-Cloud)
 
 The desktop save is `<userData>/save/shardstorm-save.json` (plus a `.bak`), written atomically.
+The game itself still reads and writes its save synchronously; on desktop the platform layer adds:
+
+- **Boot:** before the game loads its save, the file is copied into the renderer's storage. The file
+  is the source of truth, so a save Steam synced from another machine wins.
+- **Migration:** if there is no file yet but the renderer's localStorage has a save (a desktop build
+  from before the save file), that save is written to the file once, so it reaches the cloud.
+- **Writes:** every save is mirrored to the file 500 ms later (debounced). The end of a run writes it
+  at once, and so do quitting (Quit to desktop, closing the window, Steam's "Exit game": the shell
+  waits up to 500 ms for the game to flush), hiding the window and unloading the page.
+- **Reset progress** writes `{}` to the file (Auto-Cloud syncs a file, not a deletion); the next boot
+  reads that as a fresh save.
 Configure Steamworks > Application > Steam Cloud **[check in Steamworks: root names]**:
 
 - Byte quota: **1 MB** per user; number of files: **4**.
@@ -244,7 +274,7 @@ Proton for the app (Steamworks > Steam Deck compatibility) and it runs the Windo
 
 | # | Check | Status in the code |
 | --- | --- | --- |
-| 1 | Runs at 1280 x 800 and handles 1280 x 720 | window is 1280 x 800; fullscreen forced on Deck (`SteamDeck=1` or the Steam API) |
+| 1 | Runs at 1280 x 800 and handles 1280 x 720 | window is 1280 x 800; fullscreen forced on Deck (`SteamDeck=1` or the Steam API), and the Settings switch is locked on there |
 | 2 | Every screen works with a gamepad alone (title, hangar, workshop, records, settings, level-up, pause, results, story, co-op join) | audit needed |
 | 3 | Controller glyphs when a pad is in use; no "press Enter / click" prompts | audit needed |
 | 4 | Smallest text at least 9 px at 1280 x 800 (Valve recommends 12 px) | audit needed |
@@ -254,7 +284,7 @@ Proton for the app (Steamworks > Steam Deck compatibility) and it runs the Windo
 | 8 | At least 30 fps sustained by default | measure on hardware; consider a "reduced effects" default on Deck |
 | 9 | Suspend / resume | the game pauses on blur; verify on hardware |
 | 10 | Native Linux under sniper with `--no-sandbox`, Proton fallback | test both on hardware |
-| 11 | Quit from the pause menu and from Steam's "Exit game" | `platform().quit()` and `window-all-closed` -> quit; both flush the save first |
+| 11 | Quit from the game and from Steam's "Exit game" | "Quit to desktop" on the title screen (end the run from the pause menu first), the window close and `SIGTERM` all flush the save first |
 | 12 | Submit for Deck review | owner, in Steamworks > Steam Deck compatibility |
 
 ---
@@ -363,36 +393,20 @@ the game outside Steam.
 
 ---
 
-## 16. Wiring the platform layer into the game (next step)
+## 16. How the game uses the platform layer
 
-`src/platform/` is finished and tested but not yet called by the game. The integration is small:
+`src/platform/` is the only way the game reaches Electron or Steam, and everything in it is a safe
+no-op in the browser build. Nothing under `src/` may import `electron` or `steamworks.js` (a unit
+test enforces it).
 
-```ts
-// src/main.ts: before creating the App
-import { initPlatform } from './platform/platform';
-await initPlatform(); // desktop: copies the save file into storage, fetches platform info
+| Where | What it does |
+| --- | --- |
+| `src/main.ts` | `await initPlatform()` before the App is created (desktop: copies the save file into storage, fetches platform info; gives up after 4 s so a broken bridge cannot stop the game). Flushes pending saves on `pagehide`, `beforeunload` and when the page is hidden. |
+| `src/meta/save.ts` | `loadSave` / `writeSave` / `clearSave` use `platform().storage` (localStorage under `shardstorm.save` on both builds; the desktop one also mirrors to the save file). |
+| `src/platform/link.ts` | `PlatformLink`, owned by the App: startup achievement re-sync (once), newly earned achievements, the end-of-run flush, and rich presence (`presenceFor` maps the App state to the table in [section 7](#7-rich-presence); re-evaluated once a second, throttled to Steam). |
+| `src/app.ts` / `src/ui/ui.ts` | "Quit to desktop" on the title screen and the Fullscreen switch in Settings, only when the platform can quit (desktop). F11 and Alt+Enter are handled by the shell, which reports the new state so the switch follows. |
 
-// src/meta/save.ts: storage() becomes
-import { platform } from '../platform/platform';
-function storage(): Storage | null {
-  return platform().storage; // web: localStorage with memory fallback; desktop: also mirrored to the save file
-}
-
-// src/app.ts
-platform().syncAchievements(Object.keys(save.achievements));        // once at startup
-platform().unlockAchievements(newlyEarned.map((a) => a.id));         // after checkAchievements()
-platform().setPresence(menuPresence());                              // title screen
-platform().setPresence(runPresence({ time, ship, players, sector })); // every frame is fine: throttled
-platform().setPresence(resultsPresence(ship, players));
-// pause menu: show "Quit to desktop" when platform().canQuit, calling platform().quit()
-// settings: "Fullscreen" toggle when platform().kind === 'desktop' -> platform().toggleFullscreen()
-// records: hide Steam leaderboards while !platform().leaderboardsSupported
-```
-
-Everything is fire-and-forget and safe in the browser build. Nothing under `src/` may import
-`electron` or `steamworks.js` (a unit test enforces it).
-
----
+Steam leaderboards stay hidden (`platform().leaderboardsSupported` is false with steamworks.js).
 
 ## 17. Troubleshooting
 

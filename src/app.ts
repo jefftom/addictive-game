@@ -16,7 +16,8 @@ import { applyRun, buyUpgrade, coopBest, isShipUnlocked, unlockedShips } from '.
 import { HARD_MODE_RANK, TRAILS } from './meta/rank';
 import { resultFromWorld } from './meta/result';
 import { clearSave, defaultSave, loadSave, writeSave, type SaveData, type Settings } from './meta/save';
-import { detectBridge } from './platform/platform';
+import { PlatformLink, type PresenceSnapshot } from './platform/link';
+import { platform as currentPlatform, type Platform } from './platform/platform';
 import { Renderer } from './render/renderer';
 import { StoryDirector, bossIdFromName, pickBossVictoryTaunt, pickGameOverQuip } from './story/director';
 import { checkLogbook, markIntroSeen, recordQuip } from './story/logbook';
@@ -24,7 +25,7 @@ import { StoryRunLink } from './story/runlink';
 import type { BossId } from './story/script';
 import { CommsPanel, chatterAllows } from './ui/comms';
 import { CoopLobby, type RosterDevice, type RosterEntry } from './ui/lobby';
-import { UI, pilotLabel, type LobbyMouseAction, type ResultsStory } from './ui/ui';
+import { UI, pilotLabel, type DesktopUi, type LobbyMouseAction, type ResultsStory } from './ui/ui';
 
 export const DT = 1 / 60;
 const MAX_STEPS = 5;
@@ -99,7 +100,15 @@ export class App {
   /** Capital ship on the field when the run was lost (for the results taunt). */
   private killedBy: BossId | null = null;
 
-  constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
+  /** Web or desktop (Electron/Steam); the link reports achievements and rich presence to it. */
+  private readonly platform: Platform;
+  private readonly link: PlatformLink;
+  /** Pilots of the last finished run (results-screen rich presence). */
+  private lastRunPlayers = 1;
+
+  constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement, platform: Platform = currentPlatform()) {
+    this.platform = platform;
+    this.link = new PlatformLink(platform);
     this.renderer = new Renderer(canvas);
     this.save = loadSave();
     if (this.save.missions.length < 3) refillMissions(this.save, this.metaRng);
@@ -107,6 +116,8 @@ export class App {
     this.applySettings(this.save.settings);
     // Saves from before the Ship's Log (or progress made outside a run) unlock their entries quietly.
     if (checkLogbook(this.save).length > 0) writeSave(this.save);
+    // Steam: re-sync what this save has already earned (offline play, pre-Steam saves).
+    this.link.syncAchievements(Object.keys(this.save.achievements));
 
     this.input.attach(canvas);
     this.input.dashButtonHit = (x, y) => {
@@ -118,7 +129,7 @@ export class App {
     this.input.onSlotLost = (slot) => this.onSlotLost(slot);
     this.input.onPadsChanged = () => this.onPadsChanged();
     // Desktop (Electron) build: RightCtrl can be a kbB dash key (in a browser RightCtrl+W closes the tab).
-    this.input.allowCtrlDash = detectBridge() !== null;
+    this.input.allowCtrlDash = platform.kind === 'desktop';
 
     this.ui = new UI(uiRoot, {
       play: (daily) => this.startRun(daily),
@@ -166,7 +177,8 @@ export class App {
         rankUp: () => this.audio.rankUp(),
         reveal: (r) => this.audio.reveal(r),
       },
-    });
+    }, this.desktopUi());
+    platform.onFullscreenChange((on) => this.ui.fullscreenChanged(on));
 
     this.attract = this.newAttractWorld();
     this.onResize();
@@ -215,6 +227,40 @@ export class App {
   }
 
   // ───────────────────────── helpers ─────────────────────────
+
+  /** Desktop-only UI (Quit to desktop, the fullscreen setting); null on the web. */
+  private desktopUi(): DesktopUi | null {
+    const p = this.platform;
+    if (!p.canQuit) return null;
+    return {
+      steamDeck: p.info().steamDeck,
+      fullscreen: () => p.info().fullscreen,
+      setFullscreen: (on) => p.setFullscreen(on),
+      // Writes any pending save to the file first, then asks the shell to quit.
+      quit: () => p.quit(),
+    };
+  }
+
+  /** What rich presence needs to know right now (read-only view of the app and the run). */
+  private presenceSnapshot(): PresenceSnapshot {
+    const w = this.world;
+    const inRun = w !== null && this.state !== 'title' && this.state !== 'lobby' && this.state !== 'results';
+    return {
+      state: this.state,
+      screen: this.ui.current,
+      ship: inRun ? w.players[0]?.ship ?? this.save.ship : this.save.ship,
+      run: inRun
+        ? {
+            time: w.time,
+            sector: w.sector,
+            players: w.players.length,
+            overtime: w.victory,
+            boss: w.boss && !w.boss.dead ? bossIdFromName(w.boss.kind) : null,
+          }
+        : null,
+      lastPlayers: this.lastRunPlayers,
+    };
+  }
 
   private isTouch(): boolean {
     return this.input.isTouch() || (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches);
@@ -494,6 +540,9 @@ export class App {
     const summary = applyRun(this.save, result, this.metaRng);
     const story = this.resultsStory(w, result.victory, !w.gameOver && !result.victory);
     writeSave(this.save);
+    this.link.unlocked(summary.achievements);
+    this.link.runEnded();
+    this.lastRunPlayers = w.players.length;
     this.storyLink.endRun();
     this.comms.clear();
     this.lastCoopRoster = this.coop ? this.coop.roster.map((r) => ({ ...r })) : null;
@@ -733,6 +782,7 @@ export class App {
     if (ok) {
       const unlocked = checkAchievements(this.save, null);
       for (const a of unlocked) this.ui.toast(`Achievement: ${a.name}`, '★', true);
+      this.link.unlocked(unlocked);
       // A Workshop purchase can unlock a ship, and with it that ship's log entry.
       for (const e of checkLogbook(this.save)) this.ui.toast(`New log entry: ${e.title}`, '✦', true);
       writeSave(this.save);
@@ -752,6 +802,7 @@ export class App {
     this.renderer.beat = this.audio.music?.beatPulse() ?? 0;
 
     try {
+      if (this.link.presenceDue(realDt)) this.link.setPresence(this.presenceSnapshot());
       if (this.state === 'title' || this.state === 'results' || this.state === 'lobby') {
         this.input.consumePause();
         this.stepAttract(realDt);
