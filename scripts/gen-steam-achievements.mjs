@@ -17,7 +17,8 @@ if (process.argv.includes('--check')) {
   } catch {
     /* missing */
   }
-  if (current !== text) {
+  // Windows checkouts (core.autocrlf) turn LF into CRLF: compare the content, not the line endings.
+  if (current.replace(/\r\n/g, '\n') !== text) {
     console.error('steam/achievements.json is stale: run "npm run steam:achievements"');
     process.exit(1);
   }
