@@ -1,0 +1,17 @@
+--- a/src/game/types.ts
++++ b/src/game/types.ts
+@@ -98,12 +98,11 @@
+   aimY: number;
+   fireT: number;
+   summonT: number;
+-  /** pid of the player this enemy is chasing (always 0 in solo; -1 in co-op until first targeted). */
++  /** pid of the player this enemy is chasing (always 0 in solo). */
+   tgt: number;
+   /** Last orbit-blade hit time, one entry per player (so two orbits never block each other). */
+   orbitHitT: number[];
+-  /** Id of the last dash that hit this enemy, one entry per player (each dash hits once). */
+-  dashHitId: number[];
++  dashHitId: number;
+   spawnT: number;
+   dead: boolean;
+ }
