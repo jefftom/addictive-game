@@ -6,7 +6,7 @@ Read `AGENTS.md` first (commands and hard rules). This file is the task list.
 
 | Branch | State |
 |---|---|
-| `claude/dazzling-faraday-2kxdhl` | **The game.** Draft PR #1 into `main` (`main` is an empty root commit, so the PR shows everything). Task 1 complete with all CI jobs green; task 2 merged and being verified. See `docs/verification/`. |
+| `claude/dazzling-faraday-2kxdhl` | **The game.** Draft PR #1 into `main` (`main` is an empty root commit, so the PR shows everything). Tasks 1 and 2 passed all CI jobs. A task 1 follow-up covers module-load calculations under the runtime trap, per the corrected spec. See `docs/verification/`. |
 | `wip/fix-dmath` | Merged with merge commit `c806d39`, preserving `2980d33`. Numerical review, guard hardening, e2e and single-file validation completed on the PR branch. |
 | `wip/wave3-platform` | Merged with `ec48096`, preserving `361c4c1`. Task 2 verification and the specified Deck/licence fixes are on the PR branch. |
 | `wip/wave3-gfx` | Task 3a in progress: galaxy backdrops integrated. Typecheck clean; one failing test (see 3a). |
@@ -37,12 +37,14 @@ The original problem and finishing checklist below are retained as context.
 4. Run `npm run e2e` and `build:single`.
 5. Merge into the PR branch and push. **Done when the macOS `desktop` job is green.**
 
-## 2. Merge the platform wiring (`wip/wave3-platform`)
+## 2. Merge the platform wiring (`wip/wave3-platform`) — complete
 
 **Current status:** merged at `ec48096`; specified Deck fullscreen and standalone
 font-licence fixes are implemented. Local verification includes 343 unit tests,
 32 browser tests (8 unchanged device exclusions), 48 Windows Electron checks,
-and the achievement table check. Remote CI and Linux smoke gate pending.
+and the achievement table check. CI and all three desktop jobs passed at
+`10a84c7`, including all 48 Linux smoke checks. Font comparison and run links are
+in [`verification/02-platform.md`](verification/02-platform.md).
 
 - **What the branch does:**
   - `initPlatform()` at boot.

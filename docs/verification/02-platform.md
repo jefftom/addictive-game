@@ -66,5 +66,10 @@ These need an owner decision and are recorded in the PR description.
 Real Steam client integration and Steam-side token upload require the owner.
 The optional macOS native-menu/green-button persistence improvement is deferred;
 those native controls update the UI but currently do not save the preference.
-Linux smoke, macOS/Windows/Linux packaging, and browser CI must pass at this
-checkpoint before task 3a begins. Remote run links will be recorded after push.
+Remote acceptance passed at `10a84c7cdaf4291b4f35ac8016b6fa538dc44915`:
+
+- [CI: typecheck, unit tests, single build, desktop/mobile e2e](https://github.com/jefftom/addictive-game/actions/runs/38110958016).
+- [Desktop: all three OS builds and packaging, Linux smoke](https://github.com/jefftom/addictive-game/actions/runs/38110958010).
+
+The Linux job log confirms `DESKTOP SMOKE: 48 checks passed`. All required jobs
+succeeded; the Steam deploy job was intentionally skipped.

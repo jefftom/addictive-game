@@ -139,3 +139,38 @@ All required jobs succeeded. The deployment job was intentionally skipped.
 An extra local Windows Electron smoke exposed a trailing-backslash launch-path
 problem in the existing test script; task 2 fixes it and records a 48-check pass.
 Firefox/Safari and signed macOS distribution are outside this task's executed checks.
+
+## Corrected-spec follow-up
+
+The remote fact-check commit `6a757dd` arrived during task 2. It clarified that
+the runtime trap must cover module evaluation too. The old static imports
+loaded content tables before the trap; this was a real coverage gap. The guard
+now dynamically imports the simulation and daily module after installing the
+recorders. It exercises the corrected spec's exact solo seed 77, rank-8 three-
+pilot seed 31337, and daily date 2026-01-01, each for up to 90 seconds.
+
+Mutation proof: a temporary module-level `Math.pow(2, 3)` in the workshop table,
+with that file temporarily excluded from the static scan, passed the old test
+and failed the corrected test with `src/game/content/workshop.ts:82:43` in the
+recorded stack. Both temporary edits were restored byte-for-byte. This is the
+13th mutation case, in addition to the original 12 listed above.
+
+The expanded coverage sweep found no further simulation defect. Date/default
+date parameters and random seed selection are outside seeded ticks. Locale
+formatting is display-only. The daily-record sort uses default lexical ordering
+on date strings. Content object keys are string IDs in insertion order; Set
+members are integer enemy IDs or string content IDs. There are no Float32Array,
+Intl, localeCompare, performance.now, or float-keyed Map dependencies in the sim
+closure. Dmath detects byte order and handles NaN without using payload/sign
+bits to determine a finite result.
+
+Additional numeric probes: 708 comparisons using positive/negative signaling
+and quiet NaN payloads had zero special-value mismatches. Sin/cos at 17 adjacent
+doubles around each of +/-pi/4 and +/-1647099 had maximum 1 ULP error, with no
+reduction-boundary discontinuity. No numerical implementation change was needed.
+
+Following the revised timing protocol, six interleaved before/after batches
+of the same four rank-6 seeds gave minima **16.58 -> 14.12 us/tick (0.85x)**,
+within the 1.10x limit. These are shared-machine measurements, not a general
+speedup claim. The original balance evidence remains valid and no gameplay
+constants or golden values changed.

@@ -3,8 +3,6 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
-import { dailyInfo } from '../src/meta/daily';
-import { simulateRun } from './helpers';
 
 /**
  * Grep guard: the simulation must compute the same bits on every engine and
@@ -205,7 +203,7 @@ describe('deterministic math in the simulation', () => {
     for (const file of tsFiles(join(ROOT, 'src/game'))) expect(closure).toContain(rel(file));
   });
 
-  it('seeded solo, co-op and daily runs never call approximated Math at runtime', () => {
+  it('seeded solo, co-op and daily runs never call approximated Math at runtime', async () => {
     const math = Math as unknown as Record<string, (...args: number[]) => number>;
     const originals = new Map([...APPROXIMATED, 'random'].map((name) => [name, math[name]!]));
     const calls = new Map<string, string>();
@@ -216,10 +214,13 @@ describe('deterministic math in the simulation', () => {
           return original(...args);
         };
       }
-      simulateRun({ seed: 1000, rank: 1 }, 90);
+      // Import only under the trap: content tables can compute values at load.
+      const { simulateRun } = await import('./helpers');
+      const { dailyInfo } = await import('../src/meta/daily');
+      simulateRun({ seed: 77, rank: 1 }, 90);
       simulateRun({ seed: 31337, rank: 8, players: ['spark', 'vanguard', 'bastion'] }, 90);
-      const daily = dailyInfo('2026-10-10');
-      simulateRun({ seed: daily.seed, rank: 8, daily: daily.modifier.id }, 90);
+      const daily = dailyInfo('2026-01-01');
+      simulateRun({ seed: daily.seed, daily: daily.modifier.id }, 90);
     } finally {
       for (const [name, original] of originals) math[name] = original;
     }
