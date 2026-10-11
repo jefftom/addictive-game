@@ -13,6 +13,9 @@ export interface SimResult {
   score: number;
   maxCombo: number;
   bosses: string[];
+  wardenSpawnAt: number;
+  bossKillAt: number[];
+  tickMs: number[];
   perfects: number;
   peakEnemies: number;
   enemiesAt: Record<number, number>;
@@ -44,7 +47,7 @@ export function botRngFor(seed: number, pid: number, coop: boolean): Rng {
  * Plays one headless run with the bot until death (team wipe) or `maxTime`
  * seconds. `players` (ship ids) makes it a co-op run with one bot per pilot.
  */
-export function simulateRun(input: SimInput, maxTime = 600, skill = 0.6): SimResult {
+export function simulateRun(input: SimInput, maxTime = 600, skill = 0.6, timeTicks = false): SimResult {
   const { players: ships, ...rest } = input;
   const coop = (ships?.length ?? 0) > 1;
   const world = new World(makeRunConfig({ ...rest, players: ships?.map((ship) => ({ ship })) }));
@@ -55,9 +58,17 @@ export function simulateRun(input: SimInput, maxTime = 600, skill = 0.6): SimRes
   let peak = 0;
   let firstLevelUpAt = -1;
   let nextSample = 30;
+  let wardenSpawnAt = -1;
+  const bossKillAt: number[] = [];
+  const tickMs: number[] = [];
   while (!world.gameOver && world.time < maxTime) {
-    if (coop) world.update(DT, world.players.map((p) => botInput(world, rngs[p.pid]!, { skill }, p.pid)));
-    else world.update(DT, botInput(world, rng, { skill }));
+    const inputs = coop ? world.players.map((p) => botInput(world, rngs[p.pid]!, { skill }, p.pid)) : botInput(world, rng, { skill });
+    const measure = timeTicks && world.enemies.length >= 350;
+    const started = measure ? performance.now() : 0;
+    world.update(DT, inputs);
+    if (measure) tickMs.push(performance.now() - started);
+    if (wardenSpawnAt < 0 && world.boss?.kind === 'warden') wardenSpawnAt = world.time;
+    while (bossKillAt.length < world.runStats.bossesKilled.length) bossKillAt.push(world.time);
     if (firstLevelUpAt < 0 && world.level > 1) firstLevelUpAt = world.time;
     botResolvePending(world, rng, (o, pid) => applyOffer(world, o, pid));
     world.events.length = 0;
@@ -76,6 +87,9 @@ export function simulateRun(input: SimInput, maxTime = 600, skill = 0.6): SimRes
     score: world.score,
     maxCombo: world.runStats.maxCombo,
     bosses: world.runStats.bossesKilled,
+    wardenSpawnAt,
+    bossKillAt,
+    tickMs,
     perfects: world.runStats.perfects,
     peakEnemies: peak,
     enemiesAt,
