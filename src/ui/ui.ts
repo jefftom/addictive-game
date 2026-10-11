@@ -779,6 +779,7 @@ export class UI {
             : ''
         }
         ${toggle('flashes', 'Screen flashes', 'Turn off to reduce flashing effects', st.flashes)}
+        ${toggle('postfx', 'Enhanced graphics', 'Bloom and shockwaves (WebGL2). Turn off on slow machines', st.postfx)}
         ${toggle('damageNumbers', 'Damage numbers', 'Show numbers when enemies are hit', st.damageNumbers)}
         ${toggle('breakReminder', 'Break reminder', 'A gentle nudge after an hour of play', st.breakReminder)}
         ${toggle('showFps', 'Show FPS', 'Performance overlay', st.showFps)}
@@ -797,6 +798,7 @@ export class UI {
       sfx: Number(($(s, '#set-sfx') as HTMLInputElement).value) / 100,
       shake: Number(($(s, '#set-shake') as HTMLInputElement).value) / 100,
       flashes: ($(s, '#set-flashes') as HTMLInputElement).checked,
+      postfx: ($(s, '#set-postfx') as HTMLInputElement).checked,
       damageNumbers: ($(s, '#set-damageNumbers') as HTMLInputElement).checked,
       breakReminder: ($(s, '#set-breakReminder') as HTMLInputElement).checked,
       showFps: ($(s, '#set-showFps') as HTMLInputElement).checked,

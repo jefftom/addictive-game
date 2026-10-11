@@ -2,7 +2,10 @@
 
 Local acceptance completed on 2026-10-11. Base: `f003dc5`, after task 3a's
 CI and all desktop jobs completed. Implementation branch: `wip/wave3-entities`.
-Remote validation is recorded after the merge is pushed.
+Merged at `402a2f796986ae842be6923709fca6f135b323f5`. Both
+[CI](https://github.com/jefftom/addictive-game/actions/runs/38115948761) and
+[desktop](https://github.com/jefftom/addictive-game/actions/runs/38115948831)
+passed, including all macOS/Windows/Linux jobs and artifact uploads, before 3c began.
 
 ## Implementation
 

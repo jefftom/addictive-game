@@ -11,6 +11,7 @@ import { anticipatedSector } from './sectorwarp';
 import { drawHud, type HudState } from './hud';
 import { PAL, gemTier } from './palette';
 import { Particles } from './particles';
+import { PostFx, flashBudget, type FxQuality } from './postfx';
 import { SpriteCache, makeGlowDot, type SpriteShape } from './sprites';
 
 export interface RenderSettings {
@@ -30,12 +31,25 @@ interface Blast {
   color: string;
 }
 
+const FX_GLOW = 0.15;
+const FX_PUNCH = 0.6;
+
 const TARGET_AREA_DESKTOP = 1366 * 768;
 const TARGET_AREA_MOBILE = 470 * 980;
 
 export class Renderer {
   readonly canvas: HTMLCanvasElement;
-  readonly ctx: CanvasRenderingContext2D;
+  ctx: CanvasRenderingContext2D;
+  readonly hudCtx: CanvasRenderingContext2D;
+  readonly worldCanvas: HTMLCanvasElement;
+  private readonly worldCtx: CanvasRenderingContext2D;
+  readonly postfx: PostFx | null;
+  private fxWanted = true;
+  private fxOn = false;
+  private worldScale = 1;
+  costTier = 4;
+  private hurtCaT = 0;
+  private camZoom = 1;
   dpr = 1;
   /** CSS px size. */
   cssW = 0;
@@ -71,17 +85,27 @@ export class Renderer {
   hud: HudState;
   settings: RenderSettings = { shake: 1, flashes: true, damageNumbers: true, showFps: false, trail: '#7ff9ff' };
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, fxCanvas: HTMLCanvasElement | null = null) {
     this.canvas = canvas;
-    const ctx = canvas.getContext('2d', { alpha: false });
+    this.postfx = fxCanvas ? PostFx.create(fxCanvas) : null;
+    const ctx = canvas.getContext('2d', { alpha: this.postfx !== null });
     if (!ctx) throw new Error('Canvas 2D not supported');
-    this.ctx = ctx;
+    this.ctx = this.hudCtx = ctx;
+    this.worldCanvas = document.createElement('canvas');
+    const worldCtx = this.worldCanvas.getContext('2d', { alpha: false });
+    if (!worldCtx) throw new Error('Canvas 2D not supported');
+    this.worldCtx = worldCtx;
+    if (this.postfx) {
+      this.postfx.onActiveChange = () => this.applyFxMode();
+      this.postfx.onQualityChange = (q, rs) => this.onFxQuality(q, rs);
+    }
     this.bulletDot = makeGlowDot('rgba(255,79,122,0.9)', '#fff0f4', 64);
     this.hud = {
       bestScore: 0,
       touch: false,
       fps: 60,
       showFps: false,
+      fxLabel: '2D',
       xpFlash: 0,
       hpFlash: 0,
       comboBreak: null,
@@ -90,6 +114,7 @@ export class Renderer {
       pauseInset: 0,
     };
     this.resize();
+    this.applyFxMode();
   }
 
   /** Recomputes sizes; returns the visible half extents in world units. */
@@ -105,13 +130,15 @@ export class Renderer {
       this.canvas.width = this.w;
       this.canvas.height = this.h;
     }
+    this.postfx?.resize(this.w, this.h);
+    this.sizeWorldCanvas();
     const short = Math.min(cssW, cssH);
     const t = clamp((short - 420) / (900 - 420), 0, 1);
     const targetArea = lerp(TARGET_AREA_MOBILE, TARGET_AREA_DESKTOP, t);
     this.scale = Math.sqrt((cssW * cssH) / targetArea);
     this.ui = clamp(short / 760, 0.72, 1.35) * this.dpr;
-    this.sprites.setResolution(this.scale * this.dpr);
-    this.fx.setResolution(this.scale * this.dpr);
+    this.sprites.setResolution(this.scale * this.dpr * this.worldScale);
+    this.fx.setResolution(this.scale * this.dpr * this.worldScale);
     const ui = this.ui;
     this.hud.dashButton = { x: this.w - 74 * ui, y: this.h - 96 * ui, r: 44 * ui };
     // The DOM pause button is 40px + 10px margin (CSS px).
@@ -119,7 +146,69 @@ export class Renderer {
     return { halfW: cssW / 2 / this.scale, halfH: cssH / 2 / this.scale };
   }
 
+  private sizeWorldCanvas(): void {
+    const w = this.fxOn ? Math.max(1, Math.round(this.w * this.worldScale)) : 1;
+    const h = this.fxOn ? Math.max(1, Math.round(this.h * this.worldScale)) : 1;
+    if (this.worldCanvas.width !== w || this.worldCanvas.height !== h) {
+      this.worldCanvas.width = w;
+      this.worldCanvas.height = h;
+    }
+  }
+
+  private view(tw: number, th: number, s: number): { k: number; ox: number; oy: number } {
+    const k = this.scale * this.dpr * s / this.camZoom;
+    return { k, ox: tw / 2 - this.camX * k + this.shake.x * this.dpr * s,
+      oy: th / 2 - this.camY * k + this.shake.y * this.dpr * s };
+  }
+
+  setPostFx(on: boolean): void {
+    if (on && !this.fxWanted) this.postfx?.reenable();
+    this.fxWanted = on;
+    this.applyFxMode();
+  }
+
+  get postFxActive(): boolean { return this.fxOn; }
+
+  private applyFxMode(): void {
+    const on = this.fxWanted && !!this.postfx && this.postfx.active;
+    this.fxOn = on;
+    this.ctx = on ? this.worldCtx : this.hudCtx;
+    const g = on ? FX_GLOW : 1;
+    this.sprites.setGlowScale(g);
+    this.fx.setGlowScale(g);
+    this.fx.postFx = on;
+    this.bg.galaxy.punchScale = on ? FX_PUNCH : 1;
+    this.onFxQuality(on ? this.postfx!.quality : 0, on ? this.postfx!.renderScale : 1);
+    this.sizeWorldCanvas();
+    document.body.classList.toggle('fx-on', on);
+  }
+
+  private onFxQuality(_q: FxQuality, renderScale: number): void {
+    const px = this.postfx;
+    this.costTier = this.fxOn && px ? px.costTier : px?.autoOff ? 0 : 4;
+    this.fx.setCostTier(this.costTier);
+    // WarpGrid quality follows this tier in task 3d.
+    const ws = this.fxOn ? renderScale : 1;
+    if (ws !== this.worldScale) {
+      this.worldScale = ws;
+      this.resize();
+    }
+  }
+
+  private wave(x: number, y: number, radius: number, strength: number, duration: number, glow: number, thickness: number, major = false): void {
+    if (!this.fxOn) return;
+    this.postfx?.shockwave(x, y, { radius, strength: strength / this.camZoom, duration, glow, thickness, major });
+  }
+
+  private hurtAberration(): void {
+    if (this.hurtCaT > 0) return;
+    this.postfx?.kickAberration(0.25);
+    this.hurtCaT = 0.4;
+  }
+
   reset(world: World): void {
+    this.postfx?.clearEffects();
+    this.hurtCaT = 0;
     this.particles.clear();
     this.texts.clear();
     this.callouts.clear();
@@ -183,6 +272,7 @@ export class Renderer {
           const n = ev.boss ? 80 : ev.elite ? 30 : 3 + ev.r * 0.2;
           P.burst(ev.x, ev.y, ev.color, n, 220 + ev.r * 5, ev.boss ? 1.2 : 0.45, ev.boss ? 4 : 2.2);
           if (ev.elite || ev.boss) {
+            this.wave(ev.x, ev.y, ev.r * 6, ev.boss ? 40 : 16, ev.boss ? 1 : 0.55, 0.2, Math.max(18, ev.r * 0.7), ev.boss);
             P.burst(ev.x, ev.y, PAL.gold, n * 0.4, 260, 0.9, 3);
             this.texts.add(ev.x, ev.y - ev.r, `+${formatNumber(ev.score)}`, PAL.gold, 18, 1.1, true);
           } else if (ev.score >= 100 && world.enemies.length < 150) {
@@ -214,12 +304,19 @@ export class Renderer {
           P.ring(world.player.x, world.player.y, 18, '#c9b8ff', 12);
           break;
         case 'perfect':
+          this.wave(ev.x, ev.y, 170, 16, 0.45, 0.25, 22);
+          this.postfx?.kickBloom(0.35);
           this.callouts.add('PERFECT', '#7ff9ff', 0.85, '+3 combo · dash refund', 0.8);
           P.ring(ev.x, ev.y, 26, '#7ff9ff', 28);
           // The perfect-dash ring is drawn by EntityFx (thin, no filled disc over the ship).
           this.shake.add(0.12);
           break;
+        case 'downed':
+          this.wave(ev.x, ev.y, 420, 27, 0.9, 0.2, 50);
+          this.hurtAberration();
+          break;
         case 'hurt':
+          this.hurtAberration();
           this.shake.add(0.45);
           this.addFlash('#ff2d55', 0.35);
           this.hud.hpFlash = 1;
@@ -250,11 +347,17 @@ export class Renderer {
           this.shake.add(0.3);
           break;
         case 'bossdead':
+          this.wave(ev.x, ev.y, 1100, 50, 1.6, 0.3, 90, true);
+          this.wave(ev.x, ev.y, 520, 26, 0.9, 0.2, 50, true);
+          this.postfx?.kickAberration(0.5);
+          this.postfx?.kickBloom(0.8);
           this.callouts.add('BOSS DESTROYED', PAL.gold, 1, ev.name.toUpperCase(), 2);
           this.addFlash('#ffffff', 0.6);
           this.blasts.push({ x: ev.x, y: ev.y, r: 520, life: 0.9, max: 0.9, color: '#ffffff' });
           break;
         case 'death':
+          this.wave(ev.x, ev.y, 700, 45, 1.2, 0.25, 70, true);
+          this.postfx?.kickAberration(0.5);
           P.burst(ev.x, ev.y, '#7ff9ff', 90, 420, 1.4, 4);
           P.burst(ev.x, ev.y, '#ffffff', 50, 260, 1.2, 3);
           this.shake.add(0.8);
@@ -265,12 +368,14 @@ export class Renderer {
           this.addFlash('#ffffff', 0.5);
           break;
         case 'ring':
+          this.wave(ev.x, ev.y, ev.r * 1.05, 12, 0.6, 0.1, Math.max(20, ev.r * 0.1));
           P.ring(ev.x, ev.y, ev.r * 0.3, ev.color, 10);
           break;
         case 'arc':
           this.arcs.add(ev.points, ev.evolved);
           break;
         case 'explode':
+          if (ev.r >= 60) this.wave(ev.x, ev.y, ev.r * 1.8, 9, 0.4, 0.08, Math.max(18, ev.r * 0.2));
           // Layered explosion (flash + rings + sparks + embers) is drawn by EntityFx.
           P.burst(ev.x, ev.y, ev.color, 6 + ev.r * 0.08, 160 + ev.r * 2, 0.45, 2.5);
           this.shake.add(0.05);
@@ -282,6 +387,8 @@ export class Renderer {
           this.callouts.add('SURGE', '#ff6b8a', 0.75, 'They are closing in', 1);
           break;
         case 'bomb':
+          this.wave(ev.x, ev.y, 1300, 60, 1.1, 0.3, 80, true);
+          this.postfx?.kickBloom(0.8);
           this.addFlash('#ffffff', 0.7);
           this.shake.add(0.6);
           this.blasts.push({ x: ev.x, y: ev.y, r: 900, life: 0.5, max: 0.5, color: '#ffffff' });
@@ -318,6 +425,7 @@ export class Renderer {
   draw(world: World, dt: number, opts: { attract: boolean; realDt: number; modal?: boolean }): void {
     const ctx = this.ctx;
     const rdt = opts.realDt;
+    this.hurtCaT = Math.max(0, this.hurtCaT - rdt);
     // Reduced flashing also calms the backdrop (static, softer warp punch).
     this.bg.galaxy.animate = this.bg.galaxy.flashes = this.settings.flashes;
     if (!opts.attract && !opts.modal) this.anticipateSector(world);
@@ -345,11 +453,10 @@ export class Renderer {
     this.camX += (tx - this.camX) * cd;
     this.camY += (ty - this.camY) * cd;
 
-    const k = this.scale * this.dpr;
-    const w = this.w;
-    const h = this.h;
-    const ox = w / 2 - this.camX * k + this.shake.x * this.dpr;
-    const oy = h / 2 - this.camY * k + this.shake.y * this.dpr;
+    const fxMode = this.fxOn && this.postfx !== null;
+    const w = fxMode ? this.worldCanvas.width : this.w;
+    const h = fxMode ? this.worldCanvas.height : this.h;
+    const { k, ox, oy } = this.view(w, h, fxMode ? this.worldScale : 1);
     const halfW = w / 2 / k + 80;
     const halfH = h / 2 / k + 80;
     const minX = this.camX - halfW;
@@ -493,7 +600,7 @@ export class Renderer {
       ctx.beginPath();
       ctx.arc(b.x, b.y, b.r * (0.3 + 0.7 * kk), 0, TAU);
       ctx.stroke();
-      ctx.globalAlpha = Math.min((1 - kk) * 0.18, discCap);
+      ctx.globalAlpha = Math.min((1 - kk) * (fxMode ? 0.10 : 0.18), discCap);
       ctx.fillStyle = b.color;
       ctx.fill();
     }
@@ -519,33 +626,66 @@ export class Renderer {
     // ── Enemy plasma LAST in the world: threats are never hidden by anything ──
     fx.drawBullets(ctx, world, this.bulletDot);
 
-    // ── World-space text ──
-    world2();
-    this.texts.draw(ctx, 1);
-
-    // ── Screen-space post ──
-    this.bg.drawVignette(ctx, w, h);
-    const hpK = p.hp / world.stats.maxHp;
-    if (p.alive && hpK < 0.3 && !opts.attract) {
-      const pulse = (Math.sin(this.time * 6) * 0.5 + 0.5) * (0.3 - hpK) * 1.6;
-      const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.hypot(w, h) * 0.6);
-      g.addColorStop(0, 'rgba(255,45,85,0)');
-      g.addColorStop(1, hexAlpha('#ff2d55', Math.min(0.5, pulse)));
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, w, h);
+    // Native-resolution overlay: world text and HUD never enter the bloom pipeline.
+    const hud = this.hudCtx;
+    const HW = this.w, HH = this.h;
+    if (fxMode) {
+      hud.setTransform(1, 0, 0, 1, 0, 0);
+      hud.globalAlpha = 1;
+      hud.globalCompositeOperation = 'source-over';
+      hud.clearRect(0, 0, HW, HH);
     }
-    if (this.flash.a > 0.01) {
-      ctx.globalAlpha = this.flash.a;
-      ctx.fillStyle = this.flash.color;
-      ctx.fillRect(0, 0, w, h);
-      ctx.globalAlpha = 1;
+    const v = this.view(HW, HH, 1);
+    hud.setTransform(v.k, 0, 0, v.k, v.ox, v.oy);
+    this.texts.draw(hud, 1);
+    hud.setTransform(1, 0, 0, 1, 0, 0);
+    hud.globalAlpha = 1;
+
+    let lowHp = 0;
+    if (!opts.attract) for (const pilot of world.players) {
+      const hpK = pilot.hp / pilot.stats.maxHp;
+      if (world.isUp(pilot) && hpK < 0.3) lowHp = Math.max(lowHp, (Math.sin(this.time * 6) * 0.5 + 0.5) * (0.3 - hpK) * 1.6);
+    }
+    const galaxy = this.bg.galaxy;
+    const punchA = galaxy.warpFx.punch * (this.settings.flashes ? 0.35 : 0.09) * galaxy.punchScale;
+    const flashA = Math.min(this.flash.a, flashBudget(punchA, this.settings.flashes, fxMode));
+    const post = fxMode ? this.postfx : null;
+    if (post) {
+      post.settings.flashes = this.settings.flashes;
+      post.settings.shake = this.settings.shake;
+      post.damage = lowHp * 2;
+      post.setFlash(this.flash.color, flashA > 0.01 ? flashA : 0);
+      post.setView(k, ox, oy);
+      if (!post.render(this.worldCanvas, rdt)) {
+        // Preserve this frame before mode switching frees the offscreen canvas.
+        hud.globalCompositeOperation = 'destination-over';
+        hud.drawImage(this.worldCanvas, 0, 0, HW, HH);
+        hud.globalCompositeOperation = 'source-over';
+        this.applyFxMode();
+      }
+    } else {
+      this.bg.drawVignette(hud, HW, HH);
+      if (lowHp > 0) {
+        const g = hud.createRadialGradient(HW / 2, HH / 2, Math.min(HW, HH) * 0.3, HW / 2, HH / 2, Math.hypot(HW, HH) * 0.6);
+        g.addColorStop(0, 'rgba(255,45,85,0)');
+        g.addColorStop(1, hexAlpha('#ff2d55', Math.min(0.5, lowHp)));
+        hud.fillStyle = g;
+        hud.fillRect(0, 0, HW, HH);
+      }
+      if (flashA > 0.01) {
+        hud.globalAlpha = flashA;
+        hud.fillStyle = this.flash.color;
+        hud.fillRect(0, 0, HW, HH);
+        hud.globalAlpha = 1;
+      }
     }
 
     if (!opts.attract) {
       this.hud.showFps = this.settings.showFps;
-      drawHud(ctx, world, w, h, this.ui, this.hud);
-      this.callouts.draw(ctx, w, h, this.ui, this.sectorCard.calloutTop(w, h, this.ui));
-      this.sectorCard.draw(ctx, w, h, this.ui);
+      this.hud.fxLabel = this.fxOn && this.postfx ? `FX q${this.postfx.quality}${this.worldScale < 1 ? ' ×' + this.worldScale : ''}` : this.postfx?.autoOff ? '2D (auto)' : '2D';
+      drawHud(hud, world, HW, HH, this.ui, this.hud);
+      this.callouts.draw(hud, HW, HH, this.ui, this.sectorCard.calloutTop(HW, HH, this.ui));
+      this.sectorCard.draw(hud, HW, HH, this.ui);
     }
   }
 }

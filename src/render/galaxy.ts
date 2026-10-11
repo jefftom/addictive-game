@@ -2067,6 +2067,8 @@ export type GalaxyEvent =
 
 /** What the renderer needs to sync its own layers with the warp. */
 export interface WarpFx {
+  /** 0..1 inside the 100 ms punch window. */
+  punch: number;
   active: boolean;
   phase: 'spool' | 'tunnel' | 'arrive' | null;
   /** 0..1 over the whole warp (frozen while the tunnel holds for generation). */
@@ -2116,6 +2118,7 @@ export class GalaxyBackdrop {
   /** Current generation quality (backdropRef(w, h) / 1080). */
   quality: number;
   animate: boolean;
+  punchScale = 1;
   flashes: boolean;
   onEvent: ((e: GalaxyEvent) => void) | null;
   /** Debug: bitmask of layers to draw (1 tile, 4 center, 8 planets, 16 glow+comets). */
@@ -2455,10 +2458,11 @@ export class GalaxyBackdrop {
   /** Warp state for the renderer's own layers (stars, grid). */
   get warpFx(): WarpFx {
     const W = this.warp;
-    if (!W) return { active: false, phase: null, progress: -1, holding: false, stretch: 0, gridAlpha: 1, tint: '#ffffff' };
+    if (!W) return { punch: 0, active: false, phase: null, progress: -1, holding: false, stretch: 0, gridAlpha: 1, tint: '#ffffff' };
     const p = clamp01(W.t / W.dur);
     const env = smoothstep(0.08, WARP_SPOOL, p) * (1 - smoothstep(WARP_TUNNEL, WARP_TUNNEL + 0.2, p));
     return {
+      punch: p >= WARP_TUNNEL ? Math.max(0, 1 - (p - WARP_TUNNEL) * W.dur / PUNCH_S) : 0,
       active: true,
       phase: p < WARP_SPOOL ? 'spool' : p < WARP_TUNNEL ? 'tunnel' : 'arrive',
       progress: p,
@@ -2562,7 +2566,7 @@ export class GalaxyBackdrop {
     if (tp >= 0 && tp < PUNCH_S && this.flash) {
       const D = hyp(w, h) * 1.1;
       ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = (this.flashes ? 0.35 : 0.09) * (1 - tp / PUNCH_S);
+      ctx.globalAlpha = (this.flashes ? 0.35 : 0.09) * (1 - tp / PUNCH_S) * this.punchScale;
       ctx.drawImage(this.flash.c, w / 2 - D / 2, h / 2 - D / 2, D, D);
     }
     ctx.globalAlpha = 1;

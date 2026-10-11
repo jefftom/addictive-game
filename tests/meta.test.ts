@@ -7,7 +7,14 @@ import { MISSION_SLOTS, refillMissions } from '../src/meta/missions';
 import { affordableUpgrades, applyRun, buyUpgrade, isShipUnlocked, nearMiss, nextWorkshopGoal } from '../src/meta/progression';
 import { rankXpNeeded } from '../src/meta/rank';
 import type { RunResult } from '../src/meta/result';
-import { defaultSave, loadSave, migrate, writeSave, type Storage } from '../src/meta/save';
+import { defaultSave, defaultSettings, loadSave, migrate, writeSave, type Storage } from '../src/meta/save';
+
+it('defaults enhanced graphics for old or malformed saves and preserves an explicit opt-out', () => {
+  expect(defaultSettings().postfx).toBe(true);
+  expect(migrate({ settings: { music: 0.1 } }).settings.postfx).toBe(true);
+  expect(migrate({ settings: { postfx: false } }).settings.postfx).toBe(false);
+  for (const value of [null, 'false', 0]) expect(migrate({ settings: { postfx: value } }).settings.postfx).toBe(true);
+});
 
 function run(over: Partial<RunResult> = {}): RunResult {
   return {

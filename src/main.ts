@@ -41,7 +41,8 @@ async function boot(): Promise<void> {
       if (document.hidden) flush();
     });
   }
-  const app = new App(canvas, ui, p);
+  const fx = document.getElementById('fx') as HTMLCanvasElement | null;
+  const app = new App(canvas, ui, p, fx);
   app.start();
   // Exposed for debugging and automated smoke tests.
   (window as unknown as { shardstorm?: App }).shardstorm = app;

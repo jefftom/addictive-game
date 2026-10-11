@@ -66,7 +66,7 @@ There are also guardrails: no real money, ads, loot boxes or energy timers; stre
 | `npm run desktop:dist` | Release check (typecheck, tests, achievement table) + unpacked desktop build for this OS |
 | `npm run steam:achievements` | Regenerate `steam/achievements.json` from `src/meta/achievements.ts` |
 
-Debug URL parameters: `?autoplay` lets the bot play the real game, and `?warp=180` fast-forwards a new run by 180 seconds (useful for inspecting bosses).
+Debug URL parameters: `?autoplay` lets the bot play the real game, and `?warp=180` fast-forwards a new run by 180 seconds (useful for inspecting bosses). `?fx=0` forces plain 2D; `?fxq=N` pins enhanced graphics at quality 0–3 instead of using the automatic quality ladder.
 
 ### Project layout
 

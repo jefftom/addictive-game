@@ -111,7 +111,7 @@ body {
   -webkit-user-select: none;
 }
 
-#game {
+#game, #fx {
   position: fixed;
   inset: 0;
   width: 100%;
@@ -120,6 +120,11 @@ body {
   touch-action: none;
   background: var(--void);
 }
+
+#fx { z-index: 0; pointer-events: none; display: none; }
+#game { z-index: 1; }
+body.fx-on #fx { display: block; }
+body.fx-on #game { background: transparent; }
 
 #ui {
   position: fixed;
