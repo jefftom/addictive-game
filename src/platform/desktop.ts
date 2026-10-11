@@ -35,6 +35,7 @@ export function createDesktopPlatform(
   let info: PlatformInfo = defaultPlatformInfo('desktop');
   let initPromise: Promise<void> | null = null;
   let hydrated: HydrateResult | null = null;
+  let onFullscreen: ((on: boolean) => void) | null = null;
 
   const quietly = (p: Promise<unknown> | undefined, what: string): void => {
     void p?.catch((e: unknown) => log(what, e));
@@ -58,6 +59,26 @@ export function createDesktopPlatform(
   } catch (e) {
     log('onFlushRequest unavailable', e);
   }
+  // F11 / Alt+Enter are handled in main; it reports the new state so Settings stays in step.
+  try {
+    bridge.onFullscreenChange?.((on) => {
+      info = { ...info, fullscreen: on === true };
+      onFullscreen?.(info.fullscreen);
+    });
+  } catch (e) {
+    log('onFullscreenChange unavailable', e);
+  }
+
+  const applyFullscreen = async (call: () => Promise<boolean>): Promise<boolean> => {
+    try {
+      const on = (await call()) === true;
+      info = { ...info, fullscreen: on };
+      return on;
+    } catch (e) {
+      log('fullscreen change failed', e);
+      return info.fullscreen;
+    }
+  };
 
   return {
     kind: 'desktop',
@@ -96,15 +117,10 @@ export function createDesktopPlatform(
     quit() {
       void flush().finally(() => quietly(bridge.quit(), 'quit failed'));
     },
-    async toggleFullscreen() {
-      try {
-        const on = await bridge.toggleFullscreen();
-        info = { ...info, fullscreen: on };
-        return on;
-      } catch (e) {
-        log('fullscreen toggle failed', e);
-        return info.fullscreen;
-      }
+    toggleFullscreen: () => applyFullscreen(() => bridge.toggleFullscreen()),
+    setFullscreen: (on) => applyFullscreen(() => bridge.setFullscreen(on)),
+    onFullscreenChange(fn) {
+      onFullscreen = fn;
     },
     flush,
   };

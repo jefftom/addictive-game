@@ -1,5 +1,6 @@
 import { SHIPS } from '../game/content/ships';
 import type { ShipId } from '../game/types';
+import { platform } from '../platform/platform';
 
 export type TrailId = 'default' | 'ember' | 'aurora' | 'prism';
 /** In-run comms: every line, only story/rare lines, or none. */
@@ -251,12 +252,13 @@ export interface Storage {
   removeItem(key: string): void;
 }
 
+/**
+ * Where saves live: the platform's storage (src/platform). Web: localStorage under SAVE_KEY,
+ * with an in-memory fallback when it is unavailable. Desktop: the same, plus every write is
+ * mirrored (debounced) to the Steam Auto-Cloud save file, which main.ts copied in at boot.
+ */
 function storage(): Storage | null {
-  try {
-    return typeof localStorage !== 'undefined' ? localStorage : null;
-  } catch {
-    return null;
-  }
+  return platform().storage;
 }
 
 export function loadSave(store: Storage | null = storage()): SaveData {

@@ -8,18 +8,20 @@
  */
 
 const SHIP_IDS = Object.freeze(['spark', 'vanguard', 'tempest', 'bastion', 'phantom']);
-const PRESENCE_MODES = Object.freeze(['menu', 'hangar', 'run', 'victory', 'overtime', 'results']);
+const BOSS_IDS = Object.freeze(['warden', 'hydra', 'voidheart']);
+const PRESENCE_MODES = Object.freeze(['menu', 'hangar', 'run', 'boss', 'victory', 'overtime', 'results']);
 /** Steam rich presence tokens per mode (see steam/rich_presence_english.vdf). */
 const PRESENCE_TOKENS = Object.freeze({
   menu: '#Status_Menu',
   hangar: '#Status_Hangar',
   run: '#Status_Run',
+  boss: '#Status_Boss',
   victory: '#Status_Victory',
   overtime: '#Status_Overtime',
   results: '#Status_Results',
 });
 /** Every key we ever set; clear() resets exactly these. */
-const PRESENCE_KEYS = Object.freeze(['steam_display', 'sector', 'ship', 'players', 'time', 'steam_player_group_size']);
+const PRESENCE_KEYS = Object.freeze(['steam_display', 'sector', 'ship', 'players', 'time', 'boss', 'steam_player_group_size']);
 
 const MAX_SAVE_BYTES = 1024 * 1024;
 const API_NAME_RE = /^ACH_[A-Z0-9_]{1,60}$/;
@@ -84,6 +86,11 @@ function presenceToSteam(p) {
     if (p.players > 1) out.steam_player_group_size = String(p.players);
   }
   if (typeof p.time === 'string' && TIME_RE.test(p.time)) out.time = p.time;
+  // The boss token names the boss: without a known one it is shown as a plain run.
+  if (mode === 'boss') {
+    if (typeof p.boss === 'string' && BOSS_IDS.includes(p.boss)) out.boss = p.boss;
+    else out.steam_display = PRESENCE_TOKENS.run;
+  }
   return out;
 }
 
@@ -127,6 +134,7 @@ function parseAppId(v) {
 
 module.exports = {
   SHIP_IDS,
+  BOSS_IDS,
   PRESENCE_MODES,
   PRESENCE_TOKENS,
   PRESENCE_KEYS,

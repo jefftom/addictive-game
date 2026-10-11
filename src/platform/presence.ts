@@ -1,12 +1,13 @@
 /**
  * Rich presence helpers (pure). The desktop main process maps a validated Presence
- * to Steam keys (steam_display token + sector/ship/players/time); see
+ * to Steam keys (steam_display token + sector/ship/players/time/boss); see
  * desktop/validate.cjs and steam/rich_presence_english.vdf.
  */
 import { BOSS_SCHEDULE } from '../game/content/enemies';
 import type { ShipId } from '../game/types';
+import type { BossId } from '../story/script';
 
-export type PresenceMode = 'menu' | 'hangar' | 'run' | 'victory' | 'overtime' | 'results';
+export type PresenceMode = 'menu' | 'hangar' | 'run' | 'boss' | 'victory' | 'overtime' | 'results';
 
 export interface Presence {
   mode: PresenceMode;
@@ -17,10 +18,13 @@ export interface Presence {
   players?: number;
   /** "m:ss" run clock. */
   time?: string;
+  /** The capital ship on the field ('boss' mode only). */
+  boss?: BossId;
 }
 
-export const PRESENCE_MODES: readonly PresenceMode[] = ['menu', 'hangar', 'run', 'victory', 'overtime', 'results'];
+export const PRESENCE_MODES: readonly PresenceMode[] = ['menu', 'hangar', 'run', 'boss', 'victory', 'overtime', 'results'];
 const SHIPS: readonly ShipId[] = ['spark', 'vanguard', 'tempest', 'bastion', 'phantom'];
+const BOSSES: readonly BossId[] = ['warden', 'hydra', 'voidheart'];
 
 /** Run seconds -> "m:ss" (clamped to 0..999:59). */
 export function formatPresenceTime(seconds: number): string {
@@ -53,6 +57,11 @@ export function sanitizePresence(p: unknown): Presence | null {
   const players = int(r.players, 1, 4);
   if (players !== undefined) out.players = players;
   if (typeof r.time === 'string' && /^\d{1,3}:[0-5]\d$/.test(r.time)) out.time = r.time;
+  // A boss fight without a known boss reads as a plain run (its token names the boss).
+  if (out.mode === 'boss') {
+    if (typeof r.boss === 'string' && BOSSES.includes(r.boss as BossId)) out.boss = r.boss as BossId;
+    else out.mode = 'run';
+  }
   return out;
 }
 
@@ -66,17 +75,22 @@ export interface RunPresenceInput {
   sector?: number;
   victory?: boolean;
   overtime?: boolean;
+  /** A capital ship is on the field. */
+  boss?: BossId | null;
 }
 
+/** Overtime beats the victory screen, which beats a boss fight, which beats a plain run. */
 export function runPresence(r: RunPresenceInput): Presence {
-  const mode: PresenceMode = r.overtime ? 'overtime' : r.victory ? 'victory' : 'run';
-  return {
+  const mode: PresenceMode = r.overtime ? 'overtime' : r.victory ? 'victory' : r.boss ? 'boss' : 'run';
+  const out: Presence = {
     mode,
     sector: r.sector ?? sectorForTime(r.time),
     ship: r.ship,
     players: Math.max(1, Math.min(4, Math.round(r.players ?? 1))),
     time: formatPresenceTime(r.time),
   };
+  if (mode === 'boss' && r.boss) out.boss = r.boss;
+  return out;
 }
 
 export function resultsPresence(ship: ShipId, players = 1): Presence {

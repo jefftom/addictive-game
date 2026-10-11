@@ -86,6 +86,17 @@ export interface ResultsStory {
 
 type LogTab = 'entries' | 'cast' | 'fleet';
 
+/** Desktop (Electron) build extras; the web build passes null and shows neither. */
+export interface DesktopUi {
+  /** Steam Deck: always fullscreen, so the setting is shown locked on. */
+  steamDeck: boolean;
+  fullscreen(): boolean;
+  /** Resolves with the window's new state (the shell remembers it for the next launch). */
+  setFullscreen(on: boolean): Promise<boolean>;
+  /** Title-screen "Quit to desktop". */
+  quit(): void;
+}
+
 export interface UiCallbacks {
   play(daily: boolean): void;
   /** Co-op "Play again" (same roster). */
@@ -148,9 +159,12 @@ export class UI {
   private crawl: OpeningCrawl | null = null;
   private logTab: LogTab = 'entries';
   private logEntry: string | null = null;
+  /** Desktop build extras (Quit to desktop, the fullscreen setting); null on the web. */
+  private readonly desktop: DesktopUi | null;
 
-  constructor(root: HTMLElement, cb: UiCallbacks) {
+  constructor(root: HTMLElement, cb: UiCallbacks, desktop: DesktopUi | null = null) {
     this.cb = cb;
+    this.desktop = desktop;
     const ids: ScreenId[] = ['title', 'hangar', 'workshop', 'records', 'settings', 'log', 'crawl', 'lobby', 'levelup', 'pause', 'victory', 'results'];
     for (const id of ids) {
       const s = el(`<section class="screen" id="screen-${id}" hidden></section>`);
@@ -445,7 +459,8 @@ export class UI {
           <button class="btn" data-act="workshop"><span>Workshop</span><span class="meta">${affordable > 0 ? `<span class="badge">${affordable} READY</span>` : `◈ ${formatNumber(save.cores)}`}</span></button>
           <button class="btn" data-act="log"><span>Ship's Log</span><span class="meta">${unread > 0 ? `<span class="badge badge-ice">${unread} NEW</span>` : `${logCount}/${STORY.logbook.length}`}</span></button>
           <button class="btn" data-act="records"><span>Records</span><span class="meta">${Object.keys(save.achievements).length}/${ACHIEVEMENTS.length}</span></button>
-          <button class="btn wide" data-act="settings"><span>Settings</span><span class="meta"></span></button>
+          <button class="btn${this.desktop ? '' : ' wide'}" data-act="settings"><span>Settings</span><span class="meta"></span></button>
+          ${this.desktop ? '<button class="btn" data-act="quit"><span>Quit to desktop</span><span class="meta"></span></button>' : ''}
         </div>
         <p class="hint">${touch ? 'Drag to move · tap DASH or a second finger to dash' : 'WASD / arrows to move · SPACE to dash · ESC to pause'}</p>
       </div>
@@ -468,6 +483,7 @@ export class UI {
     this.bind(s, '[data-act="records"]', () => this.showRecords(save));
     this.bind(s, '[data-act="log"]', () => this.showLog(save));
     this.bind(s, '[data-act="settings"]', () => this.showSettings(save, 'title'));
+    this.bind(s, '[data-act="quit"]', () => this.desktop?.quit());
     this.renderTopbar(save);
     this.show('title');
     this.focusFirst('title', '[data-act="play"]');
@@ -764,6 +780,11 @@ export class UI {
         ${slider('sfx', 'Sound effects', st.sfx)}
         <div class="setting"><label for="set-chatter">Crew chatter<small>Bridge-crew comms during a run</small></label><select id="set-chatter">${chatter}</select></div>
         ${slider('shake', 'Screen shake', st.shake)}
+        ${
+          this.desktop
+            ? `<div class="setting"><label for="set-fullscreen">Fullscreen<small>${this.desktop.steamDeck ? 'Always on with Steam Deck' : 'Also F11 or Alt+Enter'}</small></label><input type="checkbox" class="toggle" id="set-fullscreen" ${this.desktop.steamDeck || this.desktop.fullscreen() ? 'checked' : ''} ${this.desktop.steamDeck ? 'disabled' : ''} /></div>`
+            : ''
+        }
         ${toggle('flashes', 'Screen flashes', 'Turn off to reduce flashing effects', st.flashes)}
         ${toggle('damageNumbers', 'Damage numbers', 'Show numbers when enemies are hit', st.damageNumbers)}
         ${toggle('breakReminder', 'Break reminder', 'A gentle nudge after an hour of play', st.breakReminder)}
@@ -790,7 +811,12 @@ export class UI {
       trail: ($(s, '#set-trail') as HTMLSelectElement).value as TrailId,
       chatter: ($(s, '#set-chatter') as HTMLSelectElement).value as ChatterMode,
     });
-    s.querySelectorAll('input, select').forEach((i) => i.addEventListener('input', () => this.cb.settingsChanged(read())));
+    // The fullscreen toggle is window state kept by the desktop shell, not part of the save.
+    s.querySelectorAll('input:not(#set-fullscreen), select').forEach((i) => i.addEventListener('input', () => this.cb.settingsChanged(read())));
+    const fs = s.querySelector<HTMLInputElement>('#set-fullscreen');
+    fs?.addEventListener('change', () => {
+      void this.desktop?.setFullscreen(fs.checked).then((on) => this.fullscreenChanged(on));
+    });
     this.bind(s, '[data-act="back"]', () => this.back());
     const resetRow = s.querySelector<HTMLElement>('#reset-row');
     if (resetRow) {
@@ -803,6 +829,12 @@ export class UI {
     }
     this.show('settings');
     this.focusFirst('settings');
+  }
+
+  /** The window went in or out of fullscreen (Settings toggle, F11, Alt+Enter): keep the toggle in step. */
+  fullscreenChanged(on: boolean): void {
+    const fs = this.screen('settings').querySelector<HTMLInputElement>('#set-fullscreen');
+    if (fs && !fs.disabled) fs.checked = on;
   }
 
   // ───────────────────────── Level-up ─────────────────────────

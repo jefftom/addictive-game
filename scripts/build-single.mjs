@@ -11,11 +11,19 @@ const dist = join(root, 'dist');
 const out = join(root, 'dist-single');
 let html = readFileSync(join(dist, 'index.html'), 'utf8');
 
+// The bundled fonts are separate files in dist/assets/ (see vite.config.ts); here they become
+// data: URIs, so the single file needs no network and no neighbouring files.
+const inlineFonts = (text) =>
+  text.replace(/url\((['"]?)\.\/([\w.-]+\.woff2)\1\)/g, (_m, _q, file) => {
+    const b64 = readFileSync(join(dist, 'assets', file)).toString('base64');
+    return `url(data:font/woff2;base64,${b64})`;
+  });
 const css = [];
 html = html.replace(/<link rel="stylesheet"[^>]*href="\.\/(assets\/[^"]+\.css)"[^>]*>/g, (_m, file) => {
-  css.push(readFileSync(join(dist, file), 'utf8'));
+  css.push(inlineFonts(readFileSync(join(dist, file), 'utf8')));
   return '';
 });
+if (css.some((c) => /url\((['"]?)\.\//.test(c))) throw new Error('build-single: the CSS still references a relative asset');
 let js = '';
 html = html.replace(/<script type="module" crossorigin src="\.\/(assets\/[^"]+\.js)"><\/script>/g, (_m, file) => {
   js += readFileSync(join(dist, file), 'utf8');
@@ -31,9 +39,8 @@ const full = html.replace('</head>', () => `${style}\n</head>`).replace('</body>
 
 const pick = (re) => (html.match(re)?.[0] ?? '');
 const title = pick(/<title>[\s\S]*?<\/title>/);
-const fonts = (html.match(/<link rel="(?:preconnect|stylesheet)"[^>]*>/g) ?? []).join('\n');
 const body = html.match(/<body>([\s\S]*?)<\/body>/)?.[1] ?? '';
-const embed = `${title}\n${fonts}\n${style}\n${body.trim()}\n${script}\n`;
+const embed = `${title}\n${style}\n${body.trim()}\n${script}\n`;
 
 mkdirSync(out, { recursive: true });
 writeFileSync(join(out, 'shardstorm.html'), full);

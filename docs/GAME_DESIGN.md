@@ -25,8 +25,9 @@ frequencies (see §5.6).
 *Brotato*, *20 Minutes Till Dawn*), with an arcade score-chase layer
 (combo multiplier, perfect dashes, personal bests) on top.
 
-**Platform:** browser (desktop + mobile), zero install. Keyboard, mouse,
-touch and gamepad.
+**Platform:** browser (desktop + mobile), zero install, plus a Steam desktop
+build (Electron) with achievements, rich presence and cloud saves. Keyboard,
+mouse, touch and gamepad.
 
 **Session length:** 2–10 minute runs; a typical sitting is 3–6 runs.
 
@@ -332,4 +333,13 @@ Enter is never a dash key, so no pilot's dash key can confirm a card (anti-mash)
   cosmetic RNG stream turns simulation events into paced comms lines; it never
   affects the simulation.
 
-- **Versioned localStorage save** with migration, guarded by try/catch.
+- **Versioned save** with migration, guarded by try/catch. It goes through the
+  platform layer (`src/platform/`): localStorage in the browser; on desktop
+  also an atomic JSON file that Steam Auto-Cloud syncs (the file wins at boot).
+- **Platform layer** (`src/platform/`): one interface for the web and the
+  Electron/Steam build. The game reports achievements, rich presence (menus,
+  shipyard, run with sector and clock, boss fight, victory, Overtime, results)
+  and run ends to it; everything is a no-op in the browser. The desktop build
+  adds "Quit to desktop" on the title screen and a Fullscreen setting.
+- **Bundled fonts** (Tektur, Chakra Petch, Kode Mono; latin WOFF2, SIL OFL):
+  no third-party requests, and the desktop and single-file builds work offline.

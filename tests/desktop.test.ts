@@ -34,6 +34,22 @@ describe('IPC validation', () => {
     for (const m of v.PRESENCE_MODES) expect(v.presenceToSteam({ mode: m }).steam_display).toMatch(/^#Status_/);
   });
 
+  it('names the boss in a boss fight, and falls back to the run token for an unknown one', () => {
+    expect(v.presenceToSteam({ mode: 'boss', boss: 'hydra', sector: 2, time: '6:05', ship: 'spark', players: 1 })).toEqual({
+      steam_display: '#Status_Boss', boss: 'hydra', sector: '2', time: '6:05', ship: 'spark', players: '1',
+    });
+    expect(v.presenceToSteam({ mode: 'boss', boss: '{#Status_Menu}' })).toEqual({ steam_display: '#Status_Run' });
+    expect(v.presenceToSteam({ mode: 'run', boss: 'hydra' })).toEqual({ steam_display: '#Status_Run' });
+    expect(v.PRESENCE_KEYS).toContain('boss');
+  });
+
+  it('every token the validator can send exists in the rich presence file', () => {
+    const vdf = readFileSync(new URL('../steam/rich_presence_english.vdf', import.meta.url), 'utf8');
+    for (const t of Object.values(v.PRESENCE_TOKENS) as string[]) expect(vdf).toContain(`"${t}"`);
+    for (const b of v.BOSS_IDS as string[]) expect(vdf).toContain(`"#Boss_${b}"`);
+    for (const s of v.SHIP_IDS as string[]) expect(vdf).toContain(`"#Ship_${s}"`);
+  });
+
   it('accepts only JSON objects up to 1 MiB as saves', () => {
     expect(v.validSavePayload('{"a":1}')).toBe('{"a":1}');
     expect(v.validSavePayload('[]')).toBe('[]');

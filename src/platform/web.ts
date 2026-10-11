@@ -6,12 +6,26 @@ interface FullscreenDoc {
   fullscreenElement?: Element | null;
   documentElement?: { requestFullscreen?: () => Promise<void> };
   exitFullscreen?: () => Promise<void>;
+  addEventListener?: (type: 'fullscreenchange', fn: () => void) => void;
 }
 
 export function createWebPlatform(local: SaveStorage | null, scope: unknown = globalThis): Platform {
   const storage = safeStorage(local);
   const info = defaultPlatformInfo('web');
   const doc = (scope as { document?: FullscreenDoc }).document;
+  let onChange: ((on: boolean) => void) | null = null;
+  doc?.addEventListener?.('fullscreenchange', () => onChange?.(!!doc.fullscreenElement));
+
+  const setFullscreen = async (on: boolean): Promise<boolean> => {
+    if (!doc) return false;
+    try {
+      if (!on && doc.fullscreenElement) await doc.exitFullscreen?.();
+      else if (on && !doc.fullscreenElement) await doc.documentElement?.requestFullscreen?.();
+    } catch {
+      /* not allowed here (no user gesture, iframe, iOS) */
+    }
+    return !!doc.fullscreenElement;
+  };
 
   return {
     kind: 'web',
@@ -25,18 +39,10 @@ export function createWebPlatform(local: SaveStorage | null, scope: unknown = gl
     leaderboardsSupported: false,
     canQuit: false,
     quit: () => undefined,
-    async toggleFullscreen() {
-      if (!doc) return false;
-      try {
-        if (doc.fullscreenElement) {
-          await doc.exitFullscreen?.();
-          return false;
-        }
-        await doc.documentElement?.requestFullscreen?.();
-        return !!doc.fullscreenElement;
-      } catch {
-        return !!doc.fullscreenElement;
-      }
+    toggleFullscreen: () => setFullscreen(!doc?.fullscreenElement),
+    setFullscreen,
+    onFullscreenChange(fn) {
+      onChange = fn;
     },
     flush: async () => undefined,
   };
