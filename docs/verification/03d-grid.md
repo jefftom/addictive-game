@@ -31,6 +31,25 @@ post-FX is active. A deliberate opt-out selects cost tier 4, grid quality 1 and
 hairlines and 30 Hz. The FPS label distinguishes those states. The final 2D
 measurement below verifies the corrected path; the earlier diagnostic is kept.
 
+The first remote browser run (`38119079754`) failed eight timing checks with
+software WebGL readback stalls; its traces and logs are retained. All three
+desktop jobs (`38119079729`) passed. The quality controller previously discarded
+every frame over 250 ms, so sustained severe stalls could never lower quality.
+It now bounds those samples to 250 ms instead: one tab-switch gap does not lower
+quality, while sustained stalls reach the unchanged fallback ladder. Shader
+programs and the approved 12/15 q3 draw counts are unchanged. Regression tests
+cover invalid samples, a single long gap, sustained 500 ms frames and pinned
+quality.
+
+Browser CI uses one worker to avoid sharing the runner's CPU between two
+software GPU workloads; it retains Playwright's default browser backend. Forcing
+GPU canvas rasterization was tested locally but intermittently retained HUD
+pixels in the mobile overlay-clear check, so that configuration was discarded.
+Its failure evidence is preserved. No browser assertion, timeout, retry count
+or test exclusion was weakened. The local software-raster diagnostic
+measured title frame intervals of 27.7 ms with the grid versus 22.6 ms before it;
+disabling only grid drawing returned 22.6 ms. Hardware acceptance remains open.
+
 Review confirmed no change to `src/game/`, golden replay, either determinism/P1
 guard, or the existing smoke test's world-image check. Mesh typed arrays allocate
 at construction/resize; force pools stay at eight kicks and six fronts. Palette
@@ -39,14 +58,15 @@ had no other consumers and was removed.
 
 ## Checks
 
-- Fresh `npm ci`, strict typecheck, 430 unit tests and normal/single-file builds pass.
+- Fresh `npm ci`, strict typecheck and normal/single-file builds pass. Recovery
+  validation has 431 passing unit tests (430 on the original grid commit).
 - Browser tests cover bounded meshes, boss fronts, persistent settings, old saves,
   quality transitions and returning from co-op to solo spacing. The final suite
   passes all 75 tests, with eight unchanged device exclusions and the new
   desktop-only co-op grid test excluded on mobile as specified. No retries.
 - Windows Electron: all 49 checks pass with Steam explicitly disabled for the
   test process. The owner's Steam client was left running.
-- Standalone HTML is 575,585 bytes (562.1 KiB) and opens through `file://`, with an active 1,380-point grid and
+- Standalone HTML is 575,617 bytes (562.1 KiB; 575,585 before the recovery) and opens through `file://`, with an active 1,380-point grid and
   enhanced graphics, no page errors and no HTTP requests.
 - Recording-context tests enforce rest, storm, elite, well, capital-front and
   reduced-flashing stroke brightness limits; zero-motion displacement, heat,

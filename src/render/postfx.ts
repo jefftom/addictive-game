@@ -585,7 +585,10 @@ export class PostFx {
    * so it cannot oscillate forever.
    */
   reportFrameTime(ms: number): void {
-    if (!(ms > 0) || ms > 250) return;
+    if (!(ms > 0) || !Number.isFinite(ms)) return;
+    // Bound a background-tab stall, but still let sustained very slow rendering
+    // step down. Discarding every >250 ms frame can trap software GPUs at q3.
+    ms = Math.min(ms, 250);
     this.frameEma += (ms - this.frameEma) * 0.05;
     if (this.settings.quality !== 'auto' || !this.active) return;
     const dt = ms / 1000;
