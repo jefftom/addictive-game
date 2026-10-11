@@ -30,7 +30,7 @@ the same vessels. Nothing about gameplay changes, so the golden master stays bit
   - `prototypes/entities/integration.patch`, made against `ab1d37d`.
   - `prototypes/entities/tools/`: reference scripts (see §10).
 - **Target look:** the screenshots on the orphan branch, for example
-  `git show origin/wip/prototypes:gfx/entities/shots/final2-ships-montage.png > /tmp/ships.png`. Other
+  `git show origin/wip/prototypes:gfx/entities/shots/final2-ships-montage.png > <tmp>/ships.png`. Other
   shots: `final2-ships`, `-aliens`, `-bosses`, `-fx`, `-kills`, `-warden`, `-hydra-tele`, `-voidheart`,
   `final2nf-*` (reduced flashing). If the branch cannot be fetched, skip them. NOTES §2 and §8 describe
   the look in words.
@@ -38,18 +38,20 @@ the same vessels. Nothing about gameplay changes, so the golden master stays bit
   - On PR head `a114403`, `git apply --check prototypes/entities/integration.patch` succeeds, because
     `renderer.ts`, `types.ts` and `world.ts` are byte-identical to the patch base. With the patch
     applied: `tsc --noEmit` is clean, and vitest passes 14 files, **290/290**, including
-    `tests/golden.solo.test.ts` and `tests/no-p1-alias.test.ts`.
+    `tests/golden.solo.test.ts` and `tests/no-p1-alias.test.ts`. `npm run build:single` also
+    succeeds there: `dist-single/shardstorm.html` grows from 286.7 KB to 336.9 KB.
   - Against the PR head, the patch removes **no co-op code**. Its only edit to a co-op line rewrites the
     `kill` union member and keeps `pid`. The handoff warning ("reverts co-op code") is still the rule:
     read every hunk, never copy a whole file over `src/` (apart from the three new modules), and never
     take files from the prototype's `game-src/` snapshots (not in-tree; older bases).
-  - On 3a's WIP (`wave3/gfx` = `origin/wip/wave3-gfx`, `df7a114`), **2 of the 13 renderer hunks fail**:
-    the import block and the field block. Hunk 6 (`consume`) applies with fuzz, in the right place
-    (`fx.onEvent` before the new `case 'sector'`). With those two merged by hand, `tsc` is clean. The
+  - On 3a's WIP (`wave3/gfx` = `origin/wip/wave3-gfx`, `df7a114`), with GNU `patch -p1` **2 of the 13
+    renderer hunks fail**: the import block and the field block. Hunk 6 (`consume`) applies with fuzz 2,
+    in the right place (`fx.onEvent` before the new `case 'sector'`). `git apply --reject` has no fuzz
+    and rejects hunk 6 as well (3 rejects). With the failed hunks merged by hand, `tsc` is clean. The
     only failing unit test is 3a's known `galaxy.ts` `this.stats` alias hit, which 3a fixes.
   - The two `src/game` hunks also apply on task 1's `fix/dmath` (offset 1 line).
-  - **Not verified:** e2e, `build:single`, the look over the galaxy backdrops, and performance on real
-    GPUs. The prototype was measured only on SwiftShader (NOTES §6).
+  - **Not verified:** e2e, `build:single` on top of 3a, the look over the galaxy backdrops, and
+    performance on real GPUs. The prototype was measured only on SwiftShader (NOTES §6).
 - **Not in the prototype (this task adds it):** co-op accent colours, a reusable vessel-drawing API,
   menu art, the downed-ghost tint, frame-rate-independent boss animation, a prewarm for co-op accents
   and the "giants" Daily, the `SpriteCache` glow hook, tests and docs.
@@ -95,7 +97,8 @@ the same vessels. Nothing about gameplay changes, so the golden master stays bit
    - Do not "fix" `fireT` in the sim.
 3. **Co-op accent.**
    - Every pilot in `world.players` is drawn with their own class's vessel.
-   - In co-op, `PLAYER_COLORS[pid]` replaces the class colour on the canopy, stripe, intakes, engine
+   - In co-op, `PLAYER_COLORS[pid]` replaces the class colour on the canopy, stripe, intakes, the
+     Bastion's deflector (all baked into the hull sprite, whose key includes the colour), engine
      flames, afterimages and exhaust ribbon.
    - The alloy hull and the `FLEET_RIM` rim are shared, so the squad still reads as one fleet.
    - Solo looks exactly as designed: class colour on the accents, and `renderer.settings.trail` (the
@@ -172,13 +175,13 @@ Leave the prototype copies untouched. The imports already resolve (`../core/math
 | Imports | Add `import { EntityFx } from './entityfx'`. Remove `ENEMIES` from the `../game/content/enemies` import (3a's line also imports `BOSS_SCHEDULE, VICTORY_TIME`; keep those if still used, drop the whole import if 3a moved them to `sectorwarp.ts`). |
 | Fields | Add `readonly fx = new EntityFx();` with the patch's doc comment, next to 3a's `sectorCard`. Remove `trail` and `boltDot` (and its `makeGlowDot` line in the constructor). Keep `bulletDot`. |
 | `resize()` | `this.fx.setResolution(this.scale * this.dpr)` next to `this.sprites.setResolution(...)`. |
-| `reset(world)` | `this.fx.reset()` and `this.fx.warmPilots(world)` (step 4d). Remove `this.trail = []`. Keep 3a's `sectorCard.clear()` / `bg.galaxy.setSector`. |
-| `consume()` | First line in the loop: `this.fx.onEvent(ev, world, P)`. `kill`: spark burst `n = boss ? 80 : elite ? 30 : 3 + r·0.2`; remove the white elite burst and the elite `blasts.push`; the `+score` float only while `world.enemies.length < 150` (elites/bosses always). `perfect`: remove `blasts.push`. `explode`: smaller burst (`6 + r·0.08`), remove `blasts.push`. `bossdead`, `bomb`: unchanged. |
+| `reset(world)` | `this.fx.reset()` and `this.fx.warmPilots(world, this.settings.trail)` (step 4d). Remove `this.trail = []`. Keep 3a's `sectorCard.clear()` / `bg.galaxy.setSector`. |
+| `consume()` | First line in the loop: `this.fx.onEvent(ev, world, P)`. `kill`: spark burst `n = boss ? 80 : elite ? 30 : 3 + r·0.2` (speed, life and size arguments as in the patch); remove the white elite burst and the elite `blasts.push`; the `+score` float only while `world.enemies.length < 150` (elites/bosses always). `perfect`: remove `blasts.push`. `explode`: smaller burst (`6 + r·0.08`), remove `blasts.push`. `bossdead`, `bomb`: unchanged. |
 | `draw()`, after `visible` | `const fx = this.fx; fx.flashes = this.settings.flashes; fx.begin({ k, ox, oy, minX, minY, maxX, maxY }, dt, rdt);` |
 | `// ── Telegraphs ──` loop | Replace with `fx.drawTelegraphs(ctx, world)`, then `fx.drawDebris(ctx)`. |
 | `// ── Enemies ──` loop | Replace with `fx.drawEnemies(ctx, world)`; keep `world2()` and the elite HP rings. |
 | Additive layer | Beams unchanged. Replace the `world.projectiles` loop with `fx.drawProjectiles(ctx, world, PAL.bolt)`. **Remove the `world.bullets` loop here.** Blades unchanged. `particles.draw`, then `fx.drawShards(ctx)`, then `fx.drawLightning(ctx, this.arcs.items)` (replaces `this.arcs.draw`). |
-| Blasts | Reduced flashing: `const discCap = this.settings.flashes ? 1 : 0.15`; for `b.r > 300` cap both stroke and fill alpha at `discCap` (exact code in the patch). |
+| Blasts | Reduced flashing: `const discCap = this.settings.flashes ? 1 : 0.15`; the stroke alpha is capped at `discCap` for `b.r > 300`, the fill alpha for every blast (exact code in the patch). After this step only `bossdead` (r 520) and `bomb` (r 900) still push blasts, so both caps hit exactly those. |
 | `// ── Player ──` | Replace the trail, afterimage, hull and shield code with `fx.drawPlayers(ctx, world, dt, rdt, this.settings.trail)`, then `world2()`. Keep the magnet hint inside `if (p.alive)` (P1 only until 3e). |
 | Before `// ── World-space text ──` | `fx.drawBullets(ctx, world, this.bulletDot)`: enemy plasma **last in the world**. |
 
@@ -210,12 +213,21 @@ Resulting world order:
 - **4b. Downed pilots.** Export `DOWNED_ACCENT = '#8890b0'` (to be created, from coop.md).
   - Draw a pilot with `p.downed` as `art.ship(p.ship, DOWNED_ACCENT, 'normal')` at alpha 0.35.
   - No shadow, flames, exhaust, afterimages, lights, shield or locator. The prototype already skips
-    those; only the accent changes.
+    all of those for `p.downed` except the dash afterimages: ones spawned by a dash just before the
+    pilot went down are still drawn for up to 0.3 s. Skip them for ghosts too. Otherwise only the
+    accent changes.
   - 3e adds the revive ring and name tags.
 - **4c. Vessel API.**
   - In `vessels.ts`, add `paintVessel(ctx, art: VesselArt, ship: ShipId, accent: string, o: { thrust: number; bank: number; time: number; steadyLights: boolean; ghost: boolean })` (to be created). It draws flames, nozzle glows and white cores, the fleet under-glow, the hull and the running lights in the vessel's **local frame** (world units, +x forward; the caller sets the transform and alpha). It sets and restores its own composite ops.
   - Move the matching section of `drawPlayer` onto it. Shadow, exhaust ribbon, afterimages, bank
     highlight, hurt glow, shield and locator stay in `drawPlayer`.
+  - Keep two details of today's `drawPlayer`:
+    - The bank squash (`bankY = 1 - 0.3·|bank|`) applies to the hull and to the nozzle and light
+      **positions** only. The flames, nozzle glows and lights themselves are not squashed.
+    - The invulnerability blink (and 4g's steady alpha) dims the **hull only**; flames, glows and
+      lights keep their own alphas.
+  - So `paintVessel` multiplies its internal alphas by the incoming `ctx.globalAlpha`, and takes the
+    hull-only factor as an extra option (for example `hullAlpha`, default 1).
   - The menus, `drawVessel` and `drawPlayer` then use identical sprite calls. Small ordering
     differences between additive layers are fine; compare before/after shots of all five ships.
   - Add `EntityFx.drawVessel(ctx, ship: ShipId, x: number, y: number, angle: number, opts?: { accent?: string; alpha?: number; ghost?: boolean; thrust?: number; bank?: number; scale?: number })` (to be created). It works in world coordinates through the view from the last `begin()`. Defaults: accent `SHIPS[ship].color`, alpha 1, thrust 0.6, bank 0, scale 1. `ghost` means `DOWNED_ACCENT` at 0.35 alpha, hull only. It restores alpha and composite op.
@@ -223,11 +235,21 @@ Resulting world order:
     - It returns a `px`×`px` canvas, nose up by default (`angle = -Math.PI / 2`, as `UI.shipArt` does
       today), fitting `SHIP_ART[ship].extent` into about 80 % of the canvas.
     - It shows idle flames (thrust about 0.6) and steady lights.
-    - `locked`: the `'ghost'` variant silhouette in the given accent, with no flames or lights.
-- **4d. Prewarm.** Add `EntityFx.warmPilots(world: World)` (to be created). It puts the accent sprites
-  of the current roster at the front of the warm queue: `ship(id, accent, 'normal' | 'flash')` and the
-  ghost afterimage. For `world.cfg.daily === 'giants'`, it also queues alien radii ×1.4 and ×1.4·1.35,
-  because `World.spawnEnemy` scales `r` for that Daily. `begin()` keeps baking at most 2 ms per frame.
+    - `locked`: the `'ghost'` variant silhouette with no flames or lights. Callers pass today's
+      locked grey `#4a4a66` as the accent for locked ships (the Hangar and the Ship's Log do this
+      today), so a locked card does not reveal the class colour.
+- **4d. Prewarm.** Add `EntityFx.warmPilots(world: World, soloTrail?: string)` (to be created; the
+  renderer passes `this.settings.trail`). It puts the sprites of the current roster at the front of
+  the warm queue (the end of the `warm` array, which `prewarm` pops):
+  - per pilot, with `pilotColors`: `ship(id, accent, 'normal' | 'flash')`, the afterimage
+    `ship(id, ghostColor(accent), 'ghost')`, `glow(accent)` and `flame(mix(accent, trail, 0.35))`;
+  - in co-op, `ship(id, DOWNED_ACCENT, 'normal')` for the ghost hull;
+  - for `world.cfg.daily === 'giants'`, alien radii ×1.4 and ×1.4·1.35, because `World.spawnEnemy`
+    scales `r` for that Daily.
+  - `queueWarm()` **replaces** the queue (it runs from `setResolution` and `setGlowScale`, so on any
+    resize and on 3c's post-FX toggle). Keep the last roster and re-append it there, or a resize
+    mid-run drops it.
+  - `begin()` keeps baking at most 2 ms per frame.
 - **4e. Charge clamp helper.**
   - Export `chargeLevel(timer: number, lead: number): number` (to be created): 0 when
     `timer >= lead`, otherwise `clamp(1 - timer / lead, 0, 1)`.
@@ -241,21 +263,29 @@ Resulting world order:
     offset `((state + 1) % 2)·0.2 + angle + rate·fireT`; all checked on 2026-10-11). Add a comment that
     names `enemyai.ts` as their source.
 - **4f. Frame-rate-independent capital ships.** `drawBoss` uses `const dt = 1 / 60` for the Warden
-  ring spin and the Hydra heading, so it spins twice as fast at 120 Hz and keeps spinning while paused.
-  - Store the sim `dt` in `begin()` (a private field, to be created) and use it there.
+  ring spin and the Hydra heading, so it spins twice as fast at 120 Hz and keeps spinning while paused
+  (`App.stepGame` passes `simDt = 0` to `Renderer.draw` while paused; `begin()` gets it as `dt`).
+  - Store the sim `dt` in `begin()` (a private field, to be created) and use it in `drawBoss` instead
+    of the constant, and in `updateNecks` (below).
   - `updateNecks` follows with a fixed per-frame factor `f = 0.22 + 0.06·(NECK_SEGS − i)`. Make it
     `1 - (1 - f) ** (dt * 60)`: identical at 60 Hz, and frozen at `dt = 0`.
 - **4g. Reduced flashing for the invulnerability blink.** In `drawPlayer`, the 8 Hz alpha blink
   (`Math.floor(t * 16) % 2`) becomes a steady 0.6 alpha when `this.flashes` is false.
 - Keep the 3c hooks exactly as in the prototype: `setGlowScale`, `postFx`, `setCostTier`, `prewarm`.
-  Also keep `ms` and `shards.count` (diagnostics).
+  Also keep `shards.count` and `art.size` (diagnostics). The prototype's `ms` field ("ms spent in
+  the last frame's EntityFx calls") is declared but **never written**, so it always reads 0. Either
+  fill it in (the summed time of that frame's EntityFx calls; not the wall time from `begin` to
+  `drawBullets`, which includes the galaxy and the rest of the renderer) or delete it. Never report
+  it as a measurement.
 
 **Step 5. Shape-sprite glow hook.** Copy the `src/render/sprites.ts` hunk of
 `prototypes/postfx/integration.patch`:
 - the `glowScale` field and `setGlowScale(g)`, which clears the cache on change;
 - `pixelCount()`;
 - the `render()` sizing `glow = Math.max(6 * gs, radius * 0.9 * gs)`, `size = … + 2 + 2 * gs`.
-At `gs = 1` this is byte-for-byte today's sprite. 3c's port of that hunk then becomes a no-op.
+At `gs = 1` this is byte-for-byte today's sprite. 3c's port of that hunk then becomes a no-op. The
+hunk applies cleanly on its own (`git apply --include=src/render/sprites.ts
+prototypes/postfx/integration.patch`; checked on 3a's WIP `df7a114`).
 
 **Step 6. Menus** (`src/ui/ui.ts`, `src/ui/style.css`):
 - Replace `import { SpriteCache } from '../render/sprites'` and the `sprites` field with
@@ -265,8 +295,10 @@ At `gs = 1` this is byte-for-byte today's sprite. 3c's port of that hunk then be
   - TS reports an unused private field, so remove the old one.
 - Change `UI.shipArt(color)` to `shipArt(ship: ShipId, accent: string, locked = false)`. It wraps
   `vesselIcon` with `px` 168 (CSS 84/96/56 px as today) and sets `aria-hidden="true"`.
-- Update the three callers:
-  - `showHangar`: `SHIPS[id].color`, `locked = !isShipUnlocked(save, id)`.
+- Update the three callers (they are the only ship-art sites in the UI; `src/ui/lobby.ts` and the
+  title screen draw none, checked):
+  - `showHangar`: unlocked `shipArt(id, SHIPS[id].color)`; locked `shipArt(id, '#4a4a66', true)`
+    (today's grey, `isShipUnlocked(save, id)` decides).
   - `showLog` (fleet tab, filled from `fleetHtml`): the same as the Hangar.
   - `showLobby`: the slot's own ship. Today every slot gets the same `'player'` arrowhead sprite. Use
     `lobby.slots[i]!.ship` with `pilotColor(i)`, so a card shows the actual class in the pilot's colour.
@@ -274,8 +306,14 @@ At `gs = 1` this is byte-for-byte today's sprite. 3c's port of that hunk then be
   - Solo: add `<div class="res-ship" aria-hidden="true"></div>` as the first child of `.results-head`,
     filled with `shipArt(r.ship, SHIPS[r.ship].color)`. Size 72 px, 48 px inside the existing
     `@media (max-width: 560px)` block.
-  - Co-op: in `coopTable`, put `<span class="pilot-ship" aria-hidden="true" data-pilot-ship="i">` before
-    `this.pilotTag(i, t.ship)`. Fill each after `innerHTML` with a 28 px icon in `pilotColor(i)`.
+  - Co-op: in `coopTable`, put `<span class="pilot-ship" aria-hidden="true" data-pilot-ship="${i}">`
+    before `this.pilotTag(i, t.ship)`. After `innerHTML`, fill each with
+    `vesselIcon(this.vessels, ship, pilotColor(i), 56)` shown at 28 CSS px, where `ship` is the
+    pilot's `PilotResult.ship` (`src/meta/result.ts`; `r.team` is optional in the type but always
+    set when `coop` is true). Check that the first column still fits in the narrow `.coop-table`
+    rules of the `max-width: 560px` block.
+  - The results head is a `space-between` flex row; check the new icon there at 1280×720 and on the
+    Pixel 7 project.
   - Keep `.results-head .eyebrow` and `.coop-table tbody tr`: e2e selects them.
 
 **Step 7. Docs.**
@@ -293,7 +331,7 @@ At `gs = 1` this is byte-for-byte today's sprite. 3c's port of that hunk then be
     must not pass `k / world.zoom` every frame (see §10).
   - `setGlowScale(g)`, `postFx`, `setCostTier(tier)` (4..0: ≥2 full, 1 half, 0 about a third);
   - `flashes`, `prewarm(budgetMs)`, `art: VesselArt`, `shards: ShardFx`;
-  - `drawVessel(...)`, `warmPilots(world)`;
+  - `drawVessel(...)`, `warmPilots(world, soloTrail?)`;
   - the draw methods, in the order of step 3.
 - `renderer.sprites.setGlowScale(g)`.
 - From `entityfx.ts`: `pilotColors`, `DOWNED_ACCENT`, `chargeLevel`, `visualAngle`.
@@ -310,6 +348,11 @@ No new settings and no save changes. Existing mappings:
 - `Settings.shake`: unchanged. EntityFx adds no shake of its own.
 - `Settings.trail` (`TRAILS` in `src/meta/rank.ts`) → `renderer.settings.trail` → the solo exhaust
   ribbon and flame tint. It is ignored in co-op, where the pilot colour is used.
+  - Visible change: today the trail colour also tints the whole solo hull
+    (`drawSprite('player', … this.settings.trail …)` in the `// ── Player ──` block). After this step
+    the hull uses the class colour and the trail cosmetic tints only the exhaust and flames. This is
+    the prototype's design (one fleet livery). The setting is labelled "Ship trail", so its label
+    stays correct.
 
 ## 7. Accessibility, mobile, co-op and performance requirements
 
@@ -333,8 +376,10 @@ No new settings and no save changes. Existing mappings:
   `FLEET_RIM` and `FLEET_GLOW` to its gameplay colour list and keep it green. They are expected to pass;
   if they do not, raise the issue rather than loosen the check.
 - **Mobile (Pixel 7 project):**
-  - In-run, Hangar, lobby and results fit with no horizontal overflow (the smoke test checks
-    `scrollWidth`).
+  - In-run, Hangar, lobby and results fit with no horizontal overflow. Today only the title test in
+    `e2e/smoke.spec.ts` checks `document.documentElement.scrollWidth - window.innerWidth`; run the same
+    check on the Hangar and results screens in the Pixel 7 project (add it to the e2e below, or at
+    least to the capture script).
   - The sprite resolution is capped by `VesselArt.setResolution` (1–4 px/unit), so memory stays bounded.
 - **Co-op:**
   - All pilots are drawn with their accents.
@@ -349,9 +394,9 @@ No new settings and no save changes. Existing mappings:
   - No per-frame `shadowBlur` in world drawing; glow is baked or additive.
   - The shard pool is capped at 1400, with LOD above 400 live entries.
   - Prewarm costs at most 2 ms per frame.
-  - About 105 baked sprites after the title prewarm.
-  - No per-frame allocations in the enemy loops (numeric cache keys). The per-pilot string key in
-    `art.ship` (≤ 4 per frame) is acceptable.
+  - About 105 baked sprites (`fx.art.size`) in the heavy scene (NOTES §6); report yours.
+  - No per-frame allocations in the enemy loops (numeric cache keys). The string keys in `art.ship`
+    (hull plus afterimage lookup, two per pilot, so ≤ 8 per frame) are acceptable.
 
 ## 8. Tests to add or update
 
@@ -367,8 +412,11 @@ canvases, so do not call them in unit tests.
      `kx > 0`, because the killing blow's knockback is included.
 2. **`chargeLevel`.** `(5, 0.7) → 0`, `(0.35, 0.7) → 0.5`, `(0, 0.7) → 1`, `(-50, 0.7) → 1`. The last
    case is the out-of-range gunship.
-3. **Shatter counts.** Use a fresh `EntityFx`, a `Particles`, a solo world, and one `onEvent` per case.
-   Numbers are as of the prototype; update them if you change the recipe on purpose.
+3. **Shatter counts.** Use a fresh `EntityFx` per case (so the crowd LOD is off), a `Particles`, a
+   solo world, and one hand-built `kill` event per case: `r = ENEMIES[kind].r` (×1.35 for the elite),
+   `color = ENEMIES[kind].color`, `boss: true` for the Warden, plus `kind`, `angle`, `kx`, `ky`.
+   `shards.count` counts shards and embers. The drifter numbers rely on its r 13 (< 15, so no extra
+   embers). Numbers are as of the prototype; update them if you change the recipe on purpose.
    - drifter normal kill: `shards.count === 6`;
    - elite drifter (r 17.55): 31 (9 + 6 inner + 16 embers);
    - after `setCostTier(0)`: drifter count 2;
@@ -383,16 +431,23 @@ canvases, so do not call them in unit tests.
 6. **Art coverage.**
    - Every `ShipId` has `SHIP_ART` with at least one nozzle, and `extent` in [17, 25].
    - Every `EnemyKind` has `ALIEN_ART` with an even outline length ≥ 6.
-   - `fragmentsOf(outline, cx, cy, n)` returns exactly `n` finite triangles for n = 4 and 9.
+   - For every `ALIEN_ART` entry, `fragmentsOf(outline, cx, cy, n)` returns exactly `n` triangles of 6
+     finite numbers for n = 4 and 9 (checked for all ten kinds).
 
 **e2e** (both projects unless noted):
 - In `e2e/smoke.spec.ts` "menus open and close": `#screen-hangar .ship-art canvas` has count 5.
 - In "pause, resume and ending a run show the results screen": `#screen-results .res-ship canvas` has
   count 1.
 - In "a run starts, the world simulates and the canvas draws": `window.shardstorm.renderer.fx.art.size > 0`.
-  Leave the canvas-variety check as it is; 3c changes it.
-- `e2e/coop.spec.ts` (desktop): in "two keyboard pilots join…", the lobby has
-  `.slot-art canvas` count 2 and the results have `.coop-table .pilot-ship canvas` count 2.
+  `App.renderer` is `private` in TypeScript only, so read it through a cast in `page.evaluate`, as the
+  existing `shardstorm.world` reads do. Leave the canvas-variety check as it is; 3c changes it.
+- `e2e/coop.spec.ts` (desktop only; its `beforeEach` skips mobile):
+  - in `joinTwoAndLaunch` (used only by "two keyboard pilots join…"), after P2 cycles to "Already
+    Gone": `#screen-lobby .slot-art canvas` has count 2;
+  - in that test, after the results screen shows: `#screen-results .coop-table .pilot-ship canvas`
+    has count 2.
+- Optional but recommended: on the mobile project, assert no horizontal overflow
+  (`scrollWidth - innerWidth <= 0`, as the title test does) on the Hangar and results screens.
 
 **Must NOT change:**
 - `tests/golden.solo.test.ts`: no edit and no re-capture.
@@ -403,24 +458,30 @@ canvases, so do not call them in unit tests.
 
 ## 9. Acceptance checklist
 
-- **Commands** (all green):
+- **Commands** (all green; `npm run typecheck` and `npm test` before every commit, the rest before
+  the final one):
   - `npm run typecheck`, `npm test`, `npm run build`;
   - `npm run build:single`: report the `dist-single/shardstorm.html` size before and after;
   - `E2E_PORT=<free port> npm run e2e`: desktop and mobile projects.
 - **Diff checks:**
   - `git diff <base> -- src/game` shows only the four `kill` fields (types and `killEnemy`).
   - `git diff <base> -- tests/golden.solo.test.ts` is empty.
-- **Screenshots.** Keep them outside the repo.
+- **Screenshots.** Keep them outside the repo. Look at every one and iterate until it genuinely
+  looks right (compare with the target shots in §2).
   - **How to capture:** `npx vite build --outDir <tmp>/dist`, then
     `npx vite preview --outDir <tmp>/dist --port <port> --strictPort` in the background. Stop it
     afterwards. Drive the page with Playwright.
+  - `?warp=N` fast-forwards only when a run starts: open the URL, then click
+    `#screen-title [data-act="play"]` (as `prototypes/entities/tools/lib.mjs` `startRun` does).
+    `?coop=N` starts its run by itself.
   - **Seeding a ship:** seed `localStorage['shardstorm.save']` the way `e2e/coop.spec.ts` `SEED_SAVE`
     does, with `achievements: { survive3: 1, combo150: 1, warden: 1, perfect10: 1 }` and `ship: '<id>'`.
   - **Captures:**
     1. All five vessels in a run (`?autoplay&warp=20`), each at 1×, plus a 2× crop: idle, thrust, bank
        and dash.
     2. Every enemy kind including an elite, a Lancer charging and a gunship charging
-       (`?autoplay&warp=160`).
+       (`?autoplay&warp=160`). Spawn kinds that are not on screen with
+       `app.world.spawnEnemy(kind, x, y, elite)` (capture only).
     3. The Warden with its volley spokes (`warp=185`), the Hydra charge lane (poll until a `hydra` has
        `state === 1`, `warp=365`) and the Void Heart with lit spires (`warp=545`).
        - If the bot dies first, top up `app.world.players[0].hp`, or spawn the boss with
@@ -466,7 +527,9 @@ canvases, so do not call them in unit tests.
 - **First-sighting hitches.**
   - A boss bake can take tens of ms on software raster if the warm queue has not reached it.
   - The queue normally finishes on the title screen.
-  - `?warp=N` skips the title, so call `fx.prewarm(1000)` once after a debug warp if captures stutter.
+  - With `?warp=N` a capture script usually clicks Play right after load, before the queue (≤ 2 ms
+    per frame from the title onward) has drained, and the boss then appears at once. Call
+    `app.renderer.fx.prewarm(1000)` once after the warp if captures stutter.
   - Co-op accents and giants radii are handled by `warmPilots` (4d).
 - **Render randomness.**
   - `Math.random`, `Math.sin` and `**` in these files are fine. They are outside the sim's import
@@ -486,16 +549,19 @@ canvases, so do not call them in unit tests.
 - **Hit squash is stateless** (`e.flash ≤ 0.08 s`). An elastic wobble would need per-id state (not
   needed).
 - **The reference tools are not runnable as they are.**
-  - `tools/lib.mjs` imports Playwright from an absolute path on the original build machine
-    (`/home/user/addictive-game/node_modules/playwright/index.mjs`).
+  - `tools/lib.mjs` imports Playwright from a hard-coded absolute path from the original build
+    machine (`/home/user/addictive-game/node_modules/playwright/index.mjs`). It only works if your
+    checkout happens to live there.
+  - `heavy.mjs` usage: `node heavy.mjs <built dist dir> <tag> [w h] [frames] [warp]`. `lib.mjs`
+    `serve()` serves the dist dir itself on a random port, so no `vite preview` is needed for it.
   - `patch.sh`/`build.sh` expect `game-src/`, `harness/` and `orig/` directories, which are not
     in-tree, so the gallery harness cannot be rebuilt.
   - `heavy.mjs` writes into `prototypes/entities/shots/` and mutates the sim. It sets `hp = 1e9` on
     live non-boss enemies (above `maxHp`, which is exactly what the Bulwark `hp/maxHp` clamp must
     survive), sets `hp = maxHp = 1e9` on the ones it spawns, and scripts `killEnemy` calls. That is fine
     for a benchmark, never for committed code.
-  - Copy `heavy.mjs` and `lib.mjs` to a scratch dir, point the import at your checkout's
-    `node_modules/playwright/index.mjs`, and keep the outputs outside the repo.
+  - Copy `heavy.mjs` and `lib.mjs` to `<scratch>/tools/` outside the repo (outputs then land in
+    `<scratch>/shots/`), and point the import at your checkout's `node_modules/playwright/index.mjs`.
 - **Perfect dash.** The renderer's filled r = 90 `perfect` blast was the real "solid cyan disc" over
   the ship (review E6). It must go; EntityFx draws a thin ring.
 - **The camera is still solo-style.** It follows P1 and ignores `world.zoom` until 3e, so in co-op a

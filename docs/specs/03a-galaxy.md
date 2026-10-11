@@ -31,11 +31,14 @@ simulation is untouched: same runs, same golden master.
   ("WIP (paused, unverified): galaxy sector backdrop integration"), one commit on `3d3e601`, which
   is already in the PR branch history.
 - **How to get it:** `git fetch origin wip/wave3-gfx`, then
-  `git merge --no-ff origin/wip/wave3-gfx` (merge commit, no rebase, no force-push). If you cannot
+  `git merge --no-ff --no-commit origin/wip/wave3-gfx` (merge commit, no rebase, no force-push).
+  `--no-commit` lets you resolve the conflict below and apply Steps 2, 3 and 3b (rename, CSP,
+  e2e request filter) before committing, so the merge commit itself is green. If you cannot
   fetch other branches, ask the owner for `git bundle create gfx.bundle 3d3e601..origin/wip/wave3-gfx`
   (then `git bundle list-heads gfx.bundle` and `git fetch gfx.bundle <ref>:refs/heads/wave3-gfx`)
-  or for `git format-patch 3d3e601..origin/wip/wave3-gfx`. Last resort: rebuild it from
-  `prototypes/galaxy/galaxy.ts` with Appendix A.
+  or for `git format-patch 3d3e601..origin/wip/wave3-gfx` (apply with `git am -3`, which stops at
+  the same `src/app.ts` conflict). Last resort: rebuild it from `prototypes/galaxy/galaxy.ts` with
+  Appendix A.
 - **Files on the branch** (`git diff --stat 3d3e601 origin/wip/wave3-gfx`): `src/render/galaxy.ts`
   (new, 2,828 lines), `src/render/galaxy.worker.ts` (new), `src/render/background.ts`,
   `src/render/renderer.ts`, `src/render/effects.ts`, `src/audio/audio.ts`, `src/app.ts`.
@@ -45,7 +48,22 @@ simulation is untouched: same runs, same golden master.
   `platform as currentPlatform, type Platform` from `./platform/platform`), add
   `import type { GalaxyEvent } from './render/galaxy';`, drop `import { detectBridge } ...`
   (unused after task 2; `noUnusedLocals` fails otherwise). Everything else auto-merges. No textual
-  overlap with task 1 or with the PR head commits after `3d3e601`.
+  overlap with task 1 or with the PR head commits after `3d3e601`. Note that task 2 also rewrote
+  `desktop/main.cjs` and `scripts/desktop-smoke.mjs` (Step 3 edits both) and added the e2e test
+  that Step 3b must adjust.
+
+**Trial merge verified on 2026-10-11** (throwaway clone: PR head + `wip/fix-dmath` + `wip/wave3-platform`
++ `wip/wave3-gfx`, in HANDOFF order, conflict resolved as above): `npx tsc --noEmit` clean;
+`npx vitest run`: 339 tests, 338 pass, the only failure is the `no-p1-alias` one (golden and
+`tests/determinism.guard.test.ts` pass); `npm run build:single`: `dist-single/shardstorm.html`
+401,337 → 477,024 bytes (+75.7 KB for the galaxy; the rest is task 2's inlined fonts), and
+opened from `file://` at 1920×1080 the worker generates sector 0 (ready after ~0.9 s, no console
+errors);
+`npm run desktop:smoke` fails only "no renderer console errors" (the CSP-blocked worker, Step 3)
+and passes all 48 checks (47 + the new worker check) with Step 3 applied; `e2e/smoke.spec.ts` fails one test, "the web build uses its bundled fonts, makes
+no third-party requests…", on both projects because the inline worker's `blob:http://localhost:<port>/…`
+URL is recorded as a request (Step 3b), and passes completely with that fix. `e2e/story.spec.ts`
+and `e2e/coop.spec.ts` were not run.
 
 **State verified on 2026-10-11** (Linux x64, Node 22, a clean export of `df7a114`; headless
 Chromium = SwiftShader software raster, so timings are pessimistic and JS+raster are both on the
@@ -83,6 +101,7 @@ CPU):
 | Reduced motion → reduced flashing | Done (`Renderer.draw` sets `galaxy.animate = galaxy.flashes = settings.flashes`) |
 | Co-op zoom coverage | Backdrop is screen-space and covers at any `k` (probe: 0 uncovered px at `k / ZOOM_MAX`); renderer is not zoom-aware yet (task 3e). **No test** |
 | Electron worker | **Broken** (CSP, see above) |
+| Web e2e "no third-party requests" (after task 2) | **Failing** (same-origin `blob:` worker URL; Step 3b) |
 | `no-p1-alias` | **Failing** |
 | Card/warp behind pause, level-up and victory screens | **Missing** (keeps running underneath) |
 | `docs/GAME_DESIGN.md`, `docs/HANDOFF.md` | **Not updated** |
@@ -91,10 +110,12 @@ CPU):
 
 1. `AGENTS.md`, then `docs/HANDOFF.md` §3 and §3a.
 2. `docs/design/galaxy.md`: §1 (what the review changed), §2 (API), §3 (integration), §4–§6
-   (looks, performance, readability). Its `plan/galaxy/` paths are `prototypes/galaxy/` in-tree;
-   its §7 screenshot paths and `/tmp/...` paths exist only on the original build machine. **§3.4
-   (sim-side sector timing, spawn calm, bullet clear) and §3.5's `sectorForRun` are overridden by
-   §4 below.**
+   (looks, performance, readability). Its `plan/galaxy/` paths are `prototypes/galaxy/` in-tree,
+   except `plan/galaxy/game/`, `game-dist/` and `v1/`, which were not copied; its §7 screenshot
+   paths and `/tmp/...` paths exist only on the original build machine. **Overridden by §4 below:**
+   §2's `sectorForRun` and §3.4 (sim-side sector timing via `sectorForRun`/`SECTOR_FORCE_AT`, spawn
+   calm, bullet clear), and in §3.5 the `world.director.sector` call, the queued arrival comms and
+   "extend the director calm while `warpFx.holding`".
 3. The branch diff: `git diff 3d3e601 origin/wip/wave3-gfx -- src/app.ts src/audio src/render/background.ts src/render/effects.ts src/render/renderer.ts`,
    and `diff prototypes/galaxy/galaxy.ts <(git show origin/wip/wave3-gfx:src/render/galaxy.ts)`
    (the WIP's changes to the prototype; summarised in Appendix A).
@@ -103,13 +124,17 @@ CPU):
    `src/story/director.ts` (`sectorInfo`, `queueSector`), `src/story/runlink.ts`, `src/render/effects.ts`
    (`Callouts`), `src/app.ts` (`stepGame`, `stepAttract`, `newAttractWorld`, `endRun`, `toTitle`),
    `tests/no-p1-alias.test.ts`, `e2e/smoke.spec.ts`, `desktop/main.cjs` (`CSP`), `scripts/desktop-smoke.mjs`.
-5. Before shots (the greyish prototype): `git show origin/wip/prototypes:galaxy/shots/sector-N.png`
-   (N = 1..4), `galaxy/shots/warp-3-p42.png`, `gfx/review/galaxy-sectors.jpg`.
+5. Before shots (the greyish prototype): `git show origin/wip/prototypes:galaxy/shots/sector-N.png > sector-N.png`
+   (N = 1..4; write them outside the repo), `galaxy/shots/warp-3-p42.png`, `gfx/review/galaxy-sectors.jpg`
+   (also `gfx/review/galaxy-game.jpg`, `galaxy-warp.jpg`). If that branch cannot be fetched, render the
+   prototype look yourself: `prototypes/galaxy/galaxy.ts` exports the same `generateSectorSync`.
 6. Reference only, do not port: `prototypes/galaxy/integration/*.patch` (against an older base;
    `world.patch`, `director.patch`, `types.patch` are sim changes the owner rejected),
    `prototypes/galaxy/harness.ts` and `tools/*.mjs` (absolute paths of the original machine,
    e.g. `/home/user/addictive-game/src/...` and `plan/galaxy/...`; the harness also reads
-   `SECTORS[].name` and `backdrop.stats`, which the WIP removed/renames).
+   `SECTORS[].name`, which the WIP removed, and `backdrop.stats`, which Step 2 renames). Its
+   `colourCheck` function (OKLab conversion, `GAME_COLORS` list, central-box camouflage share) is
+   the reference for the checks in §7/§8.
 
 ## 4. Owner decisions and constraints
 
@@ -117,10 +142,12 @@ These override `docs/design/galaxy.md`.
 1. **Sector timing comes only from the sim's existing state:** `world.sector` (0–3) and the
    `{ t: 'sector', index }` event pushed by `World.updateSector` (a sector is left when its boss
    dies or when the next boss is due, the last at `VICTORY_TIME`). Do not port the sim parts of
-   the prototype (no spawn calm, no enemy-bullet clear, no new timing, no new event fields). The
-   warp is purely visual; `tests/golden.solo.test.ts` passes **unchanged** and `src/game/` has no
-   diff. Anticipating a boss entrance is allowed render-side only, from `world.time` and
-   `BOSS_SCHEDULE`, without writing sim state.
+   the prototype (`world.patch`, `director.patch`, `types.patch`: no spawn calm, no enemy-bullet
+   clear, no new sim timing or state). The warp is purely visual; `tests/golden.solo.test.ts`
+   passes **unchanged** and `src/game/` has no diff. (The general rule allows purely informational
+   event fields only if the golden passes unchanged; this task needs none.) Anticipating a boss
+   entrance is allowed render-side only, from `world.time` and `BOSS_SCHEDULE`, without writing
+   sim state.
 2. **Colour:** each sector has a rich, distinct hue identity, noticeably beyond the greyish
    prototype (suggested: 1 deep teal/slate-blue, 2 ember/crimson, 3 indigo/violet, 4 bronze/gold;
    the WIP already does this). Keep (a) the OKLab camouflage check passing for **all** gameplay
@@ -137,8 +164,10 @@ These override `docs/design/galaxy.md`.
 6. **Reduced motion** maps to the existing reduced-flashing setting (`Settings.flashes`); no new
    settings UI.
 7. **Co-op zoom:** the backdrop must fill the screen with correct parallax at any zoom
-   (`world.zoom` from 1 up to `ZOOM_MAX` = 1.45), with the zoom-aware `k = scale·dpr / zoom` that
-   task 3e introduces.
+   (`world.zoom` from 1 up to `ZOOM_MAX` = 1.45; zoom > 1 shows more world), with the zoom-aware
+   `k = scale·dpr / zoom` that task 3e introduces (3e's `viewOf` also folds in 3c's render scale).
+   Today `Renderer.draw` still passes `k = scale·dpr`, so prove it with direct calls at
+   `k / ZOOM_MAX` (§8).
 8. **`tests/no-p1-alias.test.ts` is not touched.** Rename galaxy's field instead.
 9. From the design (§3.3): no renderer-level full-screen flash on `warp-punch` (the punch is
    drawn by the backdrop, *under* the sprites). Do not port capture-only code (`?god`, `?seed`,
@@ -146,44 +175,75 @@ These override `docs/design/galaxy.md`.
 10. `AGENTS.md` hard rules: render code reads sim state but never mutates it or draws from the
     sim RNG streams (`rng`, `spawnRng`, `lootRng`, `posRng`); strict TS; never skip or loosen a
     test; respect reduced flashing and screen shake (0 = none); Pixel 7 keeps working; original IP;
-    code idiomatic to the surrounding files; update `docs/GAME_DESIGN.md`.
+    code idiomatic to the surrounding files; update `docs/GAME_DESIGN.md`. Run `npm run typecheck`
+    and `npm test` before every commit (all green). No AI model names or identifiers in code,
+    comments or commit messages.
 
 ## 5. Implementation plan
 
-**Step 1. Merge** `origin/wip/wave3-gfx` (§2). Run `npm ci`, `npm run typecheck`, `npm test`:
-expect only the `no-p1-alias` failure.
+**Step 1. Merge** `origin/wip/wave3-gfx` with `--no-commit` (§2). Run `npm ci`,
+`npm run typecheck`, `npm test`: expect only the `no-p1-alias` failure (339 tests with tasks 1
+and 2 merged; 290 on the WIP alone). Apply Steps 2, 3 and 3b, re-run, then commit the merge.
 
 **Step 2. Fix the guard failure.** In `src/render/galaxy.ts`, rename `GalaxyBackdrop.stats` to
-`genStats` (declaration plus the two `this.stats.set(...)` in `onWorker` and `step`; keep the doc
-comment). `grep -n "this\.stats" src/render/galaxy.ts` must print nothing afterwards. Do not edit the
-guard or its `PENDING_MIGRATION` list. Also avoid `this.player` / `this.build` field names in any
-new render code (same regex).
+`genStats` (the `readonly stats = new Map<…>()` declaration plus the two `this.stats.set(...)` in
+`onWorker` and `step`; keep the doc comment). `grep -n "this\.stats" src/render/galaxy.ts` must print
+nothing afterwards. Do not edit the guard or its `PENDING_MIGRATION` list. The guard's regex is
+`\b(?:world|w)\.(?:player|stats|build|rerolls|pendingCaches)\b|\bthis\.(?:player|stats|build)\b`
+over every `src/**/*.ts` outside `PENDING_MIGRATION`: avoid those spellings in any new render code
+(e.g. a `w` parameter that is a world, or a `this.build` field).
 
-**Step 3. Electron worker.** In `desktop/main.cjs` `CSP`, add `"worker-src 'self' blob:"` after
-`script-src` (Vite's inline worker is a classic worker from a Blob URL; its fallback is a `data:`
-URL, which this still blocks, so the game then uses the chunked fallback). Add a check to
-`scripts/desktop-smoke.mjs` after the title screen is visible, e.g.
-`check('galaxy backdrop generates in a worker', await page.evaluate(() => window.shardstorm.renderer.bg.galaxy.usesWorker))`
-plus `waitForFunction(() => window.shardstorm.renderer.bg.galaxy.isReady(0))`. This change
-triggers `.github/workflows/desktop.yml` (it watches `desktop/**` and `scripts/desktop-smoke.mjs`),
-whose macOS job needs task 1 merged.
+**Step 3. Electron worker.** In `desktop/main.cjs` `CSP` (the array that task 2 also edited), add
+`"worker-src 'self' blob:"` after `"script-src 'self'"` (Vite's inline worker is a classic worker
+from a Blob URL; its fallback is a `data:` URL, which this still blocks, so the game then uses the
+chunked fallback). `tests/fonts.test.ts` ("the desktop CSP allows no remote hosts") still passes
+with it. Add a check to `scripts/desktop-smoke.mjs` right after `check('title screen visible', true)`;
+wait for generation first, because a CSP-blocked worker is dropped asynchronously (`onerror` →
+`dropWorker`). Verified snippet (with the Step 2 name):
+```js
+await page.waitForFunction(() => window.shardstorm.renderer.bg.galaxy.isReady(0), null, { timeout: 20_000 });
+const gal = await page.evaluate(() => ({ worker: window.shardstorm.renderer.bg.galaxy.usesWorker, viaWorker: window.shardstorm.renderer.bg.galaxy.genStats.get(0)?.worker }));
+check('galaxy backdrop generates in a worker', gal.worker === true && gal.viaWorker === true, JSON.stringify(gal));
+```
+Without the CSP change this check fails (`{"worker":false,"viaWorker":false}`), with it the whole
+smoke passes. Optionally extend the existing "CSP header served" check with `/worker-src 'self' blob:/`.
+This change triggers `.github/workflows/desktop.yml` (it watches `desktop/**` and
+`scripts/desktop-smoke.mjs`); that workflow runs `npm run check` on macOS, so it stays red until
+task 1 is merged. (Its packaged-app smoke, `SHARDSTORM_SMOKE=1` in `desktop/main.cjs` `runSmoke`,
+only checks the title screen, so the CSP bug is caught only by `npm run desktop:smoke`.)
+
+**Step 3b. Web e2e request filter.** Task 2's test "the web build uses its bundled fonts, makes no
+third-party requests and has no desktop-only controls" in `e2e/smoke.spec.ts` records every
+`page.on('request')` URL that does not start with the origin or `data:`. The inline worker loads
+from `blob:http://localhost:<port>/<uuid>` (same origin, not a network request), which fails it on
+both projects. Accept same-origin blobs only, keeping the third-party check strict:
+```ts
+if (!r.url().startsWith(origin) && !r.url().startsWith(`blob:${origin}/`) && !r.url().startsWith('data:')) remote.push(r.url());
+```
+(verified: the whole `e2e/smoke.spec.ts` then passes on both projects). This is a correction of the
+test to the new truth, not a loosening. Electron's request list in `scripts/desktop-smoke.mjs` did not
+record the blob URL; if it ever does, give its filter the same `blob:app://game/` exception.
 
 **Step 4. Readability and colour-identity tests** (`tests/galaxy.test.ts`, to be created; §8).
 `generateSectorSync(index, quality)` is DOM-free and its `images[0]` is the nebula tile
-(`eachImage` visits the tile first), so this runs in vitest's node environment. Only retune
+(`eachImage` visits the tile first), so this runs in vitest's node environment (verified: importing
+`src/render/galaxy.ts`, `src/render/palette.ts`, `src/game/content/{enemies,weapons,coop}.ts` and
+`src/story/script.ts` works under the repo's vitest config). Only retune
 colours if a check fails; if you retune, edit only the `SECTORS[i].nebula` / `wisps` / `center`
 colour fields and `okMax`/`satCap`, re-run the checks and the shots.
 
 **Step 5. Sector card layout.** Required outcome: the card never overlaps the HUD top strip
 (timer, boss name and bar), the boss `WARNING` callout (arrives 1.4 s after the punch of an
 anticipated warp) or `BOSS DESTROYED` (on screen 0.8 s after the punch of a kill warp), at
-1280×720, 1920×1080, Pixel 7 portrait (412×915 CSS) and Pixel 7 landscape (863×360 CSS in
-Playwright's `Pixel 7 landscape`). Recommended approach: in landscape, draw the card at the top
-of the callout area (`h * 0.3`, the `Callouts.draw` base) and push the callout stack down by the
-card's height while the card is visible (e.g. an optional `top` offset argument to
-`Callouts.draw`, to be created); keep the WIP's portrait position (`h * 0.64`, below the ship,
-clear of the top-docked comms panel). Keep the WIP's width clamp for long names and the
-`outBack` entrance. Card colour stays `SECTORS[i].warpTint`.
+1280×720, 1920×1080, Pixel 7 portrait (412×839 CSS viewport in Playwright's `Pixel 7`, the
+e2e mobile project; the 915 px is the screen height) and Pixel 7 landscape (863×360 CSS in
+Playwright's `Pixel 7 landscape`). Today `SectorCard.draw` centres the card at `h * 0.2` in
+landscape and `h * 0.64` in portrait (`h > w`); `Callouts.draw` stacks callouts from `h * 0.3`
+in `56 * ui` slots. Recommended approach: in landscape, draw the card at the top of the callout
+area (`h * 0.3`) and push the callout stack down by the card's height while the card is visible
+(e.g. an optional `top` offset argument to `Callouts.draw`, to be created); keep the WIP's portrait
+position (`h * 0.64`, below the ship, clear of the top-docked comms panel). Keep the WIP's
+width clamp for long names and the `outBack` entrance. Card colour stays `SECTORS[i].warpTint`.
 
 **Step 6. Freeze under modals.** While the run is covered by a modal (`App` state `'paused'`,
 `'levelup'` (also cache picks) or `'victory'`), the sector card's life must not tick, and the
@@ -194,26 +254,40 @@ true call `this.bg.galaxy.update(0)` (still pumps fallback generation and pendin
 `this.sectorCard.update(0)`. `App.stepGame` passes
 `modal: this.state === 'paused' || this.state === 'levelup' || this.state === 'victory'`.
 Hitstop and slow-mo keep real-time warps (design §3.3). The already scheduled riser may finish
-early if a pause lands mid-spool; that is acceptable.
+early if a pause lands mid-spool; that is acceptable. Side effects of `update(0)` to accept or
+handle: the `fadeIn` from the void and the 0.4 s resize/quality debounce (`wantQT`) also freeze,
+so a phone rotated while paused regenerates only after resume (the old images draw scaled
+meanwhile). `Callouts.update(rdt)` keeps running under modals today; leave it.
 
 **Step 7. Make the anticipation testable.** Move the rule out of `Renderer.anticipateSector` into
 a pure helper, e.g. `src/render/sectorwarp.ts` (to be created) exporting `WARP_LEAD` and
 `anticipatedSector(sector: number, time: number, lead = WARP_LEAD): number | null` (returns
 `sector + 1` once `time >= (BOSS_SCHEDULE[sector + 1]?.at ?? VICTORY_TIME) - lead` for
-`sector < BOSS_SCHEDULE.length`, else `null`). Keep it out of `galaxy.ts`, which must stay
-import-free because it doubles as the worker body. Keep `WARP_LEAD` (2.6 s) greater than the warp
-duration (2.2 s) so the warp is done before the forced change.
+`sector < BOSS_SCHEDULE.length`, else `null`). `WARP_LEAD` is today a module constant in
+`src/render/renderer.ts`; move it. `Renderer.anticipateSector` keeps its `world.gameOver` early
+return and stays skipped in attract mode (`if (!opts.attract)` in `draw`), and calls
+`this.bg.galaxy.setSector(next, { warp: true })` when the helper returns a number. Keep it out of
+`galaxy.ts`, which has no imports and must stay import-free because it doubles as the worker body
+(importing `enemies.ts` there would pull game content into the worker bundle). Keep `WARP_LEAD`
+(2.6 s) greater than the warp duration (2.2 s) so the warp is done before the forced change.
 
 **Step 8. Results → title polish (optional).** After a run in sector 3/4, `endRun` →
 `newAttractWorld` → `reset` → `setSector(0)` with sector 0 usually evicted (`keep = 2`): the old
 sector shows until sector 0 regenerates (~1 s), then hard-cuts. Acceptable; if you fix it, fade
 through the void (`fadeIn`) rather than warping (no riser/boom on the results screen).
 
-**Step 9. Docs.** `docs/GAME_DESIGN.md` §5.5 (the paragraph ending "…and the Gilded Throne."):
-add that the sector also changes when the next capital ship arrives (or at 10:00), that the warp
-is presentation-only (2.2 s, started 2.6 s early for forced changes) with riser, boom and title
-card, and in the accessibility bullets that reduced flashing makes the backdrop static and softens
-the warp punch. In `docs/HANDOFF.md`, mark 3a done and record the hooks below for 3c/3d/3e.
+**Step 9. Docs.** `docs/GAME_DESIGN.md`:
+- §5.5 (the paragraph ending "…and the Gilded Throne."): the sector also changes when the next
+  capital ship arrives (or at 10:00); the warp is presentation-only (2.2 s, started 2.6 s early
+  for forced changes) with riser, boom and title card.
+- §7 "Feel and feedback spec" table: add a "Sector warp" row (zoom, star streaks, tinted punch,
+  title card / riser and boom).
+- The doc has no separate accessibility list; extend the **reduced flashing** bullet under §4
+  "Ethical guardrails": it also makes the galaxy backdrop static and softens the warp punch.
+- §9 "Technical architecture": one bullet for the procedural backdrop (generated in an inlined
+  Web Worker, chunked main-thread fallback, two sectors kept in memory).
+
+In `docs/HANDOFF.md`, mark 3a done and record the hooks below for 3c/3d/3e.
 
 **Interfaces this step exposes (later steps consume them; keep them stable):**
 - `renderer.bg: Background` (public) and `renderer.bg.galaxy: GalaxyBackdrop`.
@@ -225,8 +299,18 @@ the warp punch. In `docs/HANDOFF.md`, mark 3a done and record the hooks below fo
   multiplies its alpha by `gridAlpha`. 3c caps galaxy punch + post-FX flash: the punch is the
   first 0.1 s after `warp-punch` (`progress` just past 0.55), at most 0.35 alpha (0.09 with
   reduced flashing). Adding a `punch` strength field to `WarpFx` now is welcome but optional.
-- `renderer.onGalaxy: ((e: GalaxyEvent) => void) | null` and `renderer.showSectorCard(index, title, subtitle)`.
-- `GalaxyEvent`: `ready`, `warp-spool` (with `punchIn` seconds), `warp-tunnel`, `warp-punch`, `warp-done`.
+- `renderer.onGalaxy: ((e: GalaxyEvent) => void) | null` (the App's hook) and
+  `renderer.showSectorCard(index, title, subtitle)`. Inside the renderer, the private
+  `Renderer.onGalaxyEvent(e)` receives every event first (it adds the punch shake, then forwards
+  to `onGalaxy`): renderer-side layers (3d's grid reset on `warp-punch`) hook in there.
+- `GalaxyEvent`: `ready` (`sector`, `ms`), `warp-spool` (`from`, `to`, `punchIn` seconds),
+  `warp-tunnel`, `warp-punch`, `warp-done` (each `from`, `to`).
+- `galaxy.sector` (getter: the sector being shown, −1 before the first one is ready),
+  `galaxy.isReady(i)`, `galaxy.usesWorker`, `galaxy.genStats` (Step 2), `galaxy.memoryBytes()`,
+  and the tool-only `prepare`, `setSector(i, { sync: true })`, `setWarpPreview`, `clearWarp`.
+- `src/render/sectorwarp.ts` (Step 7): `WARP_LEAD`, `anticipatedSector(...)`.
+- `Renderer.draw(world, dt, opts)` with `opts: { attract, realDt, modal? }` (Step 6): later steps
+  that rework `draw` keep the `modal` freeze.
 
 ## 6. Settings and save data
 
@@ -237,29 +321,41 @@ No new settings and no save changes. Mappings (all existing):
 - `Settings.shake` scales the 0.25 trauma `Renderer.onGalaxyEvent` adds on `warp-punch`
   (`Shake.update(dt, intensity)`; 0 = none).
 - `Settings.sfx`/`master` apply because `tone`/`noiseBurst` route into the `sfx` bus.
-- Optional (no UI): also honour `matchMedia('(prefers-reduced-motion: reduce)')` for
-  `galaxy.animate`, mirroring `src/ui/style.css`.
+- Optional (no UI): also honour the OS `prefers-reduced-motion` for `galaxy.animate`, as
+  `src/ui/style.css` and the comms panel do (`prefersReducedMotion()` in `src/ui/comms.ts` is the
+  existing live check; mirror it in render code rather than importing UI code into the renderer).
 
 ## 7. Accessibility, mobile, co-op and performance requirements
 
 - **Readability (owner's check):** backdrop-only render (galaxy + stars + grid, beat 0.5), central
   40% box, every gameplay colour C at glow strength 0.3·C: share of box pixels within OKLab ΔE
   < 0.05 of it must be **< 0.5%**, for every sector, at 1280×720 and 1920×1080, over at least 4
-  camera positions. Colour list = `PAL` hex entries, `GEM_TIERS`, every `ENEMIES[k].color`,
-  `WEAPONS[k].color` and **`PLAYER_COLORS`** (co-op; the prototype list missed them). WIP probe:
-  worst 0.408% (sector 1 vs P3 `#5aa8ff`, 720p), others ≤ 0.25%.
+  camera positions. **Colour list** (the prototype's `GAME_COLORS` plus co-op): the `#rrggbb`
+  entries of `PAL` **except the backdrop colours `PAL.void` and `PAL.voidHi`** (with those two the
+  check fails at 43–60% in every sector, since they are the backdrop's own colours), all of
+  `PAL.combo`, every `GEM_TIERS[i].color`, every `ENEMIES[k].color`, every `WEAPONS[k].color` and
+  **`PLAYER_COLORS`** (co-op; the prototype list missed them). Skip non-hex entries (`PAL.grid`,
+  `gridMajor`, `hpBack`, `textDim`). WIP probe: worst 0.408% (sector 1 vs P3 `#5aa8ff`, 720p),
+  others ≤ 0.25%. To measure it in the browser, port `colourCheck` from
+  `prototypes/galaxy/harness.ts` into a `page.evaluate`: draw only `app.renderer.bg.draw(...)`
+  (galaxy + stars + grid, beat 0.5) into `app.renderer.ctx`, then read the central box.
 - **Luminance budget:** central-box OKLab L P99 < 0.27 (the darkest gameplay glow, Void Heart
   `#9d4dff` × 0.3, is L 0.270). WIP probe: P99 0.198–0.244.
 - **Reduced flashing:** punch ≤ 0.09 alpha, no comets/spin/beat glows; consider halving the
   tunnel streak alpha too (your call, note it). **Shake 0:** no warp shake.
-- **Mobile (Pixel 7):** portrait `backdropRef = min(h, 0.8·w)` → quality ≈ 0.61; the card sits at
-  `h * 0.64`; landscape per Step 5. Touch input unaffected (no new DOM). Check no frame hitch at
+- **Mobile (Pixel 7):** portrait (device px with the renderer's dpr cap of 2: 824×1678)
+  `backdropRef = min(h, 0.8·w)` = 659 → quality ≈ 0.61; the card sits at `h * 0.64`; landscape
+  per Step 5. Touch input unaffected (no new DOM). Check no frame hitch at
   the warp on the mobile e2e project.
 - **Co-op:** 0 uncovered pixels at `k` and at `k / ZOOM_MAX`, in every sector and in each warp
   phase (WIP probe: 0). Parallax scales with `k` by construction. Stars/grid draw `2.1×` more
   cells at zoom 1.45: report their cost.
 - **Performance budgets** (headless Chromium/SwiftShader, JS time of the call incl. a 1-px
-  `getImageData` flush, median of 3×30 frames; WIP measured values in brackets):
+  `getImageData` flush, median of 3×30 frames; WIP measured values in brackets). Measure in a
+  `page.evaluate` loop calling `app.renderer.bg.draw(ctx, camX, camY, k, w, h, time, beat, tint)`
+  (or `app.renderer.bg.galaxy.draw(...)` alone) with a moving camera. The legacy number comes from
+  a build of the PR head before this merge: its `Background.draw` has the same signature (the
+  field is TS-private there, `private readonly bg`, but readable at runtime).
   - `galaxy.draw` only: ≤ 2.0 ms/frame at 1920×1080 [1.23–1.87], ≤ 1.3 ms at 1280×720 [0.95–1.2].
   - Whole `Background.draw`: must stay well under the legacy background: 1080p [3.2–3.6 ms vs
     legacy 8.95], 720p [0.85–1.25 vs 4.31].
@@ -268,28 +364,36 @@ No new settings and no save changes. Mappings (all existing):
   - Generation never blocks the main thread (worker): no main-thread frame > 33 ms caused by it;
     sector 0 ready ≤ 3 s after load at 1080p.
   - Memory (`galaxy.memoryBytes()`): ≤ 32 MB at 1080p [29.7], ≤ 14 MB at 720p [13.4].
-  - Report `dist-single/shardstorm.html` size [369,235 bytes].
+  - Report `dist-single/shardstorm.html` size [WIP alone 369,235 bytes; with tasks 1+2 merged
+    477,024 bytes, of which the galaxy adds ~75.7 KB].
 
 ## 8. Tests to add or update
 
 **`tests/galaxy.test.ts` (to be created, vitest/node):**
-1. Generate all four sectors once (`generateSectorSync(i, 0.5)` in `beforeAll`; ~0.3–0.45 s each;
-   the 30 s `testTimeout` in `vite.config.ts` is plenty). Convert tile pixels (stride 2) to OKLab
-   (write the sRGB→OKLab conversion in the test; the WIP's `okL` in `galaxy.ts` is private).
-2. **Camouflage:** for each sector and each gameplay colour (list in §7, imported from
-   `src/render/palette`, `src/game/content/enemies`, `src/game/content/weapons`,
-   `src/game/content/coop`; skip non-`#rrggbb` entries such as `PAL.grid`), the share of tile
-   pixels within ΔE 0.05 of the 0.3× glow is < 0.5% (whole tile, stricter than the box, because
-   any part can scroll into the centre). WIP: worst 0.113%.
-3. **Luminance:** tile OKLab L P99 < min glow L over the colour list (WIP: P99 0.199–0.216 vs
-   0.270).
-4. **Colour identity (guards the owner's colour push):** per sector, chroma P95 ≥ 0.035 (WIP
-   0.042–0.087; greyish prototype 0.013–0.023) and the share of pixels with chroma > 0.02 ≥ 40%
-   (WIP 48–100%; prototype 0–35%); the mean hues (OKLab `atan2` of the mean `(a, b)` over pixels
-   with chroma > 0.02) of the four tiles are pairwise ≥ 35° apart (WIP 240°/21°/287°/68°). The
-   share and hue figures were measured at quality 0.25 (chroma P95 is the same at 0.5): confirm
-   them at the test's quality before fixing the thresholds. If the owner later approves a
-   different look, update the thresholds with a comment, never delete the check.
+1. Generate all four sectors once (`generateSectorSync(i, 0.5)` in `beforeAll`, 1024×768 tiles;
+   ~0.25–0.5 s each; the 30 s `testTimeout` in `vite.config.ts` is plenty). Convert tile pixels
+   (every 2nd pixel, i.e. a byte stride of 8) to OKLab (write the sRGB→OKLab conversion in the
+   test, as `oklab()` in `prototypes/galaxy/harness.ts`; the WIP's `okL` in `galaxy.ts` is not
+   exported and returns L only).
+2. **Camouflage:** for each sector and each gameplay colour (the list in §7, **without `PAL.void`
+   / `PAL.voidHi`**, imported from `src/render/palette` (`PAL`, `GEM_TIERS`),
+   `src/game/content/enemies` (`ENEMIES`), `src/game/content/weapons` (`WEAPONS`),
+   `src/game/content/coop` (`PLAYER_COLORS`)), the share of tile pixels within ΔE 0.05 of the
+   0.3× glow is < 0.5% (whole tile, stricter than the box, because any part can scroll into the
+   centre). Verified on the WIP at quality 0.5: worst 0.113% (sector 3 vs Void Heart `#9d4dff`);
+   the others 0.086% (sector 1 vs P3 `#5aa8ff`), 0.050%, 0.039%. At quality 0.25 (the floor, tiny
+   screens) the worst is 0.457%, so do not lower the test's quality.
+3. **Luminance:** tile OKLab L P99 < min glow L over the colour list (verified at 0.5: P99
+   0.199–0.216 vs 0.2704 for `#9d4dff`; at 0.25: 0.218–0.242). The greyish prototype fails this
+   one (0.259–0.282), which is why the WIP moved to the OKLab budget.
+4. **Colour identity (guards the owner's colour push):** per sector, chroma P95 ≥ 0.035 and the
+   share of pixels with chroma > 0.02 ≥ 40%; the mean hues (OKLab `atan2` of the mean `(a, b)` over
+   pixels with chroma > 0.02) of the four tiles are pairwise ≥ 35° apart, measured as circular
+   distance (`min(d, 360 − d)`). Verified at quality 0.5: WIP chroma P95 0.057/0.063/0.087/0.042,
+   share 48.0/58.2/100/49.3%, hues 239°/21°/287°/69° (closest pairs 48°); the greyish prototype
+   (`prototypes/galaxy/galaxy.ts`, same quality) has chroma P95 0.013–0.023 and share 0–36%, so the
+   thresholds separate the two. If the owner later approves a different look, update the
+   thresholds with a comment, never delete the check.
 5. `SECTORS.length === STORY.sectors.length` (card names come from the story script).
 6. `anticipatedSector` (Step 7): sector s is forced out when boss s + 1 arrives (or at
    `VICTORY_TIME` for s = 2), so with the default lead: `null` just before and `s + 1` at
@@ -301,21 +405,28 @@ No new settings and no save changes. Mappings (all existing):
    no console errors.
 2. Coverage: for each sector (`galaxy.prepare(i); galaxy.setSector(i, { sync: true })`) and
    `k ∈ { scale·dpr, scale·dpr / ZOOM_MAX }` (import `ZOOM_MAX` from `../src/game/content/coop`,
-   as `e2e/story.spec.ts` imports `STORY`): fill `renderer.ctx` with `#ff00ff`, call
-   `galaxy.draw(...)`, assert zero `#ff00ff` pixels; repeat for warp previews
+   which has no imports, as `e2e/story.spec.ts` imports `STORY`): in one `page.evaluate` (so no
+   frame runs in between), `ctx.setTransform(1, 0, 0, 1, 0, 0)`, fill `renderer.ctx` with `#ff00ff`,
+   call `galaxy.draw(ctx, camX, camY, k, renderer.w, renderer.h, 0)` with a few camera positions,
+   read back with `getImageData` and assert zero `#ff00ff` pixels; repeat for warp previews
    (`setWarpPreview(0, 1, p)` for p ∈ {0.15, 0.42, 0.56, 0.8}, then `clearWarp()`). These are
-   sync tools (block ~0.3–0.8 s each); fine in a test.
-3. Warp is render-only: start a run, wrap `renderer.onGalaxy` to log `e.t`, call
-   `renderer.consume([{ t: 'sector', index: 1 }], app.world)`, poll until `warp-done`; assert the
-   order spool → tunnel → punch → done, that the card was visible after the punch (today
-   `renderer.sectorCard.card !== null`; adapt after Step 5), and that
-   `app.world.sector` is still 0 (the renderer did not touch the sim).
+   sync tools (block ~0.3–1 s each); fine in a test.
+3. Warp is render-only: start a run on `/?autoplay` (the bot auto-picks level-ups after 0.6 s;
+   once Step 6 freezes the warp under modals, a manual run could sit on a level-up screen and stall
+   the warp), wrap `renderer.onGalaxy` to log `e.t` (keep calling the App's original handler), call
+   `renderer.consume([{ t: 'sector', index: 1 }], app.world)`, poll until `warp-done` (allow ~10 s);
+   assert the order spool → tunnel → punch → done, that the card was visible after the punch
+   (record it inside the wrapper at `warp-done`, when the 2.8 s card shown at the punch is still up;
+   today that is `renderer.sectorCard.card !== null`, a TS-private field that is readable at runtime
+   the same way `e2e/smoke.spec.ts` reads App internals, or add a public getter; adapt after
+   Step 5), and that `app.world.sector` is still 0 (the renderer did not touch the sim).
 
-**Update:** `scripts/desktop-smoke.mjs` (Step 3). **Must not change:** `tests/golden.solo.test.ts`,
-`tests/no-p1-alias.test.ts`, task 1's `tests/determinism.guard.test.ts`, and the `e2e/smoke.spec.ts`
-canvas check (task 3c changes it). Never import `src/render/*` from `src/game/*` (it would enter
-the determinism guard's import closure; `galaxy.ts` uses `Math.pow/cbrt/exp`, which is fine
-render-side).
+**Update:** `scripts/desktop-smoke.mjs` (Step 3) and the same-origin `blob:` exception in
+`e2e/smoke.spec.ts`'s third-party request filter (Step 3b). **Must not change:**
+`tests/golden.solo.test.ts`, `tests/no-p1-alias.test.ts`, task 1's `tests/determinism.guard.test.ts`,
+task 2's `tests/fonts.test.ts`, and the `e2e/smoke.spec.ts` canvas check (task 3c changes it).
+Never import `src/render/*` from `src/game/*` (it would enter the determinism guard's import
+closure; `galaxy.ts` uses `Math.pow/cbrt/exp`, which is fine render-side).
 
 ## 9. Acceptance checklist
 
@@ -323,12 +434,15 @@ Commands (all must pass):
 - `npm ci`, `npm run typecheck`, `npm test` (incl. golden and both guards).
 - `npm run build`, `npm run build:single`; open `dist-single/shardstorm.html` from `file://`:
   galaxy loads with the worker.
-- `npm run e2e` (set `E2E_PORT` if 4173 is busy), desktop and mobile projects.
-- `xvfb-run npm run desktop:smoke` on Linux: all checks, incl. the new worker check.
+- `npm run e2e` (set `E2E_PORT` if 4173 is busy), desktop and mobile projects, incl. the new
+  `e2e/galaxy.spec.ts`, `e2e/coop.spec.ts` and `e2e/story.spec.ts`.
+- `npm run desktop:smoke` (on Linux without a display it re-runs itself under `xvfb-run -a`;
+  `xvfb-run -a npm run desktop:smoke` also works): all checks, incl. the new worker check.
 - `git diff <PR head before the merge> -- src/game tests/golden.solo.test.ts` is empty.
 
-Screenshots (build, serve with `npx vite preview --port <port>`, drive with Playwright; keep shots
-out of the repo; look at every one):
+Screenshots (`npm run build`, serve with `npx vite preview --port <port> --strictPort` in the
+background and stop it afterwards, drive with Playwright; keep shots out of the repo; look at
+every one and iterate until they genuinely look right):
 - Each sector in real play at 1920×1080 and 1280×720: `?autoplay&warp=N`, and for screenshots
   only, force the backdrop with `app.renderer.bg.galaxy.setSector(i, { sync: true })` (render
   state, not sim). Side by side with the prototype shots (`origin/wip/prototypes:galaxy/shots/sector-N.png`)
@@ -342,9 +456,15 @@ out of the repo; look at every one):
   one if it occurs (e.g. the 9:57 warp with `?autoplay&warp=590` when the Void Heart survives).
 - The title screen (sector 1, index 0), the results screen after a sector-3+ run.
 - A dense fight with `world.enemies.length >= 300` (log it; e.g. `?autoplay&warp=530`–`590`) in
-  sectors 2 and 3: bullets (`#ff4f7a`) and warm enemies must read on the crimson and violet gas.
+  sectors 2 and 3 (indices 1 and 2: Garnet and Amethyst; force the backdrop render-side as above
+  if the run is in another sector): bullets (`#ff4f7a`) and warm enemies must read on the crimson
+  and violet gas.
+- Real play on the Pixel 7 viewport (portrait and landscape), in at least two sectors.
 - Reduced flashing on (static backdrop, soft punch) and shake 0.
-- `?coop=4&autoplay` (camera still follows P1 until 3e) plus the e2e coverage test at `k / ZOOM_MAX`.
+- `?coop=4&autoplay` (camera still follows P1 until 3e) plus a zoomed-out backdrop shot: call
+  `app.renderer.bg.draw(ctx, camX, camY, scale·dpr / ZOOM_MAX, w, h, time, 0.5, 0)` on
+  `app.renderer.ctx` (render-only) and capture the canvas, in addition to the e2e coverage test at
+  `k / ZOOM_MAX`.
 
 Numbers to report: §7 budgets (galaxy-only and whole-background per sector, warp average and
 worst, legacy for comparison at 720p and 1080p), camouflage worst and luminance P99 per sector at
@@ -352,8 +472,9 @@ both sizes, sector-0 ready time, memory, single-file size.
 
 ## 10. Pitfalls and known issues
 
-- **The P1-alias regex** catches any `this.stats` / `this.player` / `this.build` in `src/`, even
-  unrelated fields (that is the known failure).
+- **The P1-alias regex** catches any `this.stats` / `this.player` / `this.build`, and any
+  `world.` / `w.` followed by `player|stats|build|rerolls|pendingCaches`, in `src/` outside
+  `renderer.ts`/`hud.ts`, even unrelated fields (that is the known failure).
 - **Worker bundling:** use only `import GalaxyWorker from './galaxy.worker?worker&inline'`. The
   design doc's `new Worker(new URL('./galaxy.worker.ts', import.meta.url), { type: 'module' })`
   breaks `build:single` (`scripts/build-single.mjs` inlines only the entry chunk) and `file://`.
@@ -367,15 +488,20 @@ both sizes, sector-0 ready time, memory, single-file size.
   fails. Sector 2's crimson sits under warm enemies and pink bullets: judge it in a real
   barrage, not only by the metric.
 - `prepare`, `setSector(i, { sync: true })` and `setWarpPreview` generate synchronously on the
-  main thread (0.3–0.85 s): tools and tests only, never in game code.
+  main thread (0.3–1.0 s per sector in the browser, design §5): tools and tests only, never in
+  game code.
+- **Blob worker URLs show up in request logs** (`page.on('request')` in Playwright on the web):
+  same-origin `blob:` is not a third-party request (Step 3b).
 - **Generation** is 0.47–0.74 s per sector at 1080p (above the design's 400 ms goal) but off-thread
   with a long lead (`setSector(i)` prewarms `i + 1`; the WIP defers that to `warp-done` because the
   warp pins both ends and `keep = 2` would evict it at once).
 - **SwiftShader:** each `stroke()` has ~1.2 ms fixed cost; keep streaks and star streaks batched
   (one path per layer). The renderer's stars + grid cost ~2 ms at 1080p today (3d replaces the grid).
   Sector 4's vortex is the most expensive; the design's lever is its size (1.22 → ~1.1).
-- **Portrait:** the tile is drawn magnified (×1.85 on a Pixel 7) to cover the tall screen; softer
-  and a non-1:1 blit. Acceptable; measure it on the mobile project.
+- **Portrait:** the tile is drawn magnified (`max(ref, h / 1.5) / 1080 / tileRs` in
+  `GalaxyBackdrop.drawSector`: ≈×1.7 at the Playwright Pixel 7 viewport, ≈×1.85 at the full
+  915-px screen height) to cover the tall screen; softer and a non-1:1 blit. Acceptable; measure
+  it on the mobile project.
 - **Multiple sector events in one frame** (two thresholds passed at once) restart the warp towards
   the later sector; `?warp=N` fast-forward clears events and `reset()` shows the current sector
   without a warp, then the anticipation may start a warp on the next frame if inside the lead.
