@@ -312,6 +312,7 @@ export class App {
     this.audio.setVolumes(s.master, s.music, s.sfx);
     this.renderer.settings = {
       shake: s.shake,
+      gridMotion: s.gridMotion,
       flashes: s.flashes,
       damageNumbers: s.damageNumbers,
       showFps: s.showFps,
@@ -812,7 +813,7 @@ export class App {
   // ───────────────────────── frame loop ─────────────────────────
 
   private frame = (now: number): void => {
-    this.renderer.postfx?.reportFrameTime(now - this.last);
+    if (this.renderer.postFxActive) this.renderer.postfx?.reportFrameTime(now - this.last);
     const realDt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     if (realDt > 0) this.fps += (1 / realDt - this.fps) * 0.05;
@@ -840,6 +841,7 @@ export class App {
   };
 
   private stepAttract(realDt: number): void {
+    this.renderer.intensity = 0;
     const w = this.attract;
     this.acc += realDt;
     let steps = 0;

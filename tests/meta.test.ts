@@ -9,6 +9,20 @@ import { rankXpNeeded } from '../src/meta/rank';
 import type { RunResult } from '../src/meta/result';
 import { defaultSave, defaultSettings, loadSave, migrate, writeSave, type Storage } from '../src/meta/save';
 
+it('migrates grid motion from shake only when a finite value is absent', () => {
+  expect(defaultSettings().gridMotion).toBe(1);
+  expect(migrate({ settings: { shake: 0.4 } }).settings.gridMotion).toBe(0.4);
+  expect(migrate({ settings: { shake: 0.4, gridMotion: 0 } }).settings.gridMotion).toBe(0);
+  expect(migrate({ settings: { gridMotion: 7 } }).settings.gridMotion).toBe(1);
+  expect(migrate({ settings: { gridMotion: -1 } }).settings.gridMotion).toBe(0);
+  for (const gridMotion of [null, NaN, Infinity, '0', false]) {
+    expect(migrate({ settings: { gridMotion, shake: 0.3 } }).settings.gridMotion).toBe(0.3);
+  }
+  for (const shake of [null, NaN, Infinity, '0', false]) {
+    expect(migrate({ settings: { shake } }).settings.gridMotion).toBe(1);
+  }
+});
+
 it('defaults enhanced graphics for old or malformed saves and preserves an explicit opt-out', () => {
   expect(defaultSettings().postfx).toBe(true);
   expect(migrate({ settings: { music: 0.1 } }).settings.postfx).toBe(true);

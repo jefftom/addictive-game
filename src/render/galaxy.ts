@@ -846,11 +846,7 @@ export interface SectorDef {
   planets: PlanetPlacement[];
   /** Warp streak / flash tint when arriving in this sector. */
   warpTint: string;
-  /** RGB for the renderer's grid in this sector (a desaturated PAL.grid; never the sector's own hue). */
-  gridRGB: [number, number, number];
 }
-
-const GRID_RGB: [number, number, number] = [112, 126, 196];
 
 export const SECTORS: SectorDef[] = [
   {
@@ -888,7 +884,6 @@ export const SECTORS: SectorDef[] = [
       },
     ],
     warpTint: '#7fe9ff',
-    gridRGB: GRID_RGB,
   },
   {
     id: 'garnet-nebula',
@@ -929,7 +924,6 @@ export const SECTORS: SectorDef[] = [
       },
     ],
     warpTint: '#ffb08a',
-    gridRGB: GRID_RGB,
   },
   {
     id: 'amethyst-abyss',
@@ -965,7 +959,6 @@ export const SECTORS: SectorDef[] = [
       },
     ],
     warpTint: '#c9a8ff',
-    gridRGB: GRID_RGB,
   },
   {
     id: 'gilded-throne',
@@ -995,7 +988,6 @@ export const SECTORS: SectorDef[] = [
       },
     ],
     warpTint: '#ffd27a',
-    gridRGB: GRID_RGB,
   },
 ];
 

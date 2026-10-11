@@ -106,7 +106,7 @@ scenes measure +0.464 ms mean / +0.65 ms p95 renderer JS over 3a.
 
 ### 3c. WebGL2 post-FX
 
-Implemented locally on `wip/wave3-postfx`; remote CI is the gate before 3d.
+Merged at `c3a1ca6`; CI and all three desktop jobs passed before 3d began.
 See [`verification/03c-postfx.md`](verification/03c-postfx.md). The owner chose
 to preserve the reviewed pipeline's actual 12/15 q3 draw counts. JS budgets
 pass; the fully flushed 1080p SwiftShader lowest rung is slower than plain 2D,
@@ -137,6 +137,16 @@ Stable hooks: `postfx`, `postFxActive`, `setPostFx`, `costTier`, `worldCanvas`,
   - Point the e2e smoke test's canvas check at the world image.
 
 ### 3d. WarpGrid spring-mesh grid
+
+Implemented on `wip/wave3-grid`; remote CI is the gate before 3e. See
+[`verification/03d-grid.md`](verification/03d-grid.md). Required grid mean
+budgets pass at 0.31–0.36 ms, including four pilots. The grid is capped at
+1,800 points; old saves inherit shake for the new Grid motion setting.
+
+Stable hooks for 3e/4: `renderer.grid` and `gridMs`, all mesh stats including
+`spacing`, `gridSpacingFor`/`GRID_MAX_POINTS`/`GRID_TINTS`/`coolRGB`, and
+`gridEvent`/`gridFrame`/`GridWorldView`. The world transform already drives
+grid drawing, and co-op reserves `ZOOM_MAX` at reset; do not resize per zoom.
 
 - **Source:** `gfx/grid/` (`grid.ts`, `gridfx.ts`).
 - **What it does:**

@@ -754,8 +754,8 @@ export class UI {
     const s = this.screen('settings');
     s.className = 'screen scrim-heavy';
     const st = save.settings;
-    const slider = (id: keyof Settings, label: string, v: number) =>
-      `<div class="setting"><label for="set-${id}">${label}</label><input type="range" id="set-${id}" min="0" max="100" value="${Math.round(v * 100)}" /></div>`;
+    const slider = (id: keyof Settings, label: string, v: number, sub = '') =>
+      `<div class="setting"><label for="set-${id}">${label}${sub ? `<small>${sub}</small>` : ''}</label><input type="range" id="set-${id}" min="0" max="100" value="${Math.round(v * 100)}" /></div>`;
     const toggle = (id: keyof Settings, label: string, sub: string, v: boolean, disabled = false) =>
       `<div class="setting"><label for="set-${id}">${label}<small>${sub}</small></label><input type="checkbox" class="toggle" id="set-${id}" ${v ? 'checked' : ''} ${disabled ? 'disabled' : ''} /></div>`;
     const trails = (Object.keys(TRAILS) as TrailId[])
@@ -773,6 +773,7 @@ export class UI {
         ${slider('sfx', 'Sound effects', st.sfx)}
         <div class="setting"><label for="set-chatter">Crew chatter<small>Bridge-crew comms during a run</small></label><select id="set-chatter">${chatter}</select></div>
         ${slider('shake', 'Screen shake', st.shake)}
+        ${slider('gridMotion', 'Grid motion', st.gridMotion, 'Arena grid ripples · 0 keeps it still')}
         ${
           this.desktop
             ? `<div class="setting"><label for="set-fullscreen">Fullscreen<small>${this.desktop.steamDeck ? 'Always on with Steam Deck' : 'Also F11 or Alt+Enter'}</small></label><input type="checkbox" class="toggle" id="set-fullscreen" ${this.desktop.steamDeck || this.desktop.fullscreen() ? 'checked' : ''} ${this.desktop.steamDeck ? 'disabled' : ''} /></div>`
@@ -797,6 +798,7 @@ export class UI {
       music: Number(($(s, '#set-music') as HTMLInputElement).value) / 100,
       sfx: Number(($(s, '#set-sfx') as HTMLInputElement).value) / 100,
       shake: Number(($(s, '#set-shake') as HTMLInputElement).value) / 100,
+      gridMotion: Number(($(s, '#set-gridMotion') as HTMLInputElement).value) / 100,
       flashes: ($(s, '#set-flashes') as HTMLInputElement).checked,
       postfx: ($(s, '#set-postfx') as HTMLInputElement).checked,
       damageNumbers: ($(s, '#set-damageNumbers') as HTMLInputElement).checked,
