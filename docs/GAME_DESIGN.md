@@ -135,7 +135,8 @@ This game is meant to be *compelling*, not *exploitative*:
   progress away).
 - An optional **break reminder** (default: every 60 minutes, non-blocking
   toast) and a **reduced flashing** accessibility setting, which also keeps
-  galaxy decoration static and softens the warp punch.
+  galaxy decoration static and softens the warp punch. **Grid motion** independently
+  controls arena ripples: 0 keeps the lattice still while events glow.
 - All progress is stored locally; nothing is collected about the player.
 
 ---
@@ -277,6 +278,7 @@ toward 10:00).
 
 | Event | Visual | Audio |
 | --- | --- | --- |
+| Arena grid | spring-mesh lattice: kills ripple it, capital-ship deaths and bombs send one front, wells funnel it, dashes leave a wake; faint and cool in every sector, dims in busy fights | none |
 | Enemy hit | white flash 60 ms, knockback, damage number | soft tick (rate-limited) |
 | Kill | hull fragments flash hot, then cool into dim debris below enemies; score popups gated by crowd density | pop, random pitch |
 | Shard pickup | XP bar pulse | chime rising through a pentatonic scale |
@@ -332,6 +334,10 @@ Enter is never a dash key, so no pilot's dash key can confirm a card (anti-mash)
 ## 9. Technical architecture
 
 - **TypeScript + Vite**, no runtime dependencies.
+- **WarpGrid:** render-only spring mesh, fixed 60/30 Hz, typed arrays, budgeted
+  kicks and travelling fronts; never touches the simulation. Co-op reserves the
+  maximum zoom view with at most 1,800 points. Post-FX quality controls its rate
+  and optional 2D halo; reduced flashing removes flare and beat brightening.
 - **Fixed-timestep simulation (60 Hz)** in `src/game/` that has no DOM or
   canvas access, so it runs headless in tests and the balance simulator.
 - **Deterministic math** (`src/core/dmath.ts`): the simulation uses fdlibm-based

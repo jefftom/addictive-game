@@ -2,7 +2,14 @@
 
 Implementation based on `402a2f796986ae842be6923709fca6f135b323f5`, after
 task 3b passed CI and all desktop jobs. Work branch: `wip/wave3-postfx`.
-Local verification: 2026-10-11. Remote run links are recorded after push.
+Local verification: 2026-10-11. Merged at `c3a1ca6`.
+[CI](https://github.com/jefftom/addictive-game/actions/runs/38117549512) and
+[all three desktop jobs](https://github.com/jefftom/addictive-game/actions/runs/38117549532) passed.
+CI: 411 unit tests; 65 browser tests passed first try, one existing mobile
+galaxy worker-error fallback test passed on retry after its 15-second readiness
+timeout, and 8 unchanged device exclusions. No test was loosened. Record the
+fallback startup timeout for task 4. Linux Electron: all 49 checks passed using
+the 2D fallback (postFxAvailable/Active false); local Windows used WebGL2.
 
 ## Implementation and review
 

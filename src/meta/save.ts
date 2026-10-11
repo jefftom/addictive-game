@@ -12,6 +12,8 @@ export interface Settings {
   music: number;
   sfx: number;
   shake: number;
+  /** Arena grid motion 0..1. 0 = the grid never moves; events still glow. */
+  gridMotion: number;
   flashes: boolean;
   /** WebGL2 post-processing (bloom, shockwaves). Falls back to plain 2D when unavailable. */
   postfx: boolean;
@@ -169,6 +171,7 @@ export function defaultSettings(): Settings {
     music: 0.6,
     sfx: 0.8,
     shake: 1,
+    gridMotion: 1,
     flashes: true,
     postfx: true,
     damageNumbers: true,
@@ -244,6 +247,10 @@ export function migrate(raw: unknown): SaveData {
   if (!(out.ship in SHIPS)) out.ship = 'spark';
   if (!['default', 'ember', 'aurora', 'prism'].includes(out.settings.trail)) out.settings.trail = 'default';
   if (typeof out.settings.postfx !== 'boolean') out.settings.postfx = true;
+  const gridMotion = r.settings?.gridMotion;
+  const motion = typeof gridMotion === 'number' && Number.isFinite(gridMotion) ? gridMotion
+    : typeof out.settings.shake === 'number' && Number.isFinite(out.settings.shake) ? out.settings.shake : 1;
+  out.settings.gridMotion = Math.max(0, Math.min(1, motion));
   if (!CHATTER_MODES.includes(out.settings.chatter)) out.settings.chatter = 'all';
   out.story = normalizeStoryState(r.story);
   out.coop = normalizeCoopStats(r.coop);

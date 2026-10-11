@@ -1,5 +1,5 @@
 import { hash32 } from '../core/rng';
-import { GalaxyBackdrop, SECTORS, backdropRef, type GalaxyEvent } from './galaxy';
+import { GalaxyBackdrop, backdropRef, type GalaxyEvent } from './galaxy';
 import GalaxyWorker from './galaxy.worker?worker&inline';
 
 function frac(n: number): number {
@@ -17,8 +17,8 @@ function makeGalaxyWorker(): Worker {
 
 /**
  * Parallax void: the procedural galaxy sector backdrop (galaxy.ts), three
- * star layers and a world grid that pulses with the music. During a sector
- * warp the stars stretch into streaks and the grid fades.
+ * star layers. During a sector warp the stars stretch into streaks.
+ * The world grid is the renderer's WarpGrid.
  */
 export class Background {
   readonly galaxy: GalaxyBackdrop;
@@ -114,33 +114,6 @@ export class Background {
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
 
-    // Grid (world space, pulses on the beat, fades through a warp). A desaturated
-    // PAL.grid in every sector, so it never takes on the sector's own hue.
-    const [gr, gg, gb] = SECTORS[Math.max(0, this.galaxy.sector)]!.gridRGB;
-    const spacing = 80;
-    const left = camX - halfW;
-    const top = camY - halfH;
-    const pulse = (1 + beat * 0.9) * fx.gridAlpha;
-    ctx.lineWidth = Math.max(1, k * 0.9);
-    for (let major = 0; major < 2; major++) {
-      ctx.strokeStyle = `rgba(${gr},${gg},${gb},${(major ? 0.1 : 0.05) * pulse})`;
-      ctx.beginPath();
-      for (let gx = Math.floor(left / spacing) * spacing; gx <= camX + halfW; gx += spacing) {
-        const isMajor = Math.round(gx / spacing) % 5 === 0;
-        if (isMajor !== (major === 1)) continue;
-        const sx = Math.round((gx - camX) * k + w / 2) + 0.5;
-        ctx.moveTo(sx, 0);
-        ctx.lineTo(sx, h);
-      }
-      for (let gy = Math.floor(top / spacing) * spacing; gy <= camY + halfH; gy += spacing) {
-        const isMajor = Math.round(gy / spacing) % 5 === 0;
-        if (isMajor !== (major === 1)) continue;
-        const sy = Math.round((gy - camY) * k + h / 2) + 0.5;
-        ctx.moveTo(0, sy);
-        ctx.lineTo(w, sy);
-      }
-      ctx.stroke();
-    }
   }
 
   drawVignette(ctx: CanvasRenderingContext2D, w: number, h: number): void {

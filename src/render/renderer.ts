@@ -1,5 +1,6 @@
 import { TAU, clamp, damp, formatNumber, lerp } from '../core/math';
 import { COMBO_TIERS } from '../game/combo';
+import { MAX_PLAYERS, ZOOM_MAX } from '../game/content/coop';
 import { WEAPONS } from '../game/content/weapons';
 import type { GameEvent } from '../game/types';
 import type { World } from '../game/world';
@@ -7,15 +8,19 @@ import { Background, hexAlpha } from './background';
 import { Arcs, Callouts, FloatTexts, SectorCard, Shake } from './effects';
 import { EntityFx } from './entityfx';
 import { SECTORS, type GalaxyEvent } from './galaxy';
+import { gridEvent, gridFrame } from './gridfx';
 import { anticipatedSector } from './sectorwarp';
 import { drawHud, type HudState } from './hud';
 import { PAL, gemTier } from './palette';
 import { Particles } from './particles';
 import { PostFx, flashBudget, type FxQuality } from './postfx';
 import { SpriteCache, makeGlowDot, type SpriteShape } from './sprites';
+import { GRID_TINTS, WarpGrid, gridSpacingFor } from './warpgrid';
 
 export interface RenderSettings {
   shake: number;
+  /** 0..1; 0 = the grid never moves, events still glow. */
+  gridMotion: number;
   flashes: boolean;
   damageNumbers: boolean;
   showFps: boolean;
@@ -75,6 +80,13 @@ export class Renderer {
   readonly fx = new EntityFx();
   /** Galaxy events (warp phases, sector ready), forwarded for audio and the sector card. */
   onGalaxy: ((e: GalaxyEvent) => void) | null = null;
+  readonly grid = new WarpGrid();
+  /** Last frame's grid forces, update and draw, excluding the backdrop (ms). */
+  gridMs = 0;
+  private readonly gridPrev = new Float32Array(MAX_PLAYERS * 2);
+  private gridZoom = 1;
+  private gridHit = 0;
+  private gridSlow = 0;
   readonly bg = new Background((e) => this.onGalaxyEvent(e));
   private blasts: Blast[] = [];
   private flash = { color: '#ffffff', a: 0 };
@@ -83,7 +95,7 @@ export class Renderer {
   beat = 0;
   intensity = 0;
   hud: HudState;
-  settings: RenderSettings = { shake: 1, flashes: true, damageNumbers: true, showFps: false, trail: '#7ff9ff' };
+  settings: RenderSettings = { shake: 1, gridMotion: 1, flashes: true, damageNumbers: true, showFps: false, trail: '#7ff9ff' };
 
   constructor(canvas: HTMLCanvasElement, fxCanvas: HTMLCanvasElement | null = null) {
     this.canvas = canvas;
@@ -143,7 +155,19 @@ export class Renderer {
     this.hud.dashButton = { x: this.w - 74 * ui, y: this.h - 96 * ui, r: 44 * ui };
     // The DOM pause button is 40px + 10px margin (CSS px).
     this.hud.pauseInset = 50 * this.dpr;
+    this.resizeGrid();
     return { halfW: cssW / 2 / this.scale, halfH: cssH / 2 / this.scale };
+  }
+
+  private resizeGrid(): void {
+    const vw = this.cssW / this.scale * this.gridZoom + 60;
+    const vh = this.cssH / this.scale * this.gridZoom + 60;
+    this.grid.resize(vw, vh, gridSpacingFor(vw, vh));
+  }
+
+  private applyGridTier(): void {
+    this.grid.quality = this.postFxActive || (this.fxWanted && this.postfx?.autoOff) ? 0 : 1;
+    this.grid.setRate(this.costTier <= 1 ? 30 : 60);
   }
 
   private sizeWorldCanvas(): void {
@@ -185,14 +209,14 @@ export class Renderer {
 
   private onFxQuality(_q: FxQuality, renderScale: number): void {
     const px = this.postfx;
-    this.costTier = this.fxOn && px ? px.costTier : px?.autoOff ? 0 : 4;
+    this.costTier = this.fxOn && px ? px.costTier : this.fxWanted && px?.autoOff ? 0 : 4;
     this.fx.setCostTier(this.costTier);
-    // WarpGrid quality follows this tier in task 3d.
     const ws = this.fxOn ? renderScale : 1;
     if (ws !== this.worldScale) {
       this.worldScale = ws;
       this.resize();
     }
+    this.applyGridTier();
   }
 
   private wave(x: number, y: number, radius: number, strength: number, duration: number, glow: number, thickness: number, major = false): void {
@@ -207,6 +231,15 @@ export class Renderer {
   }
 
   reset(world: World): void {
+    this.gridZoom = world.coop ? ZOOM_MAX : 1;
+    this.resizeGrid();
+    this.grid.reset();
+    for (let i = 0; i < world.players.length && i < MAX_PLAYERS; i++) {
+      this.gridPrev[i * 2] = world.players[i]!.x;
+      this.gridPrev[i * 2 + 1] = world.players[i]!.y;
+    }
+    this.gridHit = world.hitstop;
+    this.gridSlow = world.slowmoT;
     this.postfx?.clearEffects();
     this.hurtCaT = 0;
     this.particles.clear();
@@ -228,7 +261,11 @@ export class Renderer {
 
   private onGalaxyEvent(e: GalaxyEvent): void {
     // The punch is drawn under the sprites by the backdrop; only a little shake here (scaled by the setting).
-    if (e.t === 'warp-punch') this.shake.add(0.25);
+    if (e.t === 'warp-punch') {
+      this.grid.reset();
+      this.grid.shock(this.camX, this.camY, 1300, 3600, 1100, 4);
+      this.shake.add(0.25);
+    }
     this.onGalaxy?.(e);
   }
 
@@ -256,6 +293,7 @@ export class Renderer {
   consume(events: readonly GameEvent[], world: World): void {
     const P = this.particles;
     for (const ev of events) {
+      gridEvent(this.grid, ev, world);
       this.fx.onEvent(ev, world, P);
       switch (ev.t) {
         case 'sector':
@@ -468,7 +506,27 @@ export class Renderer {
     fx.flashes = this.settings.flashes;
     fx.begin({ k, ox, oy, minX, minY, maxX, maxY }, dt, rdt);
 
+    const warpFx = this.bg.galaxy.warpFx;
+    const G = this.grid;
+    G.motion = clamp(this.settings.gridMotion, 0, 1);
+    G.maxLevel = this.settings.flashes ? 5 : 3;
+    G.flareAllowed = this.settings.flashes;
+    G.beatPulse = this.settings.flashes ? 0.5 : 0;
+    G.brightness = (1 - this.intensity * 0.25) * warpFx.gridAlpha;
+    const gridStart = performance.now();
+    gridFrame(G, world, this.gridPrev, dt);
+    const flowing = dt > 0 || world.hitstop !== this.gridHit || world.slowmoT !== this.gridSlow;
+    this.gridHit = world.hitstop;
+    this.gridSlow = world.slowmoT;
+    G.update(dt, this.camX, this.camY, flowing ? Math.max(dt, Math.min(rdt, 0.05)) : 0);
+    const gridUpdateMs = performance.now() - gridStart;
+
     this.bg.draw(ctx, this.camX - this.shake.x / this.scale, this.camY - this.shake.y / this.scale, k, w, h, this.time, this.beat, this.intensity);
+
+    const gridDrawStart = performance.now();
+    G.draw(ctx, (w / 2 - ox) / k, (h / 2 - oy) / k, k, w, h,
+      GRID_TINTS[Math.max(0, this.bg.galaxy.sector) % GRID_TINTS.length]!, this.beat);
+    this.gridMs = gridUpdateMs + performance.now() - gridDrawStart;
 
     const world2 = () => ctx.setTransform(k, 0, 0, k, ox, oy);
     world2();
@@ -647,7 +705,7 @@ export class Renderer {
       if (world.isUp(pilot) && hpK < 0.3) lowHp = Math.max(lowHp, (Math.sin(this.time * 6) * 0.5 + 0.5) * (0.3 - hpK) * 1.6);
     }
     const galaxy = this.bg.galaxy;
-    const punchA = galaxy.warpFx.punch * (this.settings.flashes ? 0.35 : 0.09) * galaxy.punchScale;
+    const punchA = warpFx.punch * (this.settings.flashes ? 0.35 : 0.09) * galaxy.punchScale;
     const flashA = Math.min(this.flash.a, flashBudget(punchA, this.settings.flashes, fxMode));
     const post = fxMode ? this.postfx : null;
     if (post) {
@@ -682,7 +740,7 @@ export class Renderer {
 
     if (!opts.attract) {
       this.hud.showFps = this.settings.showFps;
-      this.hud.fxLabel = this.fxOn && this.postfx ? `FX q${this.postfx.quality}${this.worldScale < 1 ? ' ×' + this.worldScale : ''}` : this.postfx?.autoOff ? '2D (auto)' : '2D';
+      this.hud.fxLabel = this.fxOn && this.postfx ? `FX q${this.postfx.quality}${this.worldScale < 1 ? ' ×' + this.worldScale : ''}` : this.fxWanted && this.postfx?.autoOff ? '2D (auto)' : '2D';
       drawHud(hud, world, HW, HH, this.ui, this.hud);
       this.callouts.draw(hud, HW, HH, this.ui, this.sectorCard.calloutTop(HW, HH, this.ui));
       this.sectorCard.draw(hud, HW, HH, this.ui);
