@@ -1,0 +1,16 @@
+node_modules/
+dist/
+dist-single/
+test-results/
+playwright-report/
+*.log
+.DS_Store
+.vite/
+coverage/
+
+# Agent git worktrees (tooling scratch space)
+.claude/worktrees/
+
+# Desktop (Electron) build output and SteamPipe logs
+release/
+steam-output/

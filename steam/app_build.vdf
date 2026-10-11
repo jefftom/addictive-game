@@ -1,0 +1,21 @@
+"AppBuild"
+{
+	// SteamPipe app build script for SHARDSTORM.
+	// Placeholders: AppID 1234560, depots 1234561 (Windows), 1234562 (macOS), 1234563 (Linux).
+	// Replace them with the real IDs from Steamworks > SteamPipe > Depots (docs/STEAM.md).
+	// Paths are relative to this file. Run from the repo root after `npm run desktop:dist` on each OS
+	// (or download the three CI artifacts into release/):
+	//   steamcmd +login <builder> +run_app_build "$(pwd)/steam/app_build.vdf" +quit
+	"AppID"       "1234560"
+	"Desc"        "SHARDSTORM desktop build"
+	"BuildOutput" "../steam-output/"
+	"ContentRoot" "../release/"
+	"SetLive"     ""   // never auto-live on default; e.g. "beta" to push to a beta branch
+	"Preview"     "0"  // "1" = dry run: computes the manifest, uploads nothing
+	"Depots"
+	{
+		"1234561" "depot_build_windows.vdf"
+		"1234562" "depot_build_macos.vdf"
+		"1234563" "depot_build_linux.vdf"
+	}
+}
