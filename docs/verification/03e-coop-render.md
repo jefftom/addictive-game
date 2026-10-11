@@ -3,7 +3,12 @@
 Base: `b5ee3c35eba7945993953b4447262d95bde1c589`, after task 3d passed
 CI and all desktop jobs. Work branch: `wip/wave3-coop-render`.
 The independent solo-HUD guard commit is `e9be690`; its snapshot is frozen.
-Local verification date: 2026-10-11. Remote gates are required before task 4.
+Verification date: 2026-10-11. Merged at `95b6d05`; [CI](https://github.com/jefftom/addictive-game/actions/runs/38123189868)
+passed 444 unit and 81 browser checks, with 13 device exclusions and no retries.
+All three [desktop builds](https://github.com/jefftom/addictive-game/actions/runs/38123189867)
+passed. Windows and macOS informational packaged-smoke logs both confirm
+`title screen ok`; Linux passed its development and packaged smoke. Deploy
+was skipped. These gates completed before task 4 began.
 
 ## Local checks
 

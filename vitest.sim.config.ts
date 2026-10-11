@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.sim.ts'],
     environment: 'node',
+    silent: false,
     testTimeout: 600_000,
   },
 });

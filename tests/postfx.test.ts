@@ -1,5 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import { flashBudget, PostFx } from '../src/render/postfx';
+import { flashBudget, lowHpPressure, PostFx } from '../src/render/postfx';
+
+it('keeps the reduced-flashing low-health edge steady and bounded', () => {
+  for (const hp of [0, 0.08, 0.25, 0.3, 1]) {
+    const samples = [0, 0.2, 0.5, 1].map(t => lowHpPressure(hp, t, false));
+    expect(new Set(samples).size).toBe(1);
+    expect(samples[0]).toBeLessThanOrEqual(0.15);
+  }
+  expect(lowHpPressure(0.08, 0, true)).toBe((0.3 - 0.08) * 1.6 * 0.5);
+  expect(lowHpPressure(0.08, Math.PI / 12, true)).toBe((0.3 - 0.08) * 1.6);
+});
 
 function rig() {
   const listeners = new Map<string, EventListener>();

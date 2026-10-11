@@ -109,6 +109,7 @@ move ──► weapons auto-fire ──► enemies die ──► shards drop ─
 - **Flow.** Title → Co-op → lobby: each device presses its join key, picks one of the save's unlocked ships, and readies up; 2 s after 2+ captains are ready the squad launches. Slots stay packed, so the P# and colour shown in the lobby are the ones flown (P1 ▲ cyan, P2 ● lime, P3 ■ azure, P4 ◆ white-violet). Results → Play again relaunches the same squad (or reopens the lobby if a controller is gone).
 - **Level-ups.** XP and level are shared. A team level-up opens a round where every captain picks once, P1→P4, on a screen headed by whose turn it is (number, colour, ship, round chips, that device's key hints); caches go to whoever collected them and are picked first. Only the picker's device steers; mouse clicks are always accepted.
 - **Downs.** A captain at 0 HP is downed; a teammate flying over them for ~2.5 s revives them. The run ends when everyone is down.
+- **Difficulty.** Each squad size has a row in `COOP_SCALING`: spawn budget, ordinary and boss HP, XP requirements, elite interval, surge/opening size and regular-enemy cap. Solo and 2P retain their established rows; task 4 tunes only 3P/4P. Spawn multipliers stay fixed, so score-normalized rewards do not change. The 4P regular cap reserves space for scheduled bosses within the 600-total performance limit.
 - **Meta.** One shared save. Lifetime totals, best time/level, victories, missions and ship unlocks count team values; the solo best score and best combo do not move, and the squad's score goes to a separate co-op best per pilot count. Cores and rank XP use score ÷ the co-op spawn multiplier. The score and Daily missions ignore co-op, perfect-dash goals use the best single captain, and the Daily Run is solo-only. Achievements: *Squad Goals* (win a co-op run) and *No Pilot Left Behind* (10 revives).
 
 ---
@@ -237,22 +238,29 @@ signals, and it detects low-HP crossings per pilot and the boss crossing 50%.
 
 ## 6. Balance targets
 
-Tuned with a headless bot simulation (`npm run sim`) that plays with random
-upgrade picks and simple dodging, plus hand playtesting.
+The final bot confirmation uses 48 seeds per squad at rank 1 and skill 0.6, on shared bases 1000 and 5000. The full paired tables are in the README; the original 16-run/pre-determinism figures are superseded.
 
-| Metric | Target | Bot result |
-| --- | --- | --- |
-| First level-up | ≤ 8 s | ~3.5 s (opening wave spawns close) |
-| Level at 1:00 | 4–6 | 6 |
-| Fresh save beats the Warden | roughly 30–60% | 31% (clumsy bot) – 62% (competent bot) |
-| Median *bot* survival, fresh save | 2:30–6:30 | 3:46 – 6:16 depending on bot skill |
-| Veteran save (rank 8, half workshop) | usually survives 10:00 | median 10:00+, 14/16 beat a boss |
-| Enemies on screen at 3:00 | 80–250 | ~85 |
-| First run | affords 1–3 workshop upgrades | yes |
-| Frame budget | 60 fps with 400 enemies + 2,500 particles on a mid laptop | 52–60 fps in headless software rendering |
+| Squad | Median survival (s) | Warden killed | Reached 10:00 | Level at 1:00 | Warden fight (s) | Downs / revives |
+|---|---|---|---|---|---|---|
+| 1P | 374.3 | 28/48 (58.3%) | 9/48 (18.8%) | 6 | 50.3 | 0 / 0 |
+| 2P | 402.1 | 37/48 (77.1%) | 14/48 (29.2%) | 5.5 | 63.2 | 2 / 1 |
+| 3P | 412.5 | 35/48 (72.9%) | 10/48 (20.8%) | 6 | 72.7 | 5 / 3.5 |
+| 4P | 435.8 | 34/48 (70.8%) | 12/48 (25.0%) | 6 | 93.2 | 9 / 6.5 |
+
+The main quantitative bands pass. Held-out rate bands pass with the specified 5-point slack, but the 4P median Warden fight is 94.08 s versus a limit of 89.40 s (1.58× 2P). Outcome difficulty is not strictly monotone: 4P reaches 10:00 in 12/48 main seeds versus 3P's 10/48, and on held-out seeds 4P beats the Warden in 38/48 versus 3P's 30/48 and reaches 10:00 in 10/48 versus 4/48. Multiplier rows are monotone. The 4P hard total cap passes at 598 ≤ 600; scheduled bosses still exceed the regular-enemy row cap (also true in frozen solo/2P). These are disclosed balance acceptance gaps, not an all-bands pass. Trial 14 shortened fights but worsened the main 10:00 rate, so trial 13 is the documented playtest candidate; solo/2P and shared revive mechanics stay unchanged.
+
+| Performance target | Measured result |
+|---|---|
+| 1080p 400-enemy storm, all layers: ≤7 ms mean / 14 ms p95 JS | 30.246 / 44.4 ms on a loaded SwiftShader host: fails; texture upload dominates |
+| Same storm, plain 2D: ≤7 ms mean | 2.953 ms mean / 3.9 ms p95: passes |
+| Background ≤2 ms; grid ≤1 ms | 0.106 / 0.214 ms mean: passes |
+| Midrange laptop and Steam Deck hardware | Not done; software-renderer timings do not establish hardware FPS |
+
+See [task 4 verification](verification/04-verify-and-ship.md) for all layers, the final co-op recheck, heap growth, host load, and known readability findings.
 
 ### Lessons from tuning
 
+- **The cap binds in large squads.** More spawn budget does little once the live-enemy cap is full. Ordinary HP and boss HP are the useful difficulty controls; fight duration guards against a spongy Warden. Small multiplier changes can change targeting, drops and upgrades, so compare matched seeds and confirm on a second seed block. Bots revive more reliably than many human squads; real 3–4-player playtesting remains required.
 - **Cheap enemies starved expensive ones.** The first director spent its budget
   on whatever it rolled, so brutes and shooters almost never spawned. It now
   commits to the next enemy and saves up for it, so the mix follows the weights.
@@ -338,7 +346,8 @@ Enter is never a dash key, so no pilot's dash key can confirm a card (anti-mash)
 
 ## 9. Technical architecture
 
-- **TypeScript + Vite**, no runtime dependencies.
+- **TypeScript + Vite**, no runtime dependencies in the web client; Electron and
+  Steamworks are desktop-only.
 - **WarpGrid:** render-only spring mesh, fixed 60/30 Hz, typed arrays, budgeted
   kicks and travelling fronts; never touches the simulation. Co-op reserves the
   maximum zoom view with at most 1,800 points. Post-FX quality controls its rate
@@ -365,6 +374,9 @@ Enter is never a dash key, so no pilot's dash key can confirm a card (anti-mash)
 - **Galaxy backdrops** generate in an inline worker, with a budgeted main-thread
   fallback. Only the current and prewarmed next sector remain cached; repeated
   tiles cover co-op zoom-out without changing the simulation.
+- **Co-op camera:** one shared world/screen transform follows the team and applies
+  simulation zoom. Screen-space pilot marks and revive feedback sit above post-FX;
+  input and comms projection use the same camera without cosmetic shake.
 - **DOM overlay** for menus (crisp text, accessible focus, keyboard nav),
   the in-run comms panel and the opening crawl.
 - **WebGL2 post-processing** uploads an offscreen world canvas; the native-resolution

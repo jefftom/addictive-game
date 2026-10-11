@@ -505,7 +505,7 @@ These are the dimensions as of the 2024-2025 Steam asset refresh [DOCS]. The Ste
 | Trailer | 1920 x 1080 MP4/MOV, 5000+ kbps | Optional but strongly recommended |
 | Community icon | **184 x 184** | JPG |
 | Client/app icon | `.ico` with 16/32/48/256; Linux PNG 256 x 256; macOS `.icns` | Also used by electron-builder (`build/icon.*`) |
-| Achievement icons | **256 x 256** | JPG/PNG, **42 files** (21 unlocked + 21 locked/grey) |
+| Achievement icons | **256 x 256** | JPG/PNG, **46 files** (23 unlocked + 23 locked/grey) |
 | Event/announcement cover | 800 x 450; header 1920 x 622 | For launch and update posts |
 
 ---
@@ -585,7 +585,7 @@ Notes:
 2. **Pay the Steam Direct fee of USD 100 per app.** It is recoupable after USD 1,000 of adjusted gross revenue. There is a **30-day wait** after the first payment before the first release [DOCS]. The fee produces the **AppID** and default depot IDs. Put them in `app_build.vdf`, `electron-builder` env and `steam.cjs`.
 3. **Store page:** description, tags, categories (single-player, **Shared/Split Screen Co-op**, Remote Play Together, Steam Achievements, Steam Cloud, Full Controller Support), system requirements, price, and the assets from section 7. The **content survey / mature content** questions must be answered. The store page must be **"Coming Soon" for at least 2 weeks** before release, and goes through **store page review** (about 3-5 business days) [DOCS].
 4. **Configure in the Steamworks UI**, then **Publish** each change:
-   - the **21 achievements** (API names identical to the game ids, display names and descriptions from `achievements.ts`, 42 icons);
+   - the **23 achievements** (API names from `steam/achievements.json`, display names and descriptions from `achievements.ts`, 46 icons);
    - any int stats;
    - the **rich presence localisation file**;
    - **Auto-Cloud** roots and quota;

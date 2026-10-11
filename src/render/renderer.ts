@@ -15,7 +15,7 @@ import { anticipatedSector } from './sectorwarp';
 import { coopHudBand, drawHud, type HudState } from './hud';
 import { PAL, gemTier } from './palette';
 import { Particles } from './particles';
-import { PostFx, flashBudget, type FxQuality } from './postfx';
+import { PostFx, flashBudget, lowHpPressure, type FxQuality } from './postfx';
 import { SpriteCache, makeGlowDot, type SpriteShape } from './sprites';
 import { GRID_TINTS, WarpGrid, gridSpacingFor } from './warpgrid';
 
@@ -728,7 +728,7 @@ export class Renderer {
     let lowHp = 0;
     if (!opts.attract && !world.coop) {
       const hpK = p.hp / p.stats.maxHp;
-      if (world.isUp(p) && hpK < 0.3) lowHp = (Math.sin(this.time * 6) * 0.5 + 0.5) * (0.3 - hpK) * 1.6;
+      if (world.isUp(p)) lowHp = lowHpPressure(hpK, this.time, this.settings.flashes);
     }
     const galaxy = this.bg.galaxy;
     const punchA = warpFx.punch * (this.settings.flashes ? 0.35 : 0.09) * galaxy.punchScale;
@@ -769,6 +769,7 @@ export class Renderer {
       this.hud.fxLabel = this.fxOn && this.postfx ? `FX q${this.postfx.quality}${this.worldScale < 1 ? ' ×' + this.worldScale : ''}` : this.fxWanted && this.postfx?.autoOff ? '2D (auto)' : '2D';
       if (world.coop) this.pilots.draw(hud, world, v, HW, HH, this.ui, pilotScale, this.time, this.settings.flashes);
       this.hud.view = v; this.hud.flashes = this.settings.flashes;
+      this.hud.minTextPx = this.cssW >= 1000 && this.cssH >= 800 ? 9 * this.dpr : 0;
       drawHud(hud, world, HW, HH, this.ui, this.hud);
       this.callouts.draw(hud, HW, HH, this.ui, this.sectorCard.calloutTop(HW, HH, this.ui));
       this.sectorCard.draw(hud, HW, HH, this.ui);

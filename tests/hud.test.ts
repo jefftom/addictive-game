@@ -76,6 +76,16 @@ describe('solo HUD drawing contract', () => {
 const sizes = [[1280, 720, 0.947], [1920, 1080, 1.35], [824, 1678, 1.44], [1678, 824, 1.44], [720, 1480, 1.44]];
 
 describe('co-op HUD layout', () => {
+  it('draws passive ranks at least 9px at the Deck resolution in solo and co-op', () => {
+    for (const players of [undefined, [{ ship: 'spark' as const }, { ship: 'vanguard' as const }]]) {
+      const w = new World(makeRunConfig({ seed: 11, players }));
+      for (const p of w.players) p.build.passives = { power: 3, magnet: 2 };
+      const { ctx, log } = recordingContext();
+      drawHud(ctx, w, 1280, 800, 800 / 760, { ...hudState(), minTextPx: 9 });
+      for (const row of log) if (row[0] === 'set' && row[1] === 'font') expect(Number(String(row[2]).match(/([\d.]+)px/)![1])).toBeGreaterThanOrEqual(9);
+    }
+  });
+
   it('fits separate panels at every target size and roster length', () => {
     for (const [w, h, ui] of sizes) for (const n of [2, 3, 4]) {
       const panels = coopPanelLayout(n, w!, h!, ui!);

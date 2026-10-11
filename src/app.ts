@@ -337,8 +337,9 @@ export class App {
     const hard = this.save.settings.hardMode && this.save.rank >= HARD_MODE_RANK;
     const squad = roster && roster.length > 1 ? roster.slice(0, MAX_PLAYERS) : null;
     if (squad) daily = false;
+    const debugSeed = daily ? null : this.debug.seed;
     const cfg = makeRunConfig({
-      seed: daily ? info.seed : randomSeed(),
+      seed: daily ? info.seed : debugSeed ?? randomSeed(),
       ship: squad ? squad[0]!.ship : this.save.ship,
       players: squad ? squad.map((r) => ({ ship: r.ship })) : undefined,
       workshop: this.save.workshop,
@@ -354,7 +355,8 @@ export class App {
     this.currentPick = null;
     this.clearLoss();
     this.killedBy = null;
-    this.botRngs = cfg.players.map(() => new Rng(randomSeed()));
+    this.botRngs = cfg.players.map((_, pid) => new Rng(debugSeed === null ? randomSeed() : cfg.seed ^ 0xabcdef ^ Math.imul(pid + 1, 0x9e3779b1)));
+    if (debugSeed !== null) this.botRng = new Rng(cfg.seed ^ 0xabcdef);
     const best = squad ? coopBest(this.save, squad.length) : daily ? this.save.daily.best[info.date] ?? 0 : this.save.stats.bestScore;
     this.world = new World(cfg, { bestScore: best });
     this.renderer.hud.bestScore = best;
@@ -1017,10 +1019,12 @@ export class App {
   }
 }
 
-function readDebugParams(): { autoplay: boolean; warp: number; coop: number; bots: boolean; noFx: boolean; fxq: 0 | 1 | 2 | 3 | 'auto' } {
+function readDebugParams(): { autoplay: boolean; warp: number; coop: number; bots: boolean; noFx: boolean; seed: number | null; fxq: 0 | 1 | 2 | 3 | 'auto' } {
   try {
     const q = new URLSearchParams(window.location.search);
+    const seed = q.has('seed') && /^\d+$/.test(q.get('seed')!) ? Number(q.get('seed')) : NaN;
     return {
+      seed: Number.isSafeInteger(seed) && seed <= 0xffffffff ? seed : null,
       autoplay: q.has('autoplay'),
       warp: Math.max(0, Number(q.get('warp') ?? 0) || 0),
       coop: Math.min(MAX_PLAYERS, Math.max(0, Math.floor(Number(q.get('coop') ?? 0) || 0))),
@@ -1029,6 +1033,6 @@ function readDebugParams(): { autoplay: boolean; warp: number; coop: number; bot
       fxq: /^[0-3]$/.test(q.get('fxq') ?? '') ? Number(q.get('fxq')) as 0 | 1 | 2 | 3 : 'auto',
     };
   } catch {
-    return { autoplay: false, warp: 0, coop: 0, bots: false, noFx: false, fxq: 'auto' };
+    return { autoplay: false, warp: 0, coop: 0, bots: false, noFx: false, seed: null, fxq: 'auto' };
   }
 }

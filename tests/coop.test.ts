@@ -16,6 +16,16 @@ const still: ControlInput = { mx: 0, my: 0, dash: false };
 const right: ControlInput = { mx: 1, my: 0, dash: false };
 const left: ControlInput = { mx: -1, my: 0, dash: false };
 
+it('the scaling table is monotone in pilot count and solo is all ones', () => {
+  for (const [key, value] of Object.entries(COOP_SCALING[1])) expect(value).toBe(key === 'maxEnemies' ? 420 : 1);
+  for (const n of [2, 3, 4] as const) {
+    const previous = COOP_SCALING[(n - 1) as 1 | 2 | 3], row = COOP_SCALING[n];
+    for (const key of ['spawn', 'hp', 'bossHp', 'xpReq', 'surge', 'opening', 'maxEnemies'] as const) expect(row[key]).toBeGreaterThanOrEqual(previous[key]);
+    expect(row.eliteEvery).toBeLessThanOrEqual(previous.eliteEvery);
+  }
+  expect(COOP_SCALING[4].maxEnemies).toBeLessThanOrEqual(600);
+});
+
 function coopWorld(ships: ShipId[] = ['spark', 'vanguard'], seed = 1): World {
   return new World(makeRunConfig({ seed, players: ships.map((ship) => ({ ship })) }));
 }

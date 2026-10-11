@@ -6,31 +6,36 @@ Read `AGENTS.md` first (commands and hard rules). This file is the task list.
 
 | Branch | State |
 |---|---|
-| `claude/dazzling-faraday-2kxdhl` | **The game.** Draft PR #1 into `main` (`main` is an empty root commit, so the PR shows everything). Tasks 1 and 2 passed all CI jobs. A task 1 follow-up covers module-load calculations under the runtime trap, per the corrected spec. See `docs/verification/`. |
+| `claude/dazzling-faraday-2kxdhl` | **The game.** PR #1 into `main` (`main` is an empty root commit, so the PR shows everything). Tasks 1–3e passed all CI jobs in order. Task 4/5 implementation and evidence are complete; final remote gates and review readiness are recorded on the PR. Balance/hardware acceptance gaps are explicit below. |
 | `wip/fix-dmath` | Merged with merge commit `c806d39`, preserving `2980d33`. Numerical review, guard hardening, e2e and single-file validation completed on the PR branch. |
 | `wip/wave3-platform` | Merged with `ec48096`, preserving `361c4c1`. Task 2 verification and the specified Deck/licence fixes are on the PR branch. |
 | `wip/wave3-gfx` | Merged at `2224fe9`, preserving `df7a114`. Task 3a passed CI and all three desktop jobs at `f003dc5`. |
+| `wip/wave3-entities` | Task 3b merged at `402a2f7`; all remote gates passed. |
+| `wip/wave3-postfx` | Task 3c merged at `c3a1ca6`; all remote gates passed. Owner retains 12 normal / 15 surge q3 draws. |
+| `wip/wave3-grid` | Task 3d and timing recovery merged at `b5ee3c3`; all remote gates passed. |
+| `wip/wave3-coop-render` | Task 3e merged at `95b6d05`; all remote gates passed. |
+| `wip/verify` | Task 4/5 harness, balance candidate, review fixes, capture/performance/store tools and docs; merged into the PR branch as the final checkpoint. |
 | `wip/prototypes` | Orphan branch, not code to merge: design docs (`design/coop.md`, `design/galaxy.md`, `design/steam.md`, story bible) and graphics prototypes with integration guides (`galaxy/`, `gfx/postfx/`, `gfx/grid/`, `gfx/entities/`). Read with `git show origin/wip/prototypes:<path>` or a separate worktree. |
 
-All `wip/*` branches are based on the PR branch at `3d3e601` (`wip/fix-dmath` on `ab45301`). Merge them into the PR branch (merge commits, no force-push) once each one passes every check.
+The original `wip/*` branches started at `3d3e601` (`wip/fix-dmath` at `ab45301`). Later graphics and verification branches start at the preceding accepted PR checkpoint. Integration uses merge commits and normal pushes.
 
 ## 1. Cross-platform determinism — complete
 
-**Current status:** complete at `2be4888`: CI and macOS/Windows/Linux desktop jobs
+**Current status:** completed 2026-10-10 at `2be4888`: CI and macOS/Windows/Linux desktop jobs
 passed. Numerical, mutation, performance and balance evidence and run links are in
 [`verification/01-determinism.md`](verification/01-determinism.md).
 The original problem and finishing checklist below are retained as context.
 
 **Problem:** `tests/golden.solo.test.ts` passes on Linux and Windows x64 but diverges on the macOS arm64 runner (`desktop` workflow). The sim used `Math.sin/cos/atan2/exp/pow/hypot` and `**`. ECMAScript allows these to be approximated, and V8 on arm64 returns different last bits. The chaotic sim amplifies that, so a Daily Run also plays differently on a Mac than on a PC.
 
-**Fix in progress on `wip/fix-dmath`:**
+**Implemented from `wip/fix-dmath`:**
 - `src/core/dmath.ts`: replacements built only from exactly specified operations (+ − × ÷, `Math.sqrt`, floor/abs etc., bit access).
 - The sim's call sites are switched over.
 - `tests/determinism.guard.test.ts` fails on any transcendental `Math.*` call or `**` inside the sim's import closure.
 - `tests/dmath.test.ts` tests the module.
 - The golden master is re-captured on purpose, with its header explaining why.
 
-**To finish:**
+**Completed checklist:**
 1. Review `dmath` accuracy. Fuzz it against `Math.*` over game ranges and edge cases: ±0, NaN, ±∞, huge angles, exp overflow/underflow, pow edge cases, atan2 quadrants.
 2. Confirm the guard really covers the sim's whole import closure. Mutation-test it.
 3. Check gameplay is unchanged in spirit. Compare a bot batch or `npm run sim` before and after; also compare sim cost per tick.
@@ -39,7 +44,7 @@ The original problem and finishing checklist below are retained as context.
 
 ## 2. Merge the platform wiring (`wip/wave3-platform`) — complete
 
-**Current status:** merged at `ec48096`; specified Deck fullscreen and standalone
+**Current status:** completed 2026-10-10, merged at `ec48096`; specified Deck fullscreen and standalone
 font-licence fixes are implemented. Local verification includes 343 unit tests,
 32 browser tests (8 unchanged device exclusions), 48 Windows Electron checks,
 and the achievement table check. CI and all three desktop jobs passed at
@@ -53,13 +58,13 @@ in [`verification/02-platform.md`](verification/02-platform.md).
   - Rich presence is set.
   - On desktop only: a Quit to desktop button and a fullscreen toggle.
   - Chakra Petch, Kode Mono and Tektur are self-hosted, replacing Google Fonts.
-- **To finish:**
+- **Verified steps:**
   1. Merge it into the PR branch after task 1.
   2. Run `npm run e2e` and `xvfb-run npm run desktop:smoke`.
   3. Check that `npm run steam:achievements -- --check` still passes.
   4. Check that the fonts render the same as before.
 
-## 3. Graphics push (sequential: every step edits `src/render/renderer.ts`)
+## 3. Graphics push — implementation complete 2026-10-11
 
 The owner asked for noticeably more spectacular visuals while keeping 60 fps on a mid laptop. A 300-enemy fight must stay readable. Each prototype on `wip/prototypes` has a `NOTES.md` integration guide (API, exact renderer hook points, settings, fallbacks, timings) and before/after screenshots. Integrate them in this order, one commit (or a few) per step, with all checks green at each step.
 
@@ -158,14 +163,15 @@ grid drawing, and co-op reserves `ZOOM_MAX` at reset; do not resize per zoom.
 - **Settings:** a "Grid motion" slider, where 0 means static.
 - **Co-op:** the mesh must cover the view at any zoom.
 
-### 3e. Co-op rendering and comms fade
+### 3e. Co-op rendering and comms fade — complete
 
 Implemented on `wip/wave3-coop-render`, after 3d's successful remote gates.
 The solo HUD call-log snapshot was committed first at `e9be690` and remains
 unchanged; desktop and Pixel 7 HUD comparisons have zero changed pixels.
 Local verification and performance caveats are in
 [`verification/03e-coop-render.md`](verification/03e-coop-render.md).
-Remote CI and all desktop jobs remain the gate before task 4 implementation.
+Completed 2026-10-11 at `95b6d05`: CI passed 444 unit and 81 browser checks
+without retries, and all three desktop jobs passed before task 4 began.
 
 Stable interfaces: `renderer.worldToScreen` (CSS pixels, steady camera),
 `screenToWorld`, `viewZoom`, `viewOf`/`followCamera`/`CAM_INSET`,
@@ -193,15 +199,59 @@ Dedicated co-op audio cues and a co-op attract mode remain follow-ups.
   - Move `renderer.ts` and `hud.ts` off the P1 aliases and remove them from `PENDING_MIGRATION`.
 - **Comms fade:** the comms panel fades to about 30% while gameplay is under it, and never disappears completely.
 
-## 4. Verification before calling it done
+## 4. Verification — implementation and evidence complete 2026-10-11
 
-- **Balance:** 4-player co-op is too easy. Tune the 3P and 4P rows of `COOP_SCALING` in `src/game/content/coop.ts` with bot sims. For reference, 2P is tuned to a median of about 7:42 against 6:16 solo.
+See [`verification/04-verify-and-ship.md`](verification/04-verify-and-ship.md) and
+the [14-trial balance record](verification/04-balance.md). The harness is at
+`9100a10`, review fixes at `41b7672`, and capture tools at `343d0bc`.
+Local checks pass: 448 unit tests, 87 browser tests without retries, 49 Windows
+Electron checks and the packaged smoke. All 104 QA images and 22 store images
+were inspected. Acceptance is qualified by the balance, readability and
+hardware findings below; this does not mean every speculative budget passed.
+
+- **Balance:** only 3P/4P rows changed. Trial 13 was confirmed on 48 shared seeds each at bases 1000 and 5000. The main rate/fight bands pass; held-out fight duration and monotone outcomes remain playtest acceptance gaps. Solo and 2P match the baseline exactly.
 - **Visual QA:** take screenshots of every sector and boss, a kill storm, co-op at 2 and 4 players, reduced flashing, mobile, and the 2D fallback.
 - **Performance:** JS frame cost at about 400 enemies with every layer on; report it.
 - **Desktop:** Electron smoke test on Linux (CI does this too). Steam itself is optional: the game must run without it.
 - **Review:** a full review of the diff (correctness, determinism, accessibility).
 
-## 5. Nice to have
+## 5. Store assets and docs — complete 2026-10-11
 
-- **Steam store assets:** a capsule and screenshot generator using the exact sizes in `design/steam.md` §7. Only the owner can do the Steam steps in `docs/STEAM.md` (AppID, depots, pricing).
-- **Docs:** update `README.md` and `docs/GAME_DESIGN.md` for everything above.
+- **Steam store assets:** `npm run store:assets` generates 22 native-size files with dimension and local-request checks. Capsules/library art, nine gameplay screenshots, two icons and event images are available in `store-assets/`; the transparent logo was checked. Optional achievement icons and the trailer remain outside this checkpoint. The generated app icon passed isolated ICO/ICNS conversion and Windows packaging; adopting it remains an owner choice.
+- **Docs:** README, design, agent commands, Steam guide and verification records now describe the implemented behavior and measured results. Generated images are ignored by Git and shared in local archives.
+
+## Known issues and owner acceptance
+
+- Balance is a documented review candidate, not an all-bands pass. Held-out 4P
+  Warden duration is 94.08 s against 89.40 s. Four pilots outperform three on
+  held-out Warden/10:00 rates; multiplier rows themselves remain monotone.
+  Further tuning or acceptance needs real 3–4-player feedback. Shared revive,
+  solo and 2P rules remain unchanged.
+- Regular-enemy caps exclude scheduled bosses. The baseline reaches 421 at the solo
+  setting of 420 and 501 at the frozen 2P setting of 500. Task 4 reserves room below
+  600 for 4P, but changing the spawn exemption requires a separate gameplay decision.
+- At forced maximum spread, captain tags can meet the top HUD or a bottom panel;
+  clustered ghost/revive labels can also overlap. Marks and P# remain visible.
+  Follow up in the co-op presentation layer without changing the simulation leash.
+- The synthetic 400-alien storm can obscure the pilot with local shard piles and
+  stacked callouts, especially at 720p. The screen does not fully white out, but
+  the entity/effect layer needs another readability pass before hardware acceptance.
+- The approved post-FX pipeline uses 12 normal / 15 surge q3 draws. On the measured
+  1080p SwiftShader backend, its lowest active rung can be slower than plain 2D.
+  Low-refresh or battery-saver frame caps can also step the automatic ladder down.
+  Task 4's composed storm costs 30.246 ms mean / 44.4 ms p95; final co-op costs
+  9.921 / 12.5 ms. Texture upload dominates these software-backend misses.
+  Plain 2D, galaxy, grid, event consumption, sim and heap budgets pass.
+- Per task 2's scope, platform boot timeout/hydration races remain: starting from
+  localStorage after an error/timeout can lead to overwriting a newer cloud file;
+  late hydration can replace localStorage beneath a running App. Native macOS
+  green-button/menu fullscreen changes do not yet persist the preference.
+- Dedicated co-op audio cues and a co-op attract mode are presentation follow-ups.
+- The musl `scalbn` attribution remains pending owner confirmation as recorded in
+  task 1. Preserve the fdlibm and bundled-font notices.
+
+Owner-only release steps: real 3–4-player playtesting; midrange iGPU and physical
+Steam Deck performance checks; Steam AppID/depots/store page/pricing/uploads and
+Steam-client/Remote Play Together validation (`STEAM.md` §2); application icons,
+signing/notarisation; and deciding whether to merge PR #1 into `main` (which
+publishes GitHub Pages). These are not claimed by local scripts or CI packaging.

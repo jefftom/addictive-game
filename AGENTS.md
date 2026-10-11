@@ -20,12 +20,16 @@ npm run e2e                # Playwright, desktop + mobile projects (builds and s
 npm run build              # dist/
 npm run build:single       # dist-single/shardstorm.html (one self-contained file; must keep working)
 npm run sim                # long balance simulations (slow)
+npm run qa:shots           # composed visual matrix + qa-shots/index.html
+npm run perf:bench         # alternating layer timings + qa-shots/perf.json
+npm run store:assets       # native-size Steam art + store-assets/index.html
 npm run desktop:smoke      # Electron smoke test (needs a display: xvfb-run on Linux)
 npm run steam:achievements # regenerate steam/achievements.json after changing achievements
 ```
 
 Debug URL params: `?autoplay` (bot drives the title demo / runs), `?warp=N` (fast-forward N sim seconds),
-`?coop=N` (start N-pilot co-op with bots), `?bots`, `?fx=0` (plain 2D), `?fxq=N`
+`?coop=N` (start N-pilot co-op; add autoplay to drive every pilot), `?bots` (lobby bot slots),
+`?seed=N` (repeatable unsigned 32-bit run and bot seeds; ignored by Daily), `?fx=0` (plain 2D), `?fxq=N`
 (pin post-processing quality 0–3; absent uses the auto ladder). `window.shardstorm` is the `App`
 (`app.world`, `app.renderer`, `app.ui`).
 

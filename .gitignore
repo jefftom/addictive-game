@@ -14,3 +14,7 @@ coverage/
 # Desktop (Electron) build output and SteamPipe logs
 release/
 steam-output/
+
+# Locally generated QA and store art; their scripts are versioned.
+qa-shots/
+store-assets/
