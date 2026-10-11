@@ -1,0 +1,59 @@
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -107,6 +107,15 @@
+       },
+     });
+ 
++    // Galaxy: generate sector 0 in the background while the title screen shows (worker; no hitch).
++    this.renderer.bg.legacy = this.debug.legacyBg;
++    if (new URLSearchParams(window.location.search).has('god')) (globalThis as { __captureGod?: boolean }).__captureGod = true;
++    this.renderer.bg.galaxy.setSector(0);
++    this.renderer.onGalaxy = (e) => {
++      // Hook point: warp-spool -> audio riser; warp-punch -> boom + renderer flash + story sector card.
++      const log = ((window as unknown as { __galaxyEvents?: unknown[] }).__galaxyEvents ??= []);
++      log.push({ ...e, t: e.t, time: this.world?.time ?? 0 });
++    };
+     this.attract = this.newAttractWorld();
+     this.onResize();
+     window.addEventListener('resize', () => this.onResize());
+@@ -188,7 +197,7 @@
+     const info = dailyInfo();
+     const hard = this.save.settings.hardMode && this.save.rank >= HARD_MODE_RANK;
+     const cfg = makeRunConfig({
+-      seed: daily ? info.seed : randomSeed(),
++      seed: daily ? info.seed : this.debug.seed || randomSeed(),
+       ship: this.save.ship,
+       workshop: this.save.workshop,
+       rank: this.save.rank,
+@@ -232,6 +241,8 @@
+       w.slowmoT = 0;
+       this.renderer.reset(w);
+     }
++    // A fresh run starts in sector 0 (or wherever a debug fast-forward landed), without a warp.
++    this.renderer.bg.galaxy.setSector(this.world.director.sector);
+   }
+ 
+   private pause(): void {
+@@ -318,6 +329,7 @@
+   }
+ 
+   private toTitle(): void {
++    this.renderer.bg.galaxy.setSector(0);
+     this.state = 'title';
+     this.world = null;
+     this.input.gameActive = false;
+@@ -502,11 +514,11 @@
+   }
+ }
+ 
+-function readDebugParams(): { autoplay: boolean; warp: number } {
++function readDebugParams(): { autoplay: boolean; warp: number; seed: number; legacyBg: boolean } {
+   try {
+     const q = new URLSearchParams(window.location.search);
+-    return { autoplay: q.has('autoplay'), warp: Math.max(0, Number(q.get('warp') ?? 0) || 0) };
++    return { autoplay: q.has('autoplay'), warp: Math.max(0, Number(q.get('warp') ?? 0) || 0), seed: Number(q.get('seed') ?? 0) || 0, legacyBg: q.has('legacybg') };
+   } catch {
+-    return { autoplay: false, warp: 0 };
++    return { autoplay: false, warp: 0, seed: 0, legacyBg: false };
+   }
+ }

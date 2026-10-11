@@ -1,0 +1,23 @@
+// Draw-only benchmark at one size: per-sector layers + warp (and v1 for same-load comparison if --v1).
+import { chromium } from '/home/user/addictive-game/node_modules/playwright/index.mjs';
+import { execFileSync } from 'node:child_process';
+import { createServer } from 'node:http';
+import { dirname, join, extname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { readFileSync, existsSync } from 'node:fs';
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const rd = '/home/user/addictive-game/node_modules/.bin/rolldown';
+execFileSync(rd, [join(root, 'harness.ts'), '--file', join(root, 'dist/harness.js'), '--format', 'iife', '--platform', 'browser'], { stdio: 'ignore' });
+const server = createServer((req, res) => { const f = join(root, new URL(req.url, 'http://x').pathname); if (!existsSync(f)) return res.writeHead(404), res.end(); res.writeHead(200, { 'content-type': extname(f) === '.html' ? 'text/html' : 'text/javascript' }); res.end(readFileSync(f)); }).listen(0);
+const browser = await chromium.launch({ args: ['--enable-gpu-rasterization', '--ignore-gpu-blocklist'] });
+const [w, h] = (process.argv[2] ?? '1920x1080').split('x').map(Number);
+const page = await browser.newPage({ viewport: { width: w, height: h } });
+await page.goto(`http://localhost:${server.address().port}/harness.html`);
+await page.waitForFunction(() => window.ready === true);
+await page.evaluate(([w, h]) => window.api.setup(w, h), [w, h]);
+const out = { blank: +(await page.evaluate(() => window.api.bench(0, 120, 'blank'))).toFixed(2) };
+for (let i = 0; i < 4; i++) out['s' + (i + 1)] = +(await page.evaluate((i) => window.api.bench(i, 120, 'galaxy'), i)).toFixed(2);
+out.warp12 = await page.evaluate(() => window.api.benchWarp(0, 1));
+out.warp34 = await page.evaluate(() => window.api.benchWarp(2, 3));
+console.log(JSON.stringify(out));
+await browser.close(); server.close();
