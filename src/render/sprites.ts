@@ -153,6 +153,26 @@ export class SpriteCache {
   private cache = new Map<string, Sprite>();
   /** Pixels per world unit for sprite rasterisation. */
   private res = 2;
+  /**
+   * Scales the baked shadowBlur halo. 1 = standalone Canvas2D look; with the
+   * WebGL bloom pass providing the glow, ~0.15 keeps a thin line-hugging halo,
+   * shrinks every sprite canvas (less fill, less memory) and reads crisper.
+   */
+  private glowScale = 1;
+
+  setGlowScale(g: number): void {
+    if (g !== this.glowScale) {
+      this.glowScale = g;
+      this.cache.clear();
+    }
+  }
+
+  /** Total cached sprite pixels (diagnostics). */
+  pixelCount(): number {
+    let n = 0;
+    for (const s of this.cache.values()) n += s.canvas.width * s.canvas.height;
+    return n;
+  }
 
   setResolution(pxPerUnit: number): void {
     const r = Math.min(4, Math.max(1, Math.round(pxPerUnit * 2) / 2));
@@ -173,8 +193,9 @@ export class SpriteCache {
   }
 
   private render(shape: SpriteShape, color: string, radius: number, variant: Variant): Sprite {
-    const glow = Math.max(6, radius * 0.9);
-    const size = (radius * 1.45 + glow) * 2 + 4;
+    const gs = this.glowScale;
+    const glow = Math.max(6 * gs, radius * 0.9 * gs);
+    const size = (radius * 1.45 + glow) * 2 + 2 + 2 * gs;
     const res = this.res;
     const c = makeCanvas(size * res, size * res);
     const ctx = c.getContext('2d')!;

@@ -90,6 +90,7 @@ async function joinTwoAndLaunch(page: Page): Promise<void> {
   await expect(joined.nth(1).locator('h3')).toHaveText('Immovable Object');
   await page.keyboard.press('ArrowRight'); // P2 cycles ship; P1 is untouched
   await expect(joined.nth(1).locator('h3')).toHaveText('Already Gone');
+  await expect(page.locator('#screen-lobby .slot-art canvas')).toHaveCount(2);
   await expect(joined.nth(0).locator('h3')).toHaveText('Glimmer of Hope');
   await page.keyboard.press('Space'); // P1 ready
   await expect(page.locator('#screen-lobby .lobby-status')).toContainText('P2');
@@ -176,6 +177,7 @@ test('two keyboard pilots join, fly independently, pick in turn, pause and finis
   await page.locator('#screen-pause [data-act="quit"]').click();
   await expect(page.locator('#screen-results')).toBeVisible();
   await expect(page.locator('#screen-results .coop-table tbody tr')).toHaveCount(2);
+  await expect(page.locator('#screen-results .coop-table .pilot-ship canvas')).toHaveCount(2);
   await expect(page.locator('#screen-results')).toContainText('Co-op · 2 captains');
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('shardstorm.save') ?? '{}'));
   expect(saved.version).toBe(2);

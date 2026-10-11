@@ -15,7 +15,7 @@ import { missionDef, missionReward, missionText } from '../meta/missions';
 import { affordableUpgrades, coopBest, isShipUnlocked, nextCost, nextWorkshopGoal, workshopLevel, type RunSummary } from '../meta/progression';
 import { HARD_MODE_RANK, TRAILS, rankXpNeeded } from '../meta/rank';
 import type { ChatterMode, SaveData, Settings, TrailId } from '../meta/save';
-import { SpriteCache } from '../render/sprites';
+import { VesselArt, vesselIcon } from '../render/vessels';
 import { characterById, type ResolvedLine } from '../story/director';
 import { logbookFraction, logbookHint, logbookView, markLogSeen, unseenLogCount } from '../story/logbook';
 import { STORY, type CharacterDef, type LogbookEntry } from '../story/script';
@@ -138,7 +138,7 @@ export class UI {
   current: ScreenId = 'title';
   private settingsReturn: ScreenId = 'title';
   private offers: Offer[] = [];
-  private sprites = new SpriteCache();
+  private vessels = new VesselArt();
   private pauseBtn: HTMLButtonElement;
   private topbar: HTMLElement;
   private toasts: HTMLElement;
@@ -163,6 +163,7 @@ export class UI {
   private readonly desktop: DesktopUi | null;
 
   constructor(root: HTMLElement, cb: UiCallbacks, desktop: DesktopUi | null = null) {
+    this.vessels.setResolution(4);
     this.cb = cb;
     this.desktop = desktop;
     const ids: ScreenId[] = ['title', 'hangar', 'workshop', 'records', 'settings', 'log', 'crawl', 'lobby', 'levelup', 'pause', 'victory', 'results'];
@@ -491,17 +492,9 @@ export class UI {
 
   // ───────────────────────── Hangar ─────────────────────────
 
-  private shipArt(color: string): HTMLCanvasElement {
-    const c = document.createElement('canvas');
-    c.width = 168;
-    c.height = 168;
-    this.sprites.setResolution(3);
-    const sp = this.sprites.get('player', color, 22);
-    const ctx = c.getContext('2d')!;
-    ctx.translate(84, 84);
-    ctx.rotate(-Math.PI / 2);
-    const px = sp.size * 2.2;
-    ctx.drawImage(sp.canvas, -px / 2, -px / 2, px, px);
+  private shipArt(ship: ShipId, accent: string, locked = false): HTMLCanvasElement {
+    const c = vesselIcon(this.vessels, ship, accent, 168, { locked });
+    c.setAttribute('aria-hidden', 'true');
     return c;
   }
 
@@ -536,7 +529,7 @@ export class UI {
     </div>`;
     s.querySelectorAll<HTMLElement>('[data-art]').forEach((n) => {
       const id = n.dataset.art as ShipId;
-      n.appendChild(this.shipArt(isShipUnlocked(save, id) ? SHIPS[id].color : '#4a4a66'));
+      n.appendChild(this.shipArt(id, isShipUnlocked(save, id) ? SHIPS[id].color : '#4a4a66', !isShipUnlocked(save, id)));
     });
     this.bind(s, '[data-act="back"]', () => this.cb.toTitle());
     this.bind(s, '[data-select]', (b) => {
@@ -610,7 +603,7 @@ export class UI {
     </div>`;
     s.querySelectorAll<HTMLElement>('[data-art]').forEach((n) => {
       const i = Number(n.dataset.art);
-      n.appendChild(this.shipArt(pilotColor(i)));
+      n.appendChild(this.shipArt(lobby.slots[i]!.ship, pilotColor(i)));
     });
     this.bind(s, '[data-act="back"]', () => this.cb.toTitle());
     this.bind(s, '[data-act="bot"]', () => this.cb.addBot());
@@ -1071,6 +1064,7 @@ export class UI {
     s.innerHTML = `<div class="sub">
       ${story.taunt ? `<div class="res-taunt" style="--cc:${story.taunt.speaker.color}">${portrait(story.taunt.speaker, 'md')}<div><div class="res-taunt-name">${esc(story.taunt.speaker.name)}</div><q>${esc(story.taunt.text)}</q></div></div>` : ''}
       <div class="results-head">
+        ${coop ? '' : '<div class="res-ship" aria-hidden="true"></div>'}
         <div>
           <div class="eyebrow">${head} · ${formatTime(r.time)}${coop ? ` · Co-op · ${r.players} captains` : ''}${r.daily ? ' · Daily Run' : ''}${r.hard ? ' · Nightmare' : ''}</div>
           <div class="big-score" id="res-score">0</div>
@@ -1121,6 +1115,11 @@ export class UI {
       <div class="panel"><div class="rank-row"><h3>Missions</h3></div>${missions}</div>
     </div>`;
 
+    s.querySelector('.res-ship')?.appendChild(this.shipArt(r.ship, SHIPS[r.ship].color));
+    s.querySelectorAll<HTMLElement>('[data-pilot-ship]').forEach(n => {
+      const i = Number(n.dataset.pilotShip), pilot = r.team?.[i];
+      if (pilot) n.appendChild(vesselIcon(this.vessels, pilot.ship, pilotColor(i), 56));
+    });
     this.lastRunDaily = r.daily;
     this.lastRunCoop = coop;
     this.bind(s, '[data-act="again"]', () => {
@@ -1194,7 +1193,7 @@ export class UI {
     const rows = team
       .map(
         (t, i) => `<tr style="--pc:${pilotColor(i)}">
-          <td>${this.pilotTag(i, t.ship)}${awards[i]!.length ? `<span class="awards">${awards[i]!.map((a) => `<span class="award" title="${esc(awardWhy(a))}">${esc(a)}</span>`).join('')}</span>` : ''}</td>
+          <td><span class="pilot-ship" aria-hidden="true" data-pilot-ship="${i}"></span>${this.pilotTag(i, t.ship)}${awards[i]!.length ? `<span class="awards">${awards[i]!.map((a) => `<span class="award" title="${esc(awardWhy(a))}">${esc(a)}</span>`).join('')}</span>` : ''}</td>
           <td class="num">${formatNumber(t.kills)}</td>
           <td class="num">${formatNumber(t.damage)}</td>
           <td class="num">${t.perfects}</td>
@@ -1323,7 +1322,7 @@ export class UI {
     this.bind(s, '[data-act="close-reader"]', () => this.closeLogReader());
     s.querySelectorAll<HTMLElement>('[data-art]').forEach((n) => {
       const id = n.dataset.art as ShipId;
-      n.appendChild(this.shipArt(isShipUnlocked(save, id) ? SHIPS[id].color : '#4a4a66'));
+      n.appendChild(this.shipArt(id, isShipUnlocked(save, id) ? SHIPS[id].color : '#4a4a66', !isShipUnlocked(save, id)));
     });
     this.renderTopbar(save);
     const wasLog = this.current === 'log';

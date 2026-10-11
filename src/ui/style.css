@@ -927,6 +927,24 @@ select {
   flex-wrap: wrap;
 }
 
+.res-ship,
+.res-ship canvas {
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+}
+.pilot-ship {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.pilot-ship canvas {
+  width: 28px;
+  height: 28px;
+}
+
 .big-score {
   font: 700 clamp(44px, 8vw, 80px) / 1 var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -2775,6 +2793,11 @@ button.crawl-skip:focus-visible {
 }
 
 @media (max-width: 560px) {
+  .res-ship,
+  .res-ship canvas {
+    width: 48px;
+    height: 48px;
+  }
   /* Narrow lobby: a compact 2×2 grid, and the status line pinned to the bottom so the countdown is always seen. */
   .lobby {
     grid-template-columns: repeat(2, minmax(0, 1fr));

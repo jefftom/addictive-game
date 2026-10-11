@@ -9,7 +9,7 @@ Read `AGENTS.md` first (commands and hard rules). This file is the task list.
 | `claude/dazzling-faraday-2kxdhl` | **The game.** Draft PR #1 into `main` (`main` is an empty root commit, so the PR shows everything). Tasks 1 and 2 passed all CI jobs. A task 1 follow-up covers module-load calculations under the runtime trap, per the corrected spec. See `docs/verification/`. |
 | `wip/fix-dmath` | Merged with merge commit `c806d39`, preserving `2980d33`. Numerical review, guard hardening, e2e and single-file validation completed on the PR branch. |
 | `wip/wave3-platform` | Merged with `ec48096`, preserving `361c4c1`. Task 2 verification and the specified Deck/licence fixes are on the PR branch. |
-| `wip/wave3-gfx` | Merged at `2224fe9`, preserving `df7a114`. Task 3a local acceptance passed; awaiting CI on the finishing commit. |
+| `wip/wave3-gfx` | Merged at `2224fe9`, preserving `df7a114`. Task 3a passed CI and all three desktop jobs at `f003dc5`. |
 | `wip/prototypes` | Orphan branch, not code to merge: design docs (`design/coop.md`, `design/galaxy.md`, `design/steam.md`, story bible) and graphics prototypes with integration guides (`galaxy/`, `gfx/postfx/`, `gfx/grid/`, `gfx/entities/`). Read with `git show origin/wip/prototypes:<path>` or a separate worktree. |
 
 All `wip/*` branches are based on the PR branch at `3d3e601` (`wip/fix-dmath` on `ab45301`). Merge them into the PR branch (merge commits, no force-push) once each one passes every check.
@@ -63,7 +63,7 @@ in [`verification/02-platform.md`](verification/02-platform.md).
 
 The owner asked for noticeably more spectacular visuals while keeping 60 fps on a mid laptop. A 300-enemy fight must stay readable. Each prototype on `wip/prototypes` has a `NOTES.md` integration guide (API, exact renderer hook points, settings, fallbacks, timings) and before/after screenshots. Integrate them in this order, one commit (or a few) per step, with all checks green at each step.
 
-### 3a. Galaxy sector backdrops — local acceptance complete, CI pending
+### 3a. Galaxy sector backdrops — complete
 
 Merged with worker permissions and the generation-field rename. Cards clear
 boss callouts on all four target viewports and freeze with warps under modals.
@@ -89,6 +89,12 @@ explicit context/scale/target size, `galaxy.warpFx`, `onGalaxyEvent` then
   - The backdrop must cover the screen at co-op zoom-out (`world.zoom`).
 
 ### 3b. Starship and crystalline-alien entity art
+
+Local integration and verification are complete on `wip/wave3-entities`;
+remote CI is the remaining gate before 3c. See
+[`verification/03b-entities.md`](verification/03b-entities.md): 395 unit tests,
+50 browser tests and 49 Windows Electron checks pass. Six alternating heavy
+scenes measure +0.464 ms mean / +0.65 ms p95 renderer JS over 3a.
 
 - **Source:** `gfx/entities/` (`src/vessels.ts`, `shardfx.ts`, `entityfx.ts`; exact integration points in NOTES §4: event fields §4.1, renderer §4.2, post-FX hooks §4.4).
 - **Caution:** its `integration.patch` was made against an older base and **reverts co-op code**. Port it by hand.
