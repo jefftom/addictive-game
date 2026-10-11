@@ -193,7 +193,7 @@ export class UI {
       if (target.matches('button')) this.cb.sfx.hover();
       // Keep the setting's label and focus ring visible, including fractional
       // layout/scroll rounding on mobile browsers.
-      if (this.current === 'settings') target.closest('.setting')?.scrollIntoView({ block: 'nearest' });
+      if (this.current === 'settings' && target.matches(':focus-visible')) target.closest('.setting')?.scrollIntoView({ block: 'nearest' });
     });
 
     window.addEventListener('keydown', (e) => this.onKey(e));

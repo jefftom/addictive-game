@@ -212,6 +212,9 @@ The first final web CI exposed a fractional mobile focus-scroll defect at
 `467d047`. The recovery scrolls the whole settings row with a visible margin;
 18 repeated targeted browser checks and all 448 unit tests passed locally.
 Its final remote result is on PR #1; the failed trace is preserved.
+The first focus correction also moved a checkbox during pointer clicks on
+mobile. Scrolling is now restricted to keyboard/gamepad navigation; both CI
+failures are preserved and the original strict tests remain unchanged.
 
 - **Balance:** only 3P/4P rows changed. Trial 13 was confirmed on 48 shared seeds each at bases 1000 and 5000. The main rate/fight bands pass; held-out fight duration and monotone outcomes remain playtest acceptance gaps. Solo and 2P match the baseline exactly.
 - **Visual QA:** take screenshots of every sector and boss, a kill storm, co-op at 2 and 4 players, reduced flashing, mobile, and the 2D fallback.

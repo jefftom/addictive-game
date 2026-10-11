@@ -6,7 +6,7 @@ You captain one small starship of the **Allied Beacon Fleet** against **the Shar
 
 - **Runs:** 2–10 minutes; restart in under a second
 - **Platforms:** any modern browser on desktop or mobile, with keyboard, mouse, touch or gamepad
-- **Web size:** about 235 KiB gzipped (588,528 bytes uncompressed / 240,861 gzip bytes for the verified standalone HTML), including bundled fonts; all art and audio are generated in code
+- **Web size:** about 235 KiB gzipped (588,623 bytes uncompressed / 240,884 gzip bytes for the verified standalone HTML), including bundled fonts; all art and audio are generated in code
 
 ## Play
 

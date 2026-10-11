@@ -193,7 +193,7 @@ Local gates: `npm ci`, `npm run check` (448 tests in 25 suites),
 `build:single`, achievements check, and 87 Playwright tests passed. The 13
 browser device exclusions are unchanged; no test needed a retry. Keyboard
 and controller-navigation handlers both reach the new graphics settings.
-Standalone size after focus recovery is 588,528 bytes / 240,861 gzip bytes,
+Standalone size after focus recovery is 588,623 bytes / 240,884 gzip bytes,
 including bundled fonts.
 The Windows Electron smoke passed 49 checks with post-FX active at q3 and
 the galaxy worker active. The final default-icon Windows package passed
@@ -219,3 +219,15 @@ The debug/settings/title suite passed 18 repeated desktop/mobile cases locally;
 typecheck, all 448 unit tests, normal and standalone builds also passed again.
 The initial failed run and both traces remain in the evidence. The full remote
 suite must pass on the recovery commit before the PR is marked ready.
+
+The next web run, [38131231935](https://github.com/jefftom/addictive-game/actions/runs/38131231935),
+passed the focus bounds but found the pointer counterpart: scrolling on
+checkbox focus could move it between pointerdown and click, so the mobile
+post-FX checkbox did not toggle. Both attempts failed; all other cases and
+all desktop jobs passed. The second correction limits focus-event scrolling
+to `:focus-visible` and explicitly reveals rows for directional keyboard/
+gamepad navigation in `moveFocus`. Pointer focus keeps the native behavior.
+Neither failing test nor its assertion was changed. Both failed runs/traces
+are retained. Typecheck, 448 unit tests and both builds passed again.
+The complete local desktop/mobile suite then passed 87 tests in 3.7 minutes,
+with 13 unchanged device exclusions and no retries, including both regressions.

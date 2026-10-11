@@ -66,9 +66,15 @@ export function focusScore(a: FocusRect, b: FocusRect, dx: number, dy: number): 
 export function moveFocus(root: ParentNode, dx: number, dy: number): void {
   const items = focusables(root);
   if (items.length === 0) return;
+  const focus = (item: HTMLElement) => {
+    item.focus();
+    // Directional keyboard/gamepad navigation also reveals the setting label.
+    // Pointer focus must not move the control between pointerdown and click.
+    item.closest('.setting')?.scrollIntoView({ block: 'nearest' });
+  };
   const current = document.activeElement as HTMLElement | null;
   if (!current || !items.includes(current)) {
-    items[0]!.focus();
+    focus(items[0]!);
     return;
   }
   const a = current.getBoundingClientRect();
@@ -82,5 +88,5 @@ export function moveFocus(root: ParentNode, dx: number, dy: number): void {
       best = it;
     }
   }
-  best?.focus();
+  if (best) focus(best);
 }
