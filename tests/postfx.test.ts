@@ -74,14 +74,26 @@ describe('post-processing pipeline', () => {
     frames(fx, 2000, 10);
     expect(fx.quality).toBe(0);
   });
-  it('ignores tab-switch intervals and leaves pinned quality unchanged', () => {
+  it('ignores invalid samples, bounds one tab-switch stall and leaves pinned quality unchanged', () => {
     const { fx } = rig();
-    for (const ms of [0, -30, 251, 10000]) frames(fx, 500, ms);
+    for (const ms of [0, -30, NaN, Infinity]) frames(fx, 500, ms);
     expect(fx.stats().frameMs).toBe(16.7);
-    fx.settings.quality = 2;
-    frames(fx, 1000, 30);
+    fx.reportFrameTime(10000);
+    expect(fx.stats().frameMs).toBeLessThan(30);
+    frames(fx, 600, 1000 / 60);
     expect(fx.quality).toBe(2);
     expect(fx.active).toBe(true);
+    fx.settings.quality = 2;
+    frames(fx, 1000, 500);
+    expect(fx.quality).toBe(2);
+    expect(fx.active).toBe(true);
+  });
+  it('escapes sustained software-renderer stalls longer than 250 ms', () => {
+    const { fx } = rig(), changes: number[][] = [];
+    fx.onQualityChange = (q, rs) => changes.push([q, rs]);
+    frames(fx, 80, 500);
+    expect(changes).toEqual([[1, 1], [0, 1], [0, 0.75]]);
+    expect(fx.autoOff).toBe(true);
   });
   it('gates aberration, surges and warping, and caps the flash', () => {
     const { fx, src, uniforms } = rig();
