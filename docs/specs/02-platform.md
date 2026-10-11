@@ -19,32 +19,39 @@ contacts Google Fonts and works fully offline. The Steam desktop build becomes a
 ## 2. Starting point
 
 - **Merge target:** the PR branch `claude/dazzling-faraday-2kxdhl`, **after task 1**
-  (`wip/fix-dmath`, see `docs/specs/01-*` if present) has been merged into it. The reason for this
-  order: `.github/workflows/desktop.yml` triggers on `src/platform/**`, `desktop/**` and
-  `scripts/desktop-smoke.mjs`, and runs `npm run check` (including the golden master) on macOS. That
-  job can only go green once task 1 has landed.
+  (`wip/fix-dmath`, spec `docs/specs/01-determinism.md`) has been merged into it. The reason for this
+  order: the `desktop` workflow (`.github/workflows/desktop.yml`; its `pull_request` path filter
+  includes `desktop/**`, `steam/**`, `src/platform/**` and `scripts/desktop-smoke.mjs`, and because
+  the PR's base `main` is empty it effectively runs on every push to PR #1) runs `npm run check`,
+  including the golden master, on macOS. That job is red until task 1 lands, so task 2's desktop CI
+  can only be judged after task 1.
 - **Source:** `origin/wip/wave3-platform` (`wave3/platform` on the original machine). Its head is
   `361c4c1`, and it has two commits on top of `3d3e601`:
   - `0681721` Bundle the fonts locally instead of loading Google Fonts
   - `361c4c1` Wire the platform layer into the game (web and Steam desktop)
-- **How to get it:** run `git fetch origin wip/wave3-platform`. If you cannot fetch other branches,
+- **How to get it:** run
+  `git fetch origin wip/wave3-platform:refs/remotes/origin/wip/wave3-platform` (the explicit refspec
+  also works in a single-branch clone) and check `git rev-parse --short origin/wip/wave3-platform`
+  prints `361c4c1`. If you cannot fetch other branches,
   ask the owner for a bundle: `git bundle create platform.bundle 3d3e601..origin/wip/wave3-platform`.
   `3d3e601` is already in the PR branch history, so `git bundle list-heads platform.bundle` and
   `git fetch platform.bundle <listed ref>:refs/heads/wave3-platform` work. Alternatively,
   ask for `git format-patch --binary 3d3e601..origin/wip/wave3-platform` (the fonts are binary).
   Only as a last resort, rebuild it from §5 and Appendix A.
-- **State verified on 2026-10-11** (Linux x64, Node 22). The tree used was PR head `df057a4` (before
-  the `testTimeout` commit `a114403`, which changes only `vite.config.ts` `test`), plus
-  the files changed on `wip/fix-dmath` (`2980d33`), plus the files changed on `wip/wave3-platform`.
-  That is the post-task-1 merge result, because the two branches touch no common file.
+- **State verified on 2026-10-11** (Linux x64, Node 22.22, Vite 8.3.2). The tree used was the
+  clean `git merge-tree` result of PR head `3f8aef9` (= `a114403` plus `docs/specs/` only) and
+  `origin/wip/wave3-platform`, plus the files changed on `wip/fix-dmath` (`2980d33`). That is the
+  post-task-1 merge result, because the two branches touch no common file. (If task 1's final version
+  differs from `2980d33`, re-measure.)
   - `npx tsc --noEmit` is clean.
   - `npx vitest run`: 17 files, **339/339 passed**. This includes `tests/golden.solo.test.ts` and
     task 1's `tests/determinism.guard.test.ts`.
   - `npm run steam:achievements -- --check` reports "up to date".
   - `npm run build:single` succeeds. `dist-single/shardstorm.html` went from **293.5 KB to
-    391.9 KB** (300,574 to 401,337 bytes; gzip 98.6 KB to 172.0 KB). About 90 KB of that is the
-    base64 fonts and about 9 KB is the platform JS. `dist/` gains six `.woff2` files (67.6 KB in
-    total) and `licenses/fonts-OFL.txt`.
+    391.9 KB** (300,574 to 401,337 bytes; gzip 98.6 KB to 172.0 KB; both figures include task 1,
+    which alone adds about 7 KB to the 293,607-byte PR head). About 90 KB of the growth is the
+    base64 fonts and about 9 KB is the platform JS. `embed.html` is 400,819 bytes. `dist/` gains six
+    `.woff2` files (67,576 bytes in total) and `licenses/fonts-OFL.txt` (4,977 bytes).
   - `node scripts/desktop-smoke.mjs` (Electron 44.6.0 under xvfb, no Steam client):
     **47/47 checks passed**.
 - **Not yet verified:**
@@ -54,14 +61,16 @@ contacts Google Fonts and works fully offline. The Steam desktop build becomes a
   - the desktop CI jobs on Windows and macOS;
   - a real Steam client (owner, `docs/STEAM.md` §12).
 - **Expected merge conflicts:**
-  - PR head `a114403` (`df057a4` plus "Give simulation-heavy tests a realistic timeout"): **none**.
-    `git merge-tree` shows no conflict markers. The only file changed on both sides is
+  - PR head (`3f8aef9` when this was written; its last code change is `a114403` "Give
+    simulation-heavy tests a realistic timeout"): **none**. `git merge-tree --write-tree HEAD
+    origin/wip/wave3-platform` reports no conflict. The only file changed on both sides is
     `vite.config.ts`, and it auto-merges: `test.testTimeout` and the platform's `build` and
     `plugins` changes are separate hunks. Keep both.
   - Task 1 (`wip/fix-dmath`): **none textual**. On the semantic side, `src/meta/save.ts` now
     imports `src/platform/platform.ts` at runtime. The sim reaches `save.ts` only through
-    `import type` (`src/meta/daily.ts`), so the platform layer stays outside the determinism guard's
-    import closure. The verified run above confirms this.
+    `import type { SaveData }` in `src/meta/daily.ts` (one of the guard's `SIM_ENTRIES`), so the
+    platform layer stays outside the determinism guard's runtime import closure. The verified run
+    above confirms this.
   - Task 3a (`wip/wave3-gfx`), if it lands first: **one conflict, in the `src/app.ts` import
     block**. Keep `import type { GalaxyEvent } from './render/galaxy';` and the platform branch's
     two imports (`PlatformLink, type PresenceSnapshot` from `./platform/link`;
@@ -75,7 +84,11 @@ contacts Google Fonts and works fully offline. The Steam desktop build becomes a
 1. `AGENTS.md`: commands and hard rules.
 2. `docs/HANDOFF.md` §2.
 3. `docs/design/steam.md`: §2.4 (preload bridge), §2.5 (rich presence), §2.6 (saves and
-   Auto-Cloud), §2.7 (window settings), §5 rows 1 and 11 (Steam Deck), §11 (open risks).
+   Auto-Cloud), §2.7 (window settings), §5 rows 1 and 11 (Steam Deck), §11 (open risks). The §2.4
+   sketch is older than the shipped bridge: where they differ (for example `achievements.unlock` vs
+   the real `achievements.activate`, `desktop/achievements.json` vs `steam/achievements.json`,
+   `src/platform/desktop.d.ts` vs the `DesktopBridge` interface in `src/platform/platform.ts`),
+   follow the code in `desktop/preload.cjs` and `src/platform/platform.ts`.
 4. The branch diff: `git diff 3d3e601 origin/wip/wave3-platform --stat`, then
    `git show 0681721` and `git show 361c4c1`.
 5. On the branch, `docs/STEAM.md` §1 (Window, Fonts), §6, §7 (presence table), §8 (Cloud), §11
@@ -97,8 +110,12 @@ contacts Google Fonts and works fully offline. The Steam desktop build becomes a
    - writes look synchronous to the game;
    - nothing is lost on quit: flush on unload and on the shell's quit and close path.
 4. Achievements: every unlock is reported (Steam names through `src/platform/achievements.ts`).
-   Failures are queued and retried (`desktop/steam.cjs`). On startup, everything already earned is
-   re-synced once (idempotent).
+   `checkAchievements` (`src/meta/achievements.ts`) runs in exactly two places today, and the branch
+   reports both: `applyRun` (`src/meta/progression.ts`, reached from `App.endRun()` as
+   `summary.achievements`) and `App.buy()` (Workshop). Any future `checkAchievements` call site must
+   also call `link.unlocked(...)`. Failures are queued and retried (`desktop/steam.cjs`: every 2 s for
+   up to 60 s, and again on each flush). On startup, everything already earned is re-synced once
+   (idempotent).
 5. Rich presence on state changes per steam.md §2.5, throttled, and a no-op on the web.
 6. Desktop-only UI: **Quit to desktop** on the title screen, and a **Fullscreen** toggle in Settings
    that applies through the bridge, is persisted, follows F11, and is hidden on the web. Steam Deck
@@ -117,7 +134,10 @@ contacts Google Fonts and works fully offline. The Steam desktop build becomes a
    - mobile (Pixel 7) keeps working;
    - original IP only;
    - do not touch `src/render/*` in this task.
-9. Merge with a merge commit into the PR branch. No force-push, no rebase of the PR branch.
+9. Merge with a merge commit into the PR branch. No force-push, no rebase of the PR branch. Run
+   `npm run typecheck` and `npm test` before every commit, and `npm run build:single` plus
+   `npm run e2e` before the last one.
+10. Never put AI model names or identifiers in commit messages, code or comments.
 
 ## 5. Implementation plan
 
@@ -231,26 +251,47 @@ contacts Google Fonts and works fully offline. The Steam desktop build becomes a
 1. **Steam Deck lock is UI-only.** In `desktop/main.cjs`, `setFullscreen(on)` (called by IPC
    `win:fullscreen` and by the `before-input-event` F11/Alt+Enter handler) ignores `steamDeck`. A key
    press on a Deck therefore leaves fullscreen while Settings shows the switch checked and disabled,
-   and `UI.fullscreenChanged` skips disabled toggles.
+   and `UI.fullscreenChanged` skips disabled toggles. (Reproduced: with the check below added to the
+   smoke, the unfixed branch fails it.)
    - Fix: when `steamDeck` is true, `setFullscreen` keeps the window fullscreen, returns `true` and
-     does not overwrite `settings.fullscreen`.
-   - Add a check to launch 3 of `scripts/desktop-smoke.mjs`: send F11 with `wc.sendInputEvent`, as
-     launch 1 does, and assert the window is still fullscreen.
+     does not overwrite `settings.fullscreen`. A guard at the top of `setFullscreen` such as
+     `if (steamDeck) { if (!win.isFullScreen()) win.setFullScreen(true); return true; }` was tried
+     on a scratch copy and makes the new check pass (48/48).
+   - Note: `startFullscreen()` lets `--windowed` / `SHARDSTORM_WINDOWED=1` win over the Deck (a
+     developer override). Keep that precedence: lock only when the windowed override is absent, for
+     example `const deckLock = steamDeck && !windowedOverride`, where `windowedOverride` is the same
+     test `startFullscreen()` makes (factor it out), and guard on `deckLock` instead of `steamDeck`.
+   - Add a check to launch 3 of `scripts/desktop-smoke.mjs`, after "Steam Deck: fullscreen toggle
+     locked on": send F11 with `wc.sendInputEvent` (keyDown and keyUp), as launch 1 does, wait a
+     fixed ~1 s, then assert the window is still fullscreen. Do not use the script's `until()` helper
+     for this: it returns as soon as the value is truthy, so it would pass before the key is handled.
+   - **macOS, same function (recommended, small):** the app menu's `togglefullscreen` role
+     (Ctrl+Cmd+F) and the green window button change fullscreen without going through
+     `setFullscreen`, so the Settings switch follows (via `ss:fullscreen`) but the choice is not saved
+     to `desktop-settings.json`, although `docs/STEAM.md` §1 says it is remembered. Also save
+     `settings.fullscreen` in the `enter-full-screen` / `leave-full-screen` handlers in
+     `createWindow()` (never on the Deck lock, and do not let a launch-time `--fullscreen` override
+     be written as the player's choice). This cannot be smoke-tested on Linux; say so in the PR.
 2. **The single-file build ships the fonts without their licence.** `licenses/fonts-OFL.txt` exists
    only in `dist/` (and therefore in the desktop build). In `scripts/build-single.mjs`, append the
    text of `src/assets/fonts/OFL.txt` as an HTML comment to both `shardstorm.html` and `embed.html`
-   (about 5 KB).
+   (4,977 bytes; `shardstorm.html` then measures about 406,300 bytes = 396.8 KB).
    - Make the script throw if the file is missing.
-   - Escape any `--` in the text, because `--` is not allowed inside an HTML comment.
+   - The text contains `--` (its separator lines and "substituting -- in part"). HTML allows `--`
+     inside a comment, but the text must never contain `-->`, `--!>` or `<!--`, nor start with `>`
+     or `->`. None of those occurs in the file today, but guard against it anyway; the simplest safe
+     rule is to replace every `--` (for example with `- -`).
 3. **Docs:** after merging, update `docs/HANDOFF.md`:
    - the branch table: `wip/wave3-platform` merged;
    - task 2: done, with the numbers from §9.
-   Also update `docs/STEAM.md` §11 row 1 if fix 1 changes its wording.
+   Also update `docs/STEAM.md` §11 row 1 (and §1 "Window" if you make the macOS change) if fix 1
+   changes their wording.
 
 ### 5.4 Interfaces later tasks rely on (keep stable)
 - `App` keeps a private field named `platform`. `scripts/desktop-smoke.mjs` reads
   `window.shardstorm.platform.hydrated()`.
-- `platform()` / `setPlatformForTests()` (tests), `Platform.flush()`, `PlatformLink`.
+- `platform()` / `setPlatformForTests()` (tests), `Platform.flush()`, `PlatformLink`
+  (`link.unlocked(defs)` must follow any new `checkAchievements` call, see §4 item 4).
 - `UI` constructor third parameter, and `#set-fullscreen` / `[data-act="quit"]` selectors (used by
   e2e and the smoke).
 - Task 3c adds an "Enhanced graphics" setting and task 3d adds a "Grid motion" slider, both in
@@ -267,8 +308,9 @@ contacts Google Fonts and works fully offline. The Steam desktop build becomes a
   - Reset progress writes `{}`, which the next boot reads as a fresh save.
 - **Fullscreen is window state, not save data.** It lives in `<userData>/desktop-settings.json`
   (`{"fullscreen": boolean}`, default `true`, see `loadSettings()` in `desktop/main.cjs`). That file
-  is machine-specific and not cloud-synced. `--windowed` / `SHARDSTORM_WINDOWED=1` force a window;
-  Steam Deck (`SteamDeck=1` or the Steam API) forces fullscreen.
+  is machine-specific and not cloud-synced. At launch (`startFullscreen()`): `--windowed` /
+  `SHARDSTORM_WINDOWED=1` force a window and win over everything; otherwise `--fullscreen` or Steam
+  Deck (`SteamDeck=1` or the Steam API) force fullscreen; otherwise the saved choice applies.
 - **UI placement:**
   - title menu: "Quit to desktop" sits next to Settings (desktop only);
   - Settings: "Fullscreen" sits after "Screen shake", with the hint "Also F11 or Alt+Enter", or
@@ -297,8 +339,11 @@ contacts Google Fonts and works fully offline. The Steam desktop build becomes a
   - desktop save mirroring is debounced by 500 ms;
   - the 4 s boot timeout is the worst-case start delay with a broken bridge;
   - fonts add 67.6 KB of WOFF2, loaded lazily per face;
-  - the single file grows by about 98 KB (target: at most 400 KB raw for `shardstorm.html`;
-    report it).
+  - the single file grows by about 98 KB, plus about 5 KB for the licence comment. Target for this
+    task: at most 400 KB (409,600 bytes) raw for `shardstorm.html`; report it. This is this spec's
+    budget, not an owner number (the owner asked only for a "reasonable" size, reported), and the
+    margin is only about 3 KB, so later tasks (3a's inline worker etc.) will exceed it and must
+    report their own size.
 
 ## 8. Tests
 
@@ -306,7 +351,9 @@ contacts Google Fonts and works fully offline. The Steam desktop build becomes a
   - `tests/platform.test.ts`: suites "save routing through the platform", "platform link (what the
     App reports)", "rich presence mapping (steam.md 2.5)" and "fullscreen", plus the existing
     "web bundle isolation".
-  - `tests/desktop.test.ts`: boss presence, and every validator token exists in the VDF.
+  - `tests/desktop.test.ts`: boss presence, and every validator token exists in the VDF (new on
+    the branch); the pre-existing "steam wrapper" suite already covers the achievement retry queue
+    ("queues achievements that fail before stats arrive and retries them").
   - `tests/fonts.test.ts` (new): no third-party host in `index.html`, the three families come from
     local files with `swap` and the OFL licence, and the desktop CSP allows no remote host.
   - `e2e/smoke.spec.ts`: "the web build uses its bundled fonts, makes no third-party requests and
@@ -336,19 +383,26 @@ Run each of these and report the results:
 - [ ] `npm run desktop:smoke` on Linux: "DESKTOP SMOKE: 48 checks passed". The script re-runs
       itself under `xvfb-run -a` when `DISPLAY` is unset.
 - [ ] `npm run steam:achievements -- --check`: "up to date".
-- [ ] **Fonts render the same as before.** Build the pre-merge commit and the merge into separate
-      out dirs (`npx vite build --outDir <tmp>/before` and `.../after`), and serve each with
-      `npx vite preview --outDir <dir> --port <p> --strictPort`.
-      - Screenshot the title, Settings and a run at 1280x720 and on Pixel 7. For the run, open
+- [ ] **Fonts render the same as before.** Build "before" on the pre-merge PR head, *before* you
+      run the merge: `npx vite build --outDir <tmp>/before --emptyOutDir`. After the merge:
+      `npx vite build --outDir <tmp>/after --emptyOutDir`. Serve each with
+      `npx vite preview --outDir <dir> --port <p> --strictPort` (stop the servers afterwards).
+      - Screenshot the title, Settings and a run at 1280x720 and on Pixel 7. Use `/?autoplay` for
+        the title and Settings shots too: a fresh browser profile otherwise opens on the first-launch
+        briefing (or seed the save as `e2e/helpers.ts` `skipIntro` does). For the run, open
         `/?autoplay&warp=30` and click `#screen-title [data-act="play"]`; the warp applies when the
-        run starts.
-      - Compare logo (Tektur 900), menu (Chakra Petch) and HUD/meta numbers (Kode Mono).
+        run starts. Await `document.fonts.ready` before each shot (`font-display: swap`).
+      - Compare logo (Tektur 900), menu (Chakra Petch) and HUD/meta numbers (Kode Mono), and the
+        symbol glyphs (pitfall 4: they should fall back exactly as before).
       - The "before" build needs internet access to fonts.googleapis.com. If that is blocked, say
         so, and rely on the after screenshots plus the e2e font test.
 - [ ] Optional Electron screenshots: title and Settings, normal and with `SteamDeck=1`. Use a
       throwaway Playwright `_electron` script that you do not commit.
-- [ ] After pushing, CI: `ci` (Linux e2e) and `desktop` (Windows/macOS/Linux check, achievements
-      check, Linux smoke, packaging) are green.
+- [ ] After pushing, CI: the `CI` workflow (`.github/workflows/ci.yml`, Linux: typecheck, unit,
+      `build:single`, e2e) and the `desktop` workflow (Windows/macOS/Linux `npm run check`,
+      achievements check, Linux smoke, packaging) are green. The macOS job has never got past its
+      test step before task 1, so a failure in a *later* macOS step (packaging) is a first-time
+      packaging issue: see `docs/specs/01-determinism.md` §10, not this task's code.
 
 ## 10. Pitfalls and known issues
 
@@ -364,18 +418,25 @@ Run each of these and report the results:
 3. **Web bundle string check.** The desktop smoke greps the built JS for
    `/steamworks|require\(["']electron["']\)/`, which is case-sensitive. Never put a lowercase
    "steamworks" string in runtime code under `src/`. Comments are stripped, and "Steamworks" is fine.
-4. **Font subset.** Only the latin `unicode-range` is bundled. UI symbols used in the code still
-   fall back to system fonts: ◈ ★ ▲ ● ■ ◆ ─ ░▒▓ ✓, and Greek ω ϟ in `src/story/script.ts` and
-   `src/game/content/*`. The old Google CSS also served latin-ext and other per-family subsets.
-   *Unverified* whether any of these glyphs used to render in a game font. If a visible difference
-   shows up, report it; do not add subsets without the owner.
+4. **Font subset.** Only the latin `unicode-range` is bundled; the old Google CSS also served the
+   other subsets. Per the @fontsource 5.3.0 `metadata.json`/`unicode.json`, those were: Chakra Petch
+   latin-ext, thai, vietnamese; Kode Mono latin-ext; Tektur cyrillic, cyrillic-ext, greek, latin-ext,
+   vietnamese. A scan of non-comment lines under `src/` finds no character in latin-ext, thai,
+   vietnamese or cyrillic. The symbol glyphs (◈ ★ ☆ ▲ ● ■ ◆ ◇ ░▒▓ ✓ ✦ ⚡ ⬡ ← → Ⓐ Ⓑ etc., all
+   U+2190 and up) are in none of these subsets, so they fell back to system fonts before as well. The
+   only candidates are Greek ω (U+03C9) and ϟ (U+03DF) in `src/story/script.ts` (character `glyph`)
+   and `src/game/content/weapons.ts` (Arc Lightning `icon`). Those render only in Chakra Petch stacks
+   (`.glyph`, `.portrait`, `.comms-portrait` use `--font-body`; `src/render/hud.ts` uses `FONT_BODY`),
+   and Chakra Petch has no Greek, so **no visible change is expected**. The screenshot comparison in
+   §9 confirms it. If a difference does show up, report it; do not add subsets without the owner.
 5. **Canvas text.** `src/render/palette.ts` (`FONT_DISPLAY`, `FONT_BODY`, `FONT_MONO`) uses the same
    families. Faces load lazily, so the first frames may draw in a fallback font. This is the same
    as before; do not add preloads in this task.
 6. **Interaction with task 3a (inline galaxy worker).**
-   - The desktop `CSP` has no `worker-src`, so a `blob:` worker is blocked there and the galaxy
-     uses its main-thread fallback. Task 3a must add `worker-src 'self' blob:`; that is not this
-     task.
+   - The desktop `CSP` has no `worker-src`, so a `blob:` worker is blocked there (it falls back to
+     `script-src 'self'`) and the galaxy uses its main-thread fallback; the CSP console error also
+     fails the smoke check "no renderer console errors". Task 3a must add `worker-src 'self' blob:`
+     (its spec, `docs/specs/03a-galaxy.md`, says so); that is not this task.
    - The e2e font test and the desktop smoke count every non-origin URL as remote. If `blob:`
      worker URLs appear, exclude `blob:` (like `data:`), and never allow `http(s):`.
 7. **`scripts/build-single.mjs` throws on any relative `url(./` left in the CSS.** A later task that
@@ -384,7 +445,8 @@ Run each of these and report the results:
    - presence time is `m:ss` (`TIME_RE` in `desktop/validate.cjs`) rather than `04:12`;
    - extra `boss` and `overtime` modes;
    - F11 / Alt+Enter are handled in main (`before-input-event`) rather than the renderer;
-   - macOS Ctrl+Cmd+F comes from the app menu.
+   - macOS Ctrl+Cmd+F comes from the app menu (`togglefullscreen` role; see §5.3 fix 1 about
+     remembering that choice).
 
    The new VDF tokens must be uploaded in Steamworks by the owner (`docs/STEAM.md` §7).
 9. **Quit placement.** steam.md §5 row 11 says "Quit from the pause menu". The branch puts "Quit to
