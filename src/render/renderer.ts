@@ -1,11 +1,12 @@
 import { TAU, clamp, damp, formatNumber, lerp } from '../core/math';
 import { COMBO_TIERS } from '../game/combo';
-import { ENEMIES } from '../game/content/enemies';
+import { BOSS_SCHEDULE, ENEMIES, VICTORY_TIME } from '../game/content/enemies';
 import { WEAPONS } from '../game/content/weapons';
 import type { GameEvent } from '../game/types';
 import type { World } from '../game/world';
 import { Background, hexAlpha } from './background';
-import { Arcs, Callouts, FloatTexts, Shake } from './effects';
+import { Arcs, Callouts, FloatTexts, SectorCard, Shake } from './effects';
+import { SECTORS, type GalaxyEvent } from './galaxy';
 import { drawHud, type HudState } from './hud';
 import { PAL, gemTier } from './palette';
 import { Particles } from './particles';
@@ -27,6 +28,14 @@ interface Blast {
   max: number;
   color: string;
 }
+
+/**
+ * Sim seconds before a forced sector change (the next boss's entrance, or
+ * victory) at which the renderer starts the warp itself, so the ~2.2 s
+ * transition is over before the boss arrives. Purely visual: the sim's own
+ * 'sector' event follows on schedule and finds the warp already done.
+ */
+const WARP_LEAD = 2.6;
 
 const TARGET_AREA_DESKTOP = 1366 * 768;
 const TARGET_AREA_MOBILE = 470 * 980;
@@ -54,7 +63,10 @@ export class Renderer {
   readonly callouts = new Callouts();
   readonly arcs = new Arcs();
   readonly shake = new Shake();
-  private readonly bg = new Background();
+  readonly sectorCard = new SectorCard();
+  /** Galaxy events (warp phases, sector ready), forwarded for audio and the sector card. */
+  onGalaxy: ((e: GalaxyEvent) => void) | null = null;
+  readonly bg = new Background((e) => this.onGalaxyEvent(e));
   private blasts: Blast[] = [];
   private flash = { color: '#ffffff', a: 0 };
   private trail: { x: number; y: number }[] = [];
@@ -126,6 +138,28 @@ export class Renderer {
     this.camX = world.player.x;
     this.camY = world.player.y;
     this.hud.comboBreak = null;
+    this.sectorCard.clear();
+    // A new world (run start, a ?warp fast-forward, the attract mode) shows its sector without a warp.
+    this.bg.galaxy.setSector(world.sector);
+  }
+
+  private onGalaxyEvent(e: GalaxyEvent): void {
+    // The punch is drawn under the sprites by the backdrop; only a little shake here (scaled by the setting).
+    if (e.t === 'warp-punch') this.shake.add(0.25);
+    this.onGalaxy?.(e);
+  }
+
+  /** Sector title card (the app supplies the story's name and subtitle). */
+  showSectorCard(index: number, title: string, subtitle: string): void {
+    this.sectorCard.show(title, subtitle, SECTORS[index]?.warpTint ?? PAL.text);
+  }
+
+  /** Starts the warp a little before a forced sector change (render-side only; reads the clock). */
+  private anticipateSector(world: World): void {
+    const s = world.sector;
+    if (s >= BOSS_SCHEDULE.length || world.gameOver) return;
+    const forcedAt = BOSS_SCHEDULE[s + 1]?.at ?? VICTORY_TIME;
+    if (world.time >= forcedAt - WARP_LEAD) this.bg.galaxy.setSector(s + 1, { warp: true });
   }
 
   private addFlash(color: string, a: number): void {
@@ -141,6 +175,9 @@ export class Renderer {
     const P = this.particles;
     for (const ev of events) {
       switch (ev.t) {
+        case 'sector':
+          this.bg.galaxy.setSector(ev.index, { warp: true });
+          break;
         case 'hit':
           P.spray(ev.x, ev.y, 0, -1, ev.crit ? '#ffd23f' : '#ffffff', ev.crit ? 4 : 1, 260, Math.PI);
           if (this.settings.damageNumbers) {
@@ -287,10 +324,16 @@ export class Renderer {
   draw(world: World, dt: number, opts: { attract: boolean; realDt: number }): void {
     const ctx = this.ctx;
     const rdt = opts.realDt;
+    // Reduced flashing also calms the backdrop (static, softer warp punch).
+    this.bg.galaxy.animate = this.bg.galaxy.flashes = this.settings.flashes;
+    if (!opts.attract) this.anticipateSector(world);
+    // Real time, so the warp and the resize debounce run through hitstop and slow-mo.
+    this.bg.galaxy.update(rdt);
     this.time += rdt;
     this.particles.update(dt);
     this.texts.update(dt);
     this.callouts.update(rdt);
+    this.sectorCard.update(rdt);
     this.arcs.update(dt);
     this.shake.update(rdt, this.settings.shake);
     this.flash.a = Math.max(0, this.flash.a - rdt * 2.2);
@@ -593,6 +636,7 @@ export class Renderer {
       this.hud.showFps = this.settings.showFps;
       drawHud(ctx, world, w, h, this.ui, this.hud);
       this.callouts.draw(ctx, w, h, this.ui);
+      this.sectorCard.draw(ctx, w, h, this.ui);
     }
   }
 }

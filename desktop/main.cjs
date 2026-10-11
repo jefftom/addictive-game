@@ -150,6 +150,7 @@ function startFullscreen() {
 const CSP = [
   "default-src 'self'",
   "script-src 'self'",
+  "worker-src 'self' blob:",
   // Fonts are bundled in dist/assets (src/assets/fonts): no third-party hosts at all.
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self'",

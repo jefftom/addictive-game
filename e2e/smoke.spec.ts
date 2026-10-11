@@ -132,7 +132,7 @@ test('the web build uses its bundled fonts, makes no third-party requests and ha
   const origin = new URL(baseURL!).origin;
   const remote: string[] = [];
   page.on('request', (r) => {
-    if (!r.url().startsWith(origin) && !r.url().startsWith('data:')) remote.push(r.url());
+    if (!r.url().startsWith(origin) && !r.url().startsWith(`blob:${origin}/`) && !r.url().startsWith('data:')) remote.push(r.url());
   });
   await page.goto('/');
   await expect(page.locator('#screen-title')).toBeVisible();

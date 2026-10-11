@@ -1,19 +1,36 @@
 import { hash32 } from '../core/rng';
-
-const NEBULA_COLORS = ['#3b1d8f', '#0f5e7a', '#6a1b6b', '#1b2f8f', '#4a1360'];
+import { GalaxyBackdrop, SECTORS, backdropRef, type GalaxyEvent } from './galaxy';
+import GalaxyWorker from './galaxy.worker?worker&inline';
 
 function frac(n: number): number {
   return (n % 1000003) / 1000003;
 }
 
 /**
- * Parallax void: nebula clouds, three star layers and a world grid that
- * pulses with the music.
+ * Off-thread sector generation. The worker is inlined into the bundle (a Blob
+ * URL), so the single-file build and file:// / Electron keep it; if it cannot
+ * start, the backdrop falls back to chunked generation on the main thread.
+ */
+function makeGalaxyWorker(): Worker {
+  return new GalaxyWorker();
+}
+
+/**
+ * Parallax void: the procedural galaxy sector backdrop (galaxy.ts), three
+ * star layers and a world grid that pulses with the music. During a sector
+ * warp the stars stretch into streaks and the grid fades.
  */
 export class Background {
+  readonly galaxy: GalaxyBackdrop;
   private vignette: HTMLCanvasElement | null = null;
   private vw = 0;
   private vh = 0;
+
+  constructor(onEvent?: (e: GalaxyEvent) => void) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const quality = backdropRef(window.innerWidth * dpr, window.innerHeight * dpr) / 1080;
+    this.galaxy = new GalaxyBackdrop({ quality, worker: makeGalaxyWorker, onEvent });
+  }
 
   private ensureVignette(w: number, h: number): HTMLCanvasElement {
     if (this.vignette && this.vw === w && this.vh === h) return this.vignette;
@@ -32,6 +49,7 @@ export class Background {
     return c;
   }
 
+  /** `k` is the zoom-aware world -> device px scale; camX/camY the shared camera. */
   draw(
     ctx: CanvasRenderingContext2D,
     camX: number,
@@ -43,53 +61,33 @@ export class Background {
     beat: number,
     tint: number,
   ): void {
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = '#05040f';
-    ctx.fillRect(0, 0, w, h);
-
-    // Nebula clouds (parallax 0.12).
-    ctx.globalCompositeOperation = 'lighter';
-    const np = 0.12;
-    const cell = 1500;
-    const ncx = camX * np;
-    const ncy = camY * np;
+    // Galaxy sector backdrop (opaque: replaces the base fill).
+    this.galaxy.draw(ctx, camX, camY, k, w, h, time, { intensity: tint, beat });
+    const fx = this.galaxy.warpFx;
     const halfW = w / 2 / k;
     const halfH = h / 2 / k;
-    const reach = 1200;
-    const x0 = Math.floor((ncx - halfW - reach) / cell);
-    const x1 = Math.floor((ncx + halfW + reach) / cell);
-    const y0 = Math.floor((ncy - halfH - reach) / cell);
-    const y1 = Math.floor((ncy + halfH + reach) / cell);
-    for (let gx = x0; gx <= x1; gx++) {
-      for (let gy = y0; gy <= y1; gy++) {
-        const hsh = hash32(gx * 73856093 ^ gy * 19349663);
-        const wx = (gx + frac(hsh)) * cell;
-        const wy = (gy + frac(hash32(hsh))) * cell;
-        const r = 600 + frac(hash32(hsh + 7)) * 600;
-        const sx = (wx - ncx) * k + w / 2;
-        const sy = (wy - ncy) * k + h / 2;
-        const sr = r * k;
-        if (sx + sr < 0 || sx - sr > w || sy + sr < 0 || sy - sr > h) continue;
-        const color = NEBULA_COLORS[hsh % NEBULA_COLORS.length]!;
-        const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
-        g.addColorStop(0, hexAlpha(color, 0.2 + tint * 0.1));
-        g.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = g;
-        ctx.fillRect(sx - sr, sy - sr, sr * 2, sr * 2);
-      }
-    }
 
-    // Stars.
+    // Stars. While warping they stretch radially into streaks: one batched path per layer.
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'lighter';
     const layers = [
       { p: 0.2, cell: 160, size: 1, alpha: 0.45 },
       { p: 0.4, cell: 220, size: 1.5, alpha: 0.6 },
       { p: 0.65, cell: 320, size: 2, alpha: 0.8 },
     ];
+    const st = fx.stretch;
     ctx.fillStyle = '#cfe4ff';
+    ctx.strokeStyle = fx.active ? fx.tint : '#cfe4ff';
     for (const L of layers) {
       const cx = camX * L.p;
       const cy = camY * L.p;
+      const s = L.size * Math.max(1, k * 0.8);
+      const f = st * (0.35 + L.p) * 0.6;
+      if (st > 0.02) {
+        ctx.globalAlpha = Math.min(1, L.alpha * (1 + st));
+        ctx.lineWidth = s;
+        ctx.beginPath();
+      }
       const sx0 = Math.floor((cx - halfW) / L.cell);
       const sx1 = Math.floor((cx + halfW) / L.cell);
       const sy0 = Math.floor((cy - halfH) / L.cell);
@@ -99,24 +97,33 @@ export class Background {
           const hsh = hash32((gx * 92837111) ^ (gy * 689287499) ^ (L.cell * 31));
           const wx = (gx + frac(hsh)) * L.cell;
           const wy = (gy + frac(hash32(hsh ^ 0x5bd1e995))) * L.cell;
-          const tw = 0.6 + 0.4 * Math.sin(time * (1 + (hsh % 5)) + (hsh % 100));
-          ctx.globalAlpha = L.alpha * tw;
-          const s = L.size * Math.max(1, k * 0.8);
-          ctx.fillRect((wx - cx) * k + w / 2 - s / 2, (wy - cy) * k + h / 2 - s / 2, s, s);
+          const px = (wx - cx) * k + w / 2;
+          const py = (wy - cy) * k + h / 2;
+          if (st > 0.02) {
+            ctx.moveTo(px, py);
+            ctx.lineTo(px + (px - w / 2) * f, py + (py - h / 2) * f);
+          } else {
+            const tw = 0.6 + 0.4 * Math.sin(time * (1 + (hsh % 5)) + (hsh % 100));
+            ctx.globalAlpha = L.alpha * tw;
+            ctx.fillRect(px - s / 2, py - s / 2, s, s);
+          }
         }
       }
+      if (st > 0.02) ctx.stroke();
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
 
-    // Grid (world space, pulses on the beat).
+    // Grid (world space, pulses on the beat, fades through a warp). A desaturated
+    // PAL.grid in every sector, so it never takes on the sector's own hue.
+    const [gr, gg, gb] = SECTORS[Math.max(0, this.galaxy.sector)]!.gridRGB;
     const spacing = 80;
     const left = camX - halfW;
     const top = camY - halfH;
-    const pulse = 1 + beat * 0.9;
+    const pulse = (1 + beat * 0.9) * fx.gridAlpha;
     ctx.lineWidth = Math.max(1, k * 0.9);
     for (let major = 0; major < 2; major++) {
-      ctx.strokeStyle = major ? `rgba(120,150,255,${0.1 * pulse})` : `rgba(96,120,255,${0.05 * pulse})`;
+      ctx.strokeStyle = `rgba(${gr},${gg},${gb},${(major ? 0.1 : 0.05) * pulse})`;
       ctx.beginPath();
       for (let gx = Math.floor(left / spacing) * spacing; gx <= camX + halfW; gx += spacing) {
         const isMajor = Math.round(gx / spacing) % 5 === 0;

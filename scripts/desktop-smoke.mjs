@@ -106,6 +106,9 @@ try {
   }
   await page.waitForSelector('#screen-title', { state: 'visible', timeout: 30_000 });
   check('title screen visible', true);
+  await page.waitForFunction(() => window.shardstorm.renderer.bg.galaxy.isReady(0), null, { timeout: 20_000 });
+  const gal = await page.evaluate(() => ({ worker: window.shardstorm.renderer.bg.galaxy.usesWorker, viaWorker: window.shardstorm.renderer.bg.galaxy.genStats.get(0)?.worker }));
+  check('galaxy backdrop generates in a worker', gal.worker === true && gal.viaWorker === true, JSON.stringify(gal));
   const logo = await page.locator('.logo').first().textContent();
   check('logo shows SHARDSTORM', /SHARD/i.test(logo ?? ''), JSON.stringify(logo?.trim()));
   check('window title', (await page.title()).toLowerCase().includes('shardstorm'), await page.title());

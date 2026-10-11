@@ -106,7 +106,8 @@ export class AudioEngine {
     osc.stop(t + dur + 0.05);
   }
 
-  private noiseBurst(dur: number, opts: { type?: BiquadFilterType; freq?: number; to?: number; q?: number; vol?: number; delay?: number } = {}): void {
+  /** `attack` > 0 swells in over that many seconds (a riser) instead of starting at full volume. */
+  private noiseBurst(dur: number, opts: { type?: BiquadFilterType; freq?: number; to?: number; q?: number; vol?: number; delay?: number; attack?: number } = {}): void {
     const ctx = this.ctx;
     if (!ctx) return;
     const t = ctx.currentTime + (opts.delay ?? 0);
@@ -120,7 +121,12 @@ export class AudioEngine {
     f.Q.value = opts.q ?? 1;
     const g = ctx.createGain();
     const vol = opts.vol ?? 0.25;
-    g.gain.setValueAtTime(vol, t);
+    if (opts.attack) {
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + opts.attack);
+    } else {
+      g.gain.setValueAtTime(vol, t);
+    }
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     src.connect(f);
     f.connect(g);
@@ -183,6 +189,28 @@ export class AudioEngine {
     const notes = [523, 659, 784, 1046, 784, 1046];
     notes.forEach((n, i) => this.tone(n, 0.22, { type: 'triangle', vol: 0.14, delay: i * 0.09 }));
     this.tone(1568, 0.8, { type: 'sine', vol: 0.12, delay: notes.length * 0.09 });
+  }
+
+  /**
+   * Galaxy warp spool: a rising whoosh (swept band-passed noise) over a
+   * climbing detuned saw pair that swells into the punch `dur` seconds later.
+   */
+  warpRiser(dur: number): void {
+    if (!this.ok('warp', 0.5)) return;
+    const d = Math.max(0.3, dur);
+    this.noiseBurst(d + 0.08, { type: 'bandpass', freq: 300, to: 5200, q: 2.5, vol: 0.16, attack: d * 0.85 });
+    this.tone(70, d, { type: 'sawtooth', vol: 0.05, to: 560, attack: d * 0.9 });
+    this.tone(70, d, { type: 'sawtooth', vol: 0.05, to: 560, attack: d * 0.9, detune: 18 });
+    this.tone(140, d, { type: 'sine', vol: 0.07, to: 1120, attack: d * 0.9 });
+  }
+
+  /** Galaxy warp punch: a deep sub drop, a low noise blast and a bright shimmer. */
+  warpBoom(): void {
+    this.tone(95, 1.3, { type: 'sine', vol: 0.32, to: 28 });
+    this.tone(190, 0.5, { type: 'triangle', vol: 0.1, to: 60 });
+    this.noiseBurst(1.1, { freq: 1600, to: 50, vol: 0.4 });
+    this.noiseBurst(0.35, { type: 'highpass', freq: 5000, to: 2500, vol: 0.08, delay: 0.03 });
+    [1318, 1760, 2637].forEach((n, i) => this.tone(n, 0.7, { type: 'sine', vol: 0.035, delay: 0.05 + i * 0.04 }));
   }
 
   rankUp(): void {
