@@ -193,7 +193,8 @@ try {
   await page.locator('#screen-title [data-act="play"]').click();
   await page.waitForFunction(() => window.shardstorm?.state === 'playing', null, { timeout: 10_000 });
   await page.waitForTimeout(2500);
-  const run = await page.evaluate(() => ({ time: window.shardstorm.world?.time ?? 0, enemies: window.shardstorm.world?.enemies.length ?? 0 }));
+  const run = await page.evaluate(() => ({ time: window.shardstorm.world?.time ?? 0, enemies: window.shardstorm.world?.enemies.length ?? 0,
+    postFxAvailable: !!window.shardstorm.renderer.postfx, postFxActive: window.shardstorm.renderer.postFxActive }));
   check('run started and simulates', run.time > 1 && run.enemies > 0, JSON.stringify(run));
   await page.locator('#pause-btn').click();
   await page.locator('#screen-pause [data-act="quit"]').click();

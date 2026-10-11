@@ -107,10 +107,11 @@ export class App {
   /** Pilots of the last finished run (results-screen rich presence). */
   private lastRunPlayers = 1;
 
-  constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement, platform: Platform = currentPlatform()) {
+  constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement, platform: Platform = currentPlatform(), fxCanvas: HTMLCanvasElement | null = null) {
     this.platform = platform;
     this.link = new PlatformLink(platform);
-    this.renderer = new Renderer(canvas);
+    this.renderer = new Renderer(canvas, fxCanvas);
+    if (this.renderer.postfx) this.renderer.postfx.settings.quality = this.debug.fxq;
     this.renderer.onGalaxy = (e) => this.onGalaxy(e);
     this.save = loadSave();
     if (this.save.missions.length < 3) refillMissions(this.save, this.metaRng);
@@ -317,6 +318,7 @@ export class App {
       trail: TRAILS[s.trail]?.color ?? TRAILS.default.color,
     };
     this.renderer.particles.density = s.flashes ? 1 : 0.6;
+    this.renderer.setPostFx(s.postfx && !this.debug.noFx);
   }
 
   private newAttractWorld(): World {
@@ -810,6 +812,7 @@ export class App {
   // ───────────────────────── frame loop ─────────────────────────
 
   private frame = (now: number): void => {
+    this.renderer.postfx?.reportFrameTime(now - this.last);
     const realDt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     if (realDt > 0) this.fps += (1 / realDt - this.fps) * 0.05;
@@ -1012,7 +1015,7 @@ export class App {
   }
 }
 
-function readDebugParams(): { autoplay: boolean; warp: number; coop: number; bots: boolean } {
+function readDebugParams(): { autoplay: boolean; warp: number; coop: number; bots: boolean; noFx: boolean; fxq: 0 | 1 | 2 | 3 | 'auto' } {
   try {
     const q = new URLSearchParams(window.location.search);
     return {
@@ -1020,8 +1023,10 @@ function readDebugParams(): { autoplay: boolean; warp: number; coop: number; bot
       warp: Math.max(0, Number(q.get('warp') ?? 0) || 0),
       coop: Math.min(MAX_PLAYERS, Math.max(0, Math.floor(Number(q.get('coop') ?? 0) || 0))),
       bots: q.has('bots'),
+      noFx: q.get('fx') === '0',
+      fxq: /^[0-3]$/.test(q.get('fxq') ?? '') ? Number(q.get('fxq')) as 0 | 1 | 2 | 3 : 'auto',
     };
   } catch {
-    return { autoplay: false, warp: 0, coop: 0, bots: false };
+    return { autoplay: false, warp: 0, coop: 0, bots: false, noFx: false, fxq: 'auto' };
   }
 }

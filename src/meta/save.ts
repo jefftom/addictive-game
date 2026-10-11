@@ -13,6 +13,8 @@ export interface Settings {
   sfx: number;
   shake: number;
   flashes: boolean;
+  /** WebGL2 post-processing (bloom, shockwaves). Falls back to plain 2D when unavailable. */
+  postfx: boolean;
   damageNumbers: boolean;
   showFps: boolean;
   breakReminder: boolean;
@@ -168,6 +170,7 @@ export function defaultSettings(): Settings {
     sfx: 0.8,
     shake: 1,
     flashes: true,
+    postfx: true,
     damageNumbers: true,
     showFps: false,
     breakReminder: true,
@@ -240,6 +243,7 @@ export function migrate(raw: unknown): SaveData {
   if (!Number.isFinite(out.rank) || out.rank < 1) out.rank = 1;
   if (!(out.ship in SHIPS)) out.ship = 'spark';
   if (!['default', 'ember', 'aurora', 'prism'].includes(out.settings.trail)) out.settings.trail = 'default';
+  if (typeof out.settings.postfx !== 'boolean') out.settings.postfx = true;
   if (!CHATTER_MODES.includes(out.settings.chatter)) out.settings.chatter = 'all';
   out.story = normalizeStoryState(r.story);
   out.coop = normalizeCoopStats(r.coop);

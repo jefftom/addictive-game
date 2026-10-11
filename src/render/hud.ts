@@ -12,6 +12,7 @@ export interface HudState {
   touch: boolean;
   fps: number;
   showFps: boolean;
+  fxLabel: string;
   xpFlash: number;
   hpFlash: number;
   comboBreak: { value: number; t: number } | null;
@@ -283,7 +284,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, world: World, w: number, 
     ctx.textBaseline = 'bottom';
     ctx.font = `600 ${10 * ui}px ${FONT_MONO}`;
     ctx.fillStyle = PAL.textDim;
-    ctx.fillText(`${Math.round(st.fps)} FPS · ${world.enemies.length} enemies`, m, h - 8 * ui);
+    ctx.fillText(`${Math.round(st.fps)} FPS · ${world.enemies.length} enemies · ${st.fxLabel}`, m, h - 8 * ui);
   }
 }
 

@@ -58,9 +58,10 @@ test('a run starts, the world simulates and the canvas draws', async ({ page }) 
   expect(s.time).toBeGreaterThan(1);
   expect(s.enemies).toBeGreaterThan(0);
   expect(await page.evaluate(() => (window as unknown as { shardstorm: { renderer: { fx: { art: { size: number } } } } }).shardstorm.renderer.fx.art.size)).toBeGreaterThan(0);
-  // The canvas should have drawn a non-uniform image.
+  // Probe the world image; the visible game canvas holds only the HUD with post-FX.
   const distinct = await page.evaluate(() => {
-    const c = document.getElementById('game') as HTMLCanvasElement;
+    const r = (window as unknown as { shardstorm: { renderer: { postFxActive: boolean; worldCanvas: HTMLCanvasElement } } }).shardstorm.renderer;
+    const c = r.postFxActive ? r.worldCanvas : document.getElementById('game') as HTMLCanvasElement;
     const probe = document.createElement('canvas');
     probe.width = 64;
     probe.height = 36;

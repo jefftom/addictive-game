@@ -9,7 +9,7 @@ A deliberately cheesy story with crew comms.
 
 ## Stack and commands
 
-TypeScript (strict) + Vite, no runtime dependencies, Canvas 2D. Node 22.
+TypeScript (strict) + Vite, no runtime dependencies, Canvas 2D with optional WebGL2 post-processing. Node 22.
 
 ```bash
 npm ci
@@ -25,7 +25,8 @@ npm run steam:achievements # regenerate steam/achievements.json after changing a
 ```
 
 Debug URL params: `?autoplay` (bot drives the title demo / runs), `?warp=N` (fast-forward N sim seconds),
-`?coop=N` (start N-pilot co-op with bots), `?bots`. `window.shardstorm` is the `App`
+`?coop=N` (start N-pilot co-op with bots), `?bots`, `?fx=0` (plain 2D), `?fxq=N`
+(pin post-processing quality 0–3; absent uses the auto ladder). `window.shardstorm` is the `App`
 (`app.world`, `app.renderer`, `app.ui`).
 
 ## Architecture

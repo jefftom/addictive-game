@@ -88,10 +88,10 @@ explicit context/scale/target size, `galaxy.warpFx`, `onGalaxyEvent` then
   - The title screen shows the sector-1 galaxy.
   - The backdrop must cover the screen at co-op zoom-out (`world.zoom`).
 
-### 3b. Starship and crystalline-alien entity art
+### 3b. Starship and crystalline-alien entity art — complete
 
-Local integration and verification are complete on `wip/wave3-entities`;
-remote CI is the remaining gate before 3c. See
+Merged at `402a2f7` after local verification on `wip/wave3-entities`;
+CI and all three desktop jobs passed before 3c began. See
 [`verification/03b-entities.md`](verification/03b-entities.md): 395 unit tests,
 50 browser tests and 49 Windows Electron checks pass. Six alternating heavy
 scenes measure +0.464 ms mean / +0.65 ms p95 renderer JS over 3a.
@@ -105,6 +105,18 @@ scenes measure +0.464 ms mean / +0.65 ms p95 renderer JS over 3a.
   - Use the new art in the menus too: hangar, lobby and results.
 
 ### 3c. WebGL2 post-FX
+
+Implemented locally on `wip/wave3-postfx`; remote CI is the gate before 3d.
+See [`verification/03c-postfx.md`](verification/03c-postfx.md). The owner chose
+to preserve the reviewed pipeline's actual 12/15 q3 draw counts. JS budgets
+pass; the fully flushed 1080p SwiftShader lowest rung is slower than plain 2D,
+so that performance criterion and the owner's iGPU test remain open for task 4.
+Low-refresh/battery-saver frame caps can also trigger the ladder.
+
+Stable hooks: `postfx`, `postFxActive`, `setPostFx`, `costTier`, `worldCanvas`,
+`hudCtx`, one `view` transform and `camZoom`, `flashBudget`, `WarpFx.punch`,
+`GalaxyBackdrop.punchScale`, `?fx=0`, and `?fxq=N`. Grid quality follows
+`onFxQuality` in 3d; 3e drives camera zoom through the shared transform.
 
 - **Source:** `gfx/postfx/`.
 - **Canvas layout:**

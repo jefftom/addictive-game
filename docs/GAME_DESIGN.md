@@ -284,9 +284,9 @@ toward 10:00).
 | Combo tier | big call-out "×3" | whoosh + chord |
 | Dash | vessel afterimages, engine flames and exhaust ribbon | whoosh |
 | Perfect dash | 0.3 s slow-mo, ring, "PERFECT" | bright chime |
-| Player hurt | red vignette, strong shake | crunch |
+| Player hurt | red edge, strong shake, brief colour fringe with enhanced graphics | crunch |
 | Boss intro | darken, "WARNING" banner | siren |
-| Boss death | hit-stop, slow-mo, huge burst | boom + fanfare |
+| Boss death | hit-stop, slow-mo, huge burst; two refracting shockwaves, bloom surge and lens streaks with enhanced graphics | boom + fanfare |
 | Sector change | spool, tunnel, soft punch and arrival; sector card stays clear of boss callouts | rising warp tone, arrival boom |
 | Death | 1 s slow-mo, ship shatters | descending tone |
 | New best | gold stamp, confetti | fanfare |
@@ -356,6 +356,18 @@ Enter is never a dash key, so no pilot's dash key can confirm a card (anti-mash)
   tiles cover co-op zoom-out without changing the simulation.
 - **DOM overlay** for menus (crisp text, accessible focus, keyboard nav),
   the in-run comms panel and the opening crawl.
+- **WebGL2 post-processing** uploads an offscreen world canvas; the native-resolution
+  HUD, damage numbers, callouts and sector cards stay on the input canvas above it.
+  Near-white cores bloom while saturated crystal facets retain their shape. An
+  automatic ladder reduces quality from q3 through q0, then world resolution to
+  0.75, then uses plain 2D. Context loss and the Enhanced graphics toggle also use
+  the 2D path. Sprite glow is 0.15 under bloom and 1 in 2D.
+- **Flash limits:** galaxy punch scale is 0.6 under post-processing, 1 in 2D.
+  Punch plus whole-screen flash is capped at 0.35 / 0.45 respectively, or 0.15
+  with reduced flashing. Reduced flashing disables aberration, surges, streaks
+  and wavefront brightening and softens refraction; shake 0 disables screen
+  warping. The shared minor-wave budget is three per second, burst three, with
+  at most eight live waves; major deaths and bombs always receive a slot.
 - **Story layer** (`src/story/`): a deterministic `StoryDirector` on its own
   cosmetic RNG stream turns simulation events into paced comms lines; it never
   affects the simulation.
