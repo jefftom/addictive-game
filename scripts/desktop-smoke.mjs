@@ -196,6 +196,10 @@ try {
   const run = await page.evaluate(() => ({ time: window.shardstorm.world?.time ?? 0, enemies: window.shardstorm.world?.enemies.length ?? 0,
     postFxAvailable: !!window.shardstorm.renderer.postfx, postFxActive: window.shardstorm.renderer.postFxActive }));
   check('run started and simulates', run.time > 1 && run.enemies > 0, JSON.stringify(run));
+  console.log('renderer (informational):', await page.evaluate(() => {
+    const r = window.shardstorm.renderer;
+    return { postFxActive: r.postFxActive, costTier: r.costTier, usesWorker: r.bg.galaxy.usesWorker };
+  }));
   await page.locator('#pause-btn').click();
   await page.locator('#screen-pause [data-act="quit"]').click();
   await page.waitForSelector('#screen-results', { state: 'visible', timeout: 10_000 });

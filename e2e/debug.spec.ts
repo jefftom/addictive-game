@@ -46,6 +46,18 @@ test('keyboard focus reaches both new graphics settings and scrolls them into vi
     if (reached.size === 2) break;
   }
   expect([...reached].sort()).toEqual(['set-gridMotion', 'set-postfx']);
+  // Exercise the handler used by the polled controller navigation as well.
+  await page.locator('#set-master').focus();
+  const padReached = await page.evaluate(() => {
+    const ui = (window as unknown as { shardstorm: { ui: import('../src/ui/ui').UI } }).shardstorm.ui;
+    const ids = new Set<string>();
+    for (let i = 0; i < 30; i++) {
+      ui.padNav({ down: true, up: false, left: false, right: false, confirm: false, back: false, alt: false });
+      if (document.activeElement?.id) ids.add(document.activeElement.id);
+    }
+    return [...ids];
+  });
+  expect(padReached).toEqual(expect.arrayContaining(['set-gridMotion', 'set-postfx']));
   await expect(page.locator('#set-fullscreen')).toHaveCount(0);
 });
 
