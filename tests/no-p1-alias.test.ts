@@ -15,12 +15,8 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SRC = join(ROOT, 'src');
 const ALIAS = /\b(?:world|w)\.(?:player|stats|build|rerolls|pendingCaches)\b|\bthis\.(?:player|stats|build)\b/;
 
-/**
- * Presentation files that still read the P1 aliases for solo. They
- * belong to the co-op rendering wave, which must migrate them to
- * `players[pid]` and then delete them from this list.
- */
-const PENDING_MIGRATION = new Set(['src/render/renderer.ts', 'src/render/hud.ts']);
+/** Empty since the co-op rendering pass; keep the mechanism for future migrations. */
+const PENDING_MIGRATION = new Set<string>();
 
 function tsFiles(dir: string): string[] {
   const out: string[] = [];

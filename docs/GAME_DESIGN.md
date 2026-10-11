@@ -104,6 +104,8 @@ move ──► weapons auto-fire ──► enemies die ──► shards drop ─
 
 ### 3.5 Co-op (local, 2–4 captains)
 
+- **Screen.** A squad camera follows the team and zooms out to 1.45× as captains spread. Colour plus vector marks and P1–P4 tags identify each ship. Downed captains have a ghost hull and a dashed revive ring; nearby teammates fill it. The last captain gets a halo and a warning. Leash edges glow and arrows point to offscreen captains. Bottom panels show each captain's HP, dash, shield and build, or revive progress; they dim when a ship is underneath. Shared XP, timer, score and combo stay on top. The solo HUD is unchanged.
+
 - **Flow.** Title → Co-op → lobby: each device presses its join key, picks one of the save's unlocked ships, and readies up; 2 s after 2+ captains are ready the squad launches. Slots stay packed, so the P# and colour shown in the lobby are the ones flown (P1 ▲ cyan, P2 ● lime, P3 ■ azure, P4 ◆ white-violet). Results → Play again relaunches the same squad (or reopens the lobby if a controller is gone).
 - **Level-ups.** XP and level are shared. A team level-up opens a round where every captain picks once, P1→P4, on a screen headed by whose turn it is (number, colour, ship, round chips, that device's key hints); caches go to whoever collected them and are picked first. Only the picker's device steers; mouse clicks are always accepted.
 - **Downs.** A captain at 0 HP is downed; a teammate flying over them for ~2.5 s revives them. The run ends when everyone is down.
@@ -220,7 +222,7 @@ achievements) never change; only display text is themed.
 | Where | What | Code |
 | --- | --- | --- |
 | First launch | **Opening crawl**: a paced fleet briefing over the attract mode; any key/tap skips it (after a short grace); replayable from the Ship's Log; static under reduced motion | `src/ui/crawl.ts` |
-| In a run | **Comms panel**: the `StoryDirector`'s current line, with the speaker's portrait glyph and colour, name and role, a quick typewriter reveal and a timer bar. Story lines (sector arrivals, capital-ship sequences, Overtime) stand out, rare barks are standard, common barks are small and quiet. Never takes pointer input. Setting **Crew chatter**: All / Important only / Off | `src/ui/comms.ts`, `src/story/runlink.ts` |
+| In a run | **Comms panel**: the `StoryDirector`'s current line, with the speaker's portrait glyph and colour, name and role, a quick typewriter reveal and a timer bar. Story lines (sector arrivals, capital-ship sequences, Overtime) stand out, rare barks are standard, common barks are small and quiet. Dims to 30% while a threat or ship is underneath, never hides. Never takes pointer input. Setting **Crew chatter**: All / Important only / Off | `src/ui/comms.ts`, `src/story/runlink.ts` |
 | Results | A game-over quip (rotation persisted in the save), or the capital ship's victory taunt when the run ended during a boss fight; newly unlocked log entries with a Read button | `src/ui/ui.ts` |
 | Victory | The ending card ("The Light Holds"), then the Overtime choice; continuing plays the post-credits comms | `src/ui/ui.ts` |
 | Title menu | **Ship's Log**: 14 entries that unlock across the meta arc (with hints and progress), unread badges, briefing replay, the cast and the vessel classes | `src/ui/ui.ts`, `src/story/logbook.ts` |
@@ -286,7 +288,10 @@ toward 10:00).
 | Combo tier | big call-out "×3" | whoosh + chord |
 | Dash | vessel afterimages, engine flames and exhaust ribbon | whoosh |
 | Perfect dash | 0.3 s slow-mo, ring, "PERFECT" | bright chime |
-| Player hurt | red edge, strong shake, brief colour fringe with enhanced graphics | crunch |
+| Player hurt | solo red edge; co-op panel and ship HP arc, smaller screen flash; shake, brief colour fringe with enhanced graphics | crunch |
+| Captain down (co-op) | ghost hull, dashed revive circle, marked P# DOWN callout and panel; screen-reader announcement | follow-up |
+| Revived | coloured ring, marked P# BACK IN THE FIGHT, reviving captain credited; screen-reader announcement | follow-up |
+| Last captain standing | LAST CAPTAIN STANDING, marked captain, halo and panel border; steady with reduced flashing | follow-up |
 | Boss intro | darken, "WARNING" banner | siren |
 | Boss death | hit-stop, slow-mo, huge burst; two refracting shockwaves, bloom surge and lens streaks with enhanced graphics | boom + fanfare |
 | Sector change | spool, tunnel, soft punch and arrival; sector card stays clear of boss callouts | rising warp tone, arrival boom |

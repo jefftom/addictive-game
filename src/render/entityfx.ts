@@ -430,6 +430,8 @@ export class EntityFx {
 
   // ───────────────────────────── helpers ─────────────────────────────
 
+  pilotScale = 1;
+  private readonly pilotView: FxView = { k: 1, ox: 0, oy: 0, minX: 0, minY: 0, maxX: 0, maxY: 0 };
   private v: FxView = { k: 1, ox: 0, oy: 0, minX: 0, minY: 0, maxX: 0, maxY: 0 };
 
   /** Sets a transform: translate(x,y)·rotate(ang)·scale(sx,sy), optionally squashed along (kx,ky). */
@@ -1495,6 +1497,8 @@ export class EntityFx {
    * Sets its own composite ops.
    */
   drawPlayers(ctx: CanvasRenderingContext2D, world: World, dt: number, rdt: number, trailColor: string): void {
+    const v = this.v, ps = this.pilotScale;
+    Object.assign(this.pilotView, v);
     for (const p of world.players) {
       if (!p.alive) continue;
       const st = this.pilot(p.pid);
@@ -1509,7 +1513,12 @@ export class EntityFx {
       }
       st.locator += ((near >= LOCATOR_CROWD ? 1 : 0) - st.locator) * damp(near >= LOCATOR_CROWD ? 6 : 2, Math.max(rdt, 1e-4));
       const colors = pilotColors(world, p.pid, trailColor);
+      this.pilotView.k = v.k * ps;
+      this.pilotView.ox = v.ox + p.x * v.k * (1 - ps);
+      this.pilotView.oy = v.oy + p.y * v.k * (1 - ps);
+      this.v = this.pilotView;
       this.drawPlayer(ctx, p, st, dt, rdt, colors.accent, colors.trail);
+      this.v = v;
     }
   }
 
