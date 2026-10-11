@@ -6,20 +6,19 @@ Read `AGENTS.md` first (commands and hard rules). This file is the task list.
 
 | Branch | State |
 |---|---|
-| `claude/dazzling-faraday-2kxdhl` | **The game.** Draft PR #1 into `main` (`main` is an empty root commit, so the PR shows everything). Task 1 merged and locally verified; remote CI gate pending. See `docs/verification/01-determinism.md`. |
+| `claude/dazzling-faraday-2kxdhl` | **The game.** Draft PR #1 into `main` (`main` is an empty root commit, so the PR shows everything). Task 1 complete with all CI jobs green; task 2 merged and being verified. See `docs/verification/`. |
 | `wip/fix-dmath` | Merged with merge commit `c806d39`, preserving `2980d33`. Numerical review, guard hardening, e2e and single-file validation completed on the PR branch. |
-| `wip/wave3-platform` | Task 2, finished but not merged: platform layer wired into the game + fonts bundled locally. Typecheck clean, 311/311 unit tests. e2e and Electron smoke not re-run after the last commit. |
+| `wip/wave3-platform` | Merged with `ec48096`, preserving `361c4c1`. Task 2 verification and the specified Deck/licence fixes are on the PR branch. |
 | `wip/wave3-gfx` | Task 3a in progress: galaxy backdrops integrated. Typecheck clean; one failing test (see 3a). |
 | `wip/prototypes` | Orphan branch, not code to merge: design docs (`design/coop.md`, `design/galaxy.md`, `design/steam.md`, story bible) and graphics prototypes with integration guides (`galaxy/`, `gfx/postfx/`, `gfx/grid/`, `gfx/entities/`). Read with `git show origin/wip/prototypes:<path>` or a separate worktree. |
 
 All `wip/*` branches are based on the PR branch at `3d3e601` (`wip/fix-dmath` on `ab45301`). Merge them into the PR branch (merge commits, no force-push) once each one passes every check.
 
-## 1. Cross-platform determinism (macOS CI red) — highest priority
+## 1. Cross-platform determinism — complete
 
-**Current status:** implementation, local checks and independent balance
-confirmation complete; the results and remote CI gate are recorded in
-[`verification/01-determinism.md`](verification/01-determinism.md). Do not start
-task 2 until CI and all three desktop builds pass on the pushed task-1 head.
+**Current status:** complete at `2be4888`: CI and macOS/Windows/Linux desktop jobs
+passed. Numerical, mutation, performance and balance evidence and run links are in
+[`verification/01-determinism.md`](verification/01-determinism.md).
 The original problem and finishing checklist below are retained as context.
 
 **Problem:** `tests/golden.solo.test.ts` passes on Linux and Windows x64 but diverges on the macOS arm64 runner (`desktop` workflow). The sim used `Math.sin/cos/atan2/exp/pow/hypot` and `**`. ECMAScript allows these to be approximated, and V8 on arm64 returns different last bits. The chaotic sim amplifies that, so a Daily Run also plays differently on a Mac than on a PC.
@@ -39,6 +38,11 @@ The original problem and finishing checklist below are retained as context.
 5. Merge into the PR branch and push. **Done when the macOS `desktop` job is green.**
 
 ## 2. Merge the platform wiring (`wip/wave3-platform`)
+
+**Current status:** merged at `ec48096`; specified Deck fullscreen and standalone
+font-licence fixes are implemented. Local verification includes 343 unit tests,
+32 browser tests (8 unchanged device exclusions), 48 Windows Electron checks,
+and the achievement table check. Remote CI and Linux smoke gate pending.
 
 - **What the branch does:**
   - `initPlatform()` at boot.

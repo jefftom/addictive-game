@@ -61,11 +61,13 @@ JSON objects of at most 1 MiB, and only pages served from `app://game/` may call
 sets the Electron fuses `RunAsNode`, `NODE_OPTIONS`, `--inspect`, and file-protocol privileges off,
 and turns asar integrity and asar-only loading on.
 
-**Window:** fullscreen by default (always on Steam Deck). The **Fullscreen** switch in Settings,
-F11 or Alt+Enter toggle it (on macOS also Ctrl+Cmd+F), and the choice is remembered in
+**Window:** fullscreen by default (locked on Steam Deck unless the developer windowed override is used).
+The **Fullscreen** switch in Settings, F11 or Alt+Enter toggle it, and the choice is remembered in
 `<userData>/desktop-settings.json` (machine-specific, so it is not part of the cloud save). On Steam
 Deck the switch is shown locked on. Launch with `--windowed` (or `SHARDSTORM_WINDOWED=1`) to force a
-window. No menu bar on Windows and Linux. The title screen has **Quit to desktop**.
+window. macOS Ctrl+Cmd+F and the native green button also toggle fullscreen and update the switch,
+but those native changes currently are not persisted. No menu bar on Windows and Linux.
+The title screen has **Quit to desktop**.
 
 **Fonts:** Tektur, Chakra Petch and Kode Mono are bundled (`src/assets/fonts/`, latin WOFF2), so the
 game never contacts a third-party host and the CSP allows only the app's own files.
@@ -274,7 +276,7 @@ Proton for the app (Steamworks > Steam Deck compatibility) and it runs the Windo
 
 | # | Check | Status in the code |
 | --- | --- | --- |
-| 1 | Runs at 1280 x 800 and handles 1280 x 720 | window is 1280 x 800; fullscreen forced on Deck (`SteamDeck=1` or the Steam API), and the Settings switch is locked on there |
+| 1 | Runs at 1280 x 800 and handles 1280 x 720 | window is 1280 x 800; fullscreen forced on Deck (`SteamDeck=1` or the Steam API), including F11/Alt+Enter and bridge requests; the Settings switch is locked on and the machine's saved windowed preference is preserved. The developer windowed override bypasses the lock. |
 | 2 | Every screen works with a gamepad alone (title, hangar, workshop, records, settings, level-up, pause, results, story, co-op join) | audit needed |
 | 3 | Controller glyphs when a pad is in use; no "press Enter / click" prompts | audit needed |
 | 4 | Smallest text at least 9 px at 1280 x 800 (Valve recommends 12 px) | audit needed |

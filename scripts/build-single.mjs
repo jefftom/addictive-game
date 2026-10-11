@@ -33,14 +33,17 @@ if (!js) throw new Error('build-single: no module script found in dist/index.htm
 const safeJs = js.replace(/<\/script/gi, '<\\/script');
 const style = `<style>\n${css.join('\n')}\n</style>`;
 const script = `<script type="module">\n${safeJs}\n</script>`;
+// Single-file recipients must receive the bundled fonts' permission notice too.
+const fontLicence = readFileSync(join(root, 'src', 'assets', 'fonts', 'OFL.txt'), 'utf8').replace(/--+/g, (dashes) => dashes.split('').join(' '));
+const licenceComment = `<!-- Bundled font licences\n${fontLicence}\n-->`;
 
 // Function replacements: the bundle contains `$` sequences that string replacements would expand.
-const full = html.replace('</head>', () => `${style}\n</head>`).replace('</body>', () => `${script}\n</body>`);
+const full = html.replace('</head>', () => `${style}\n</head>`).replace('</body>', () => `${script}\n${licenceComment}\n</body>`);
 
 const pick = (re) => (html.match(re)?.[0] ?? '');
 const title = pick(/<title>[\s\S]*?<\/title>/);
 const body = html.match(/<body>([\s\S]*?)<\/body>/)?.[1] ?? '';
-const embed = `${title}\n${style}\n${body.trim()}\n${script}\n`;
+const embed = `${title}\n${style}\n${body.trim()}\n${script}\n${licenceComment}\n`;
 
 mkdirSync(out, { recursive: true });
 writeFileSync(join(out, 'shardstorm.html'), full);

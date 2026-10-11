@@ -130,6 +130,12 @@ constants were adjusted in response to these samples.
   from 2.02 to 4.20 seconds, no page errors; screenshot inspected.
 - `git diff --check` clean.
 
-Remote acceptance remains pending until CI and all three desktop build jobs pass
-on the pushed task-1 head. Firefox/Safari and signed macOS distribution are outside
-this task's executed checks.
+Remote acceptance passed at `2be4888eb7f604f5c7c9a1641c5861458cf7ad06`:
+
+- [CI: typecheck, unit tests, single build, desktop/mobile e2e](https://github.com/jefftom/addictive-game/actions/runs/38110261838).
+- [Desktop: macOS arm64 tests and universal packaging, Windows and Linux builds, Linux smoke](https://github.com/jefftom/addictive-game/actions/runs/38110261834).
+
+All required jobs succeeded. The deployment job was intentionally skipped.
+An extra local Windows Electron smoke exposed a trailing-backslash launch-path
+problem in the existing test script; task 2 fixes it and records a 48-check pass.
+Firefox/Safari and signed macOS distribution are outside this task's executed checks.

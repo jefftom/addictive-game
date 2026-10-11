@@ -54,7 +54,9 @@ const saveFile = join(userData, 'save', 'shardstorm-save.json');
 async function launch(extraEnv = {}) {
   const app = await _electron.launch({
     executablePath: electronPath,
-    args: [root, '--no-sandbox'],
+    // cwd is the repo; a trailing backslash in an absolute Windows entry path
+    // prevents Electron's debugger launch from reaching the app.
+    args: ['.', '--no-sandbox'],
     cwd: root,
     env: { ...process.env, SHARDSTORM_USER_DATA: userData, ...extraEnv },
     timeout: 60_000,
@@ -274,6 +276,14 @@ try {
   check('Steam Deck starts fullscreen despite the windowed setting', (await isFullScreen(third.app)) === true);
   await third.page.locator('#screen-title [data-act="settings"]').click();
   check('Steam Deck: fullscreen toggle locked on', (await third.page.locator('#set-fullscreen').isChecked()) && (await third.page.locator('#set-fullscreen').isDisabled()));
+  await third.app.evaluate(({ BrowserWindow }) => {
+    const wc = BrowserWindow.getAllWindows()[0].webContents;
+    wc.sendInputEvent({ type: 'keyDown', keyCode: 'F11' });
+    wc.sendInputEvent({ type: 'keyUp', keyCode: 'F11' });
+  });
+  await third.page.waitForTimeout(1000); // allow a window-mode transition to finish if the lock regresses
+  check('Steam Deck: F11 keeps fullscreen and preserves the windowed preference',
+    (await isFullScreen(third.app)) === true && readJson(settingsFile)?.fullscreen === false);
   const code3 = exitCode(third.app);
   await third.page.keyboard.press('Escape');
   await third.page.locator('#screen-title [data-act="quit"]').click();

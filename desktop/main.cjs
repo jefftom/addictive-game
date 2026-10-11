@@ -138,8 +138,10 @@ function saveSettings(s) {
 }
 const settings = loadSettings();
 const steamDeck = env.SteamDeck === '1' || steam.isSteamDeck();
+const windowedOverride = argv.has('--windowed') || env.SHARDSTORM_WINDOWED === '1';
+const deckLock = steamDeck && !windowedOverride;
 function startFullscreen() {
-  if (argv.has('--windowed') || env.SHARDSTORM_WINDOWED === '1') return false;
+  if (windowedOverride) return false;
   if (argv.has('--fullscreen') || steamDeck) return true;
   return settings.fullscreen;
 }
@@ -212,6 +214,10 @@ function platformInfo() {
 
 function setFullscreen(on) {
   if (!win) return false;
+  if (deckLock) {
+    if (!win.isFullScreen()) win.setFullScreen(true);
+    return true;
+  }
   const next = typeof on === 'boolean' ? on : !win.isFullScreen();
   win.setFullScreen(next);
   settings.fullscreen = next;
