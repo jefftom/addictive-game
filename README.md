@@ -88,7 +88,7 @@ tests/       unit tests + balance simulation (*.sim.ts)
 e2e/         Playwright smoke tests
 ```
 
-The simulation in `src/game/` never touches the DOM or canvas. It runs at a fixed 60 Hz, is fully deterministic for a seed and input sequence, and reports what happened as **events**. The renderer and audio turn those events into feedback. The same code runs in the browser, the unit tests and the balance simulator.
+The simulation in `src/game/` never touches the DOM or canvas. It runs at a fixed 60 Hz, uses deterministic math for the same seed and input sequence on every CPU and browser, and reports what happened as **events**. The renderer and audio turn those events into feedback. The same code runs in the browser, the unit tests and the balance simulator.
 
 ### Balance simulation
 
@@ -116,5 +116,7 @@ The bot is not a human. These numbers are a baseline for tuning, not a substitut
 CI (`.github/workflows/ci.yml`) runs typecheck, unit tests, build and the Playwright tests on every PR, and attaches the single-file build as a downloadable artifact.
 
 ## Credits
+
+Deterministic math in `src/core/dmath.ts` is based on [fdlibm](https://netlib.org/fdlibm/), Copyright (C) 1993 Sun Microsystems, Inc.; its permission notice is preserved in that file. The `scalbn` routine follows musl (MIT attribution pending owner confirmation).
 
 Everything visual and audible is procedural, with no image or audio assets. Fonts: [Tektur](https://fonts.google.com/specimen/Tektur), [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) and [Kode Mono](https://fonts.google.com/specimen/Kode+Mono) from Google Fonts (SIL Open Font License), with system-font fallbacks when offline.

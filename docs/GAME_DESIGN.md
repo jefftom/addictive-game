@@ -312,6 +312,13 @@ Enter is never a dash key, so no pilot's dash key can confirm a card (anti-mash)
 - **TypeScript + Vite**, no runtime dependencies.
 - **Fixed-timestep simulation (60 Hz)** in `src/game/` that has no DOM or
   canvas access, so it runs headless in tests and the balance simulator.
+- **Deterministic math** (`src/core/dmath.ts`): the simulation uses fdlibm-based
+  replacements built from exactly specified operations instead of approximated
+  `Math` functions (`sin`, `cos`, `atan2`, `exp`, `pow`, `hypot`, etc.) or `**`.
+  A seed and input sequence therefore compute identical bits across CPUs, OSes
+  and browsers. `tests/determinism.guard.test.ts` enforces the boundary with
+  static scanning and runtime traps. CI checks Windows/Linux x64 and macOS arm64;
+  Firefox and Safari have not been exercised in CI.
 - The simulation emits **events** (kill, hit, levelup…) that the renderer and
   audio consume, which keeps feedback separate from game rules.
 - **Seeded RNG streams** (spawns, loot) so the Daily Run is the same for

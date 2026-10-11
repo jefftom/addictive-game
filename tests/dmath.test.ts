@@ -31,6 +31,13 @@ function ulps(a: number, b: number): number {
 
 const SPECIAL = [0, -0, 1, -1, 0.5, -0.5, 2, -2, 3, -3, 2.5, -2.5, Infinity, -Infinity, NaN, 5e-324, -5e-324, 1e-310, 1e308, -1e308, Math.PI, -Math.PI, Math.PI / 2, 1e-20];
 
+/** Adjacent IEEE-754 representations (the direction reverses for negative x). */
+function neighbor(x: number, step: bigint): number {
+  F[0] = x;
+  B[0] = B[0]! + step;
+  return F[0]!;
+}
+
 const UNARY = { sin: [dm.sin, Math.sin], cos: [dm.cos, Math.cos], atan: [dm.atan, Math.atan], exp: [dm.exp, Math.exp], log: [dm.log, Math.log] } as const;
 const BINARY = { atan2: [dm.atan2, Math.atan2], pow: [dm.pow, Math.pow], hypot: [dm.hypot, Math.hypot] } as const;
 
@@ -81,6 +88,27 @@ describe('dmath special values follow Math.*', () => {
     expect(dm.hypot(Infinity, NaN)).toBe(Infinity);
     expect(dm.hypot(NaN, -Infinity)).toBe(Infinity);
   });
+
+  it('exp matches overflow and underflow threshold neighbors', () => {
+    for (const threshold of [709.782712893384, -745.1332191019411]) {
+      for (const step of [-3n, -2n, -1n, 0n, 1n, 2n, 3n]) {
+        const x = neighbor(threshold, step);
+        expectLikeMath(dm.exp(x), Math.exp(x), `exp(${x})`);
+      }
+    }
+  });
+
+  it('handles minimum normal values and negative integer powers', () => {
+    const tiny = 2.2250738585072014e-308;
+    for (const x of [neighbor(tiny, -1n), tiny, neighbor(tiny, 1n)]) {
+      for (const [name, [fn, reference]] of Object.entries(UNARY)) expectLikeMath(fn(x), reference(x), `${name}(${x})`);
+    }
+    for (const x of [-0.001, -0.5, -2, -5.0658649338444235, -10]) {
+      for (const y of [-101, -100, -3, -2, 0, 2, 3, 20, 100, 101]) {
+        expectLikeMath(dm.pow(x, y), Math.pow(x, y), `pow(${x}, ${y})`);
+      }
+    }
+  });
 });
 
 describe('dmath accuracy against Math.* over the game ranges', () => {
@@ -123,8 +151,11 @@ describe('dmath accuracy against Math.* over the game ranges', () => {
   it('sin/cos stay accurate next to multiples of pi/2 (cancellation)', () => {
     let worst = 0;
     for (let i = 0; i < 20000; i++) {
-      const x = rng.int(1, 4194304) * (Math.PI / 2);
-      worst = Math.max(worst, ulps(dm.sin(x), Math.sin(x)), ulps(dm.cos(x), Math.cos(x)));
+      const multiple = rng.int(-4194304, 4194304) * (Math.PI / 2);
+      for (const step of [-1n, 0n, 1n]) {
+        const x = multiple === 0 ? Number(step) * Number.MIN_VALUE : neighbor(multiple, step);
+        worst = Math.max(worst, ulps(dm.sin(x), Math.sin(x)), ulps(dm.cos(x), Math.cos(x)));
+      }
     }
     expect(worst).toBeLessThanOrEqual(2);
   });

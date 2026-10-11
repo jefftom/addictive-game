@@ -1,8 +1,10 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import { dailyInfo } from '../src/meta/daily';
+import { simulateRun } from './helpers';
 
 /**
  * Grep guard: the simulation must compute the same bits on every engine and
@@ -12,9 +14,9 @@ import { describe, expect, it } from 'vitest';
  * arm64 than on x64. Every file the sim can execute must use src/core/dmath.ts
  * (or plain + - * / and Math.sqrt) instead.
  *
- * The scanned set is the runtime import closure of the sim entry points, so a
- * new helper file imported by the sim is covered automatically. Type-only
- * imports are skipped: they never run.
+ * Scan every game file plus the runtime import closure of the sim entry
+ * points, including orphan game files and newly imported helpers. Type-only
+ * imports are skipped: they never run. A runtime trap also checks bot runs.
  */
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -48,10 +50,23 @@ const APPROXIMATED = new Set([
   'tanh',
 ]);
 
+/** Exactly specified Math operations and constants; everything else is rejected. */
+const ALLOWED = new Set([
+  'abs', 'floor', 'ceil', 'round', 'trunc', 'sign', 'min', 'max', 'sqrt', 'fround', 'imul', 'clz32',
+  'PI', 'E', 'LN2', 'LN10', 'LOG2E', 'LOG10E', 'SQRT2', 'SQRT1_2',
+]);
+
 const rel = (file: string): string => relative(ROOT, file).split('\\').join('/');
 
 function parse(file: string, text = readFileSync(file, 'utf8')): ts.SourceFile {
   return ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+}
+
+function tsFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const file = join(dir, entry.name);
+    return entry.isDirectory() ? tsFiles(file) : entry.name.endsWith('.ts') ? [file] : [];
+  });
 }
 
 /** Relative module specifiers that are loaded at runtime (not `import type`). */
@@ -82,7 +97,7 @@ function resolveModule(from: string, spec: string): string {
 
 function simClosure(): string[] {
   const seen = new Set<string>();
-  const stack = SIM_ENTRIES.map((f) => join(ROOT, f));
+  const stack = [...SIM_ENTRIES.map((f) => join(ROOT, f)), ...tsFiles(join(ROOT, 'src/game'))];
   while (stack.length > 0) {
     const file = stack.pop()!;
     if (seen.has(file)) continue;
@@ -105,22 +120,16 @@ function offenders(file: string, text?: string): string[] {
     const line = src.getLineAndCharacterOfPosition(node.getStart(src)).line + 1;
     out.push(`${name}:${line}: ${what}`);
   };
-  const isMath = (e: ts.Expression): boolean => ts.isIdentifier(e) && e.text === 'Math';
   const visit = (node: ts.Node): void => {
-    if (ts.isPropertyAccessExpression(node) && isMath(node.expression) && APPROXIMATED.has(node.name.text)) {
-      hit(node, `Math.${node.name.text}`);
-    } else if (
-      ts.isElementAccessExpression(node) &&
-      isMath(node.expression) &&
-      ts.isStringLiteralLike(node.argumentExpression) &&
-      APPROXIMATED.has(node.argumentExpression.text)
-    ) {
-      hit(node, `Math['${node.argumentExpression.text}']`);
-    } else if (ts.isVariableDeclaration(node) && ts.isObjectBindingPattern(node.name) && node.initializer && isMath(node.initializer)) {
-      for (const el of node.name.elements) {
-        const key = el.propertyName ?? el.name;
-        if (ts.isIdentifier(key) && APPROXIMATED.has(key.text)) hit(el, `{ ${key.text} } = Math`);
-      }
+    if (ts.isIdentifier(node) && node.text === 'Math') {
+      const parent = node.parent;
+      const direct = ts.isPropertyAccessExpression(parent) && parent.expression === node;
+      // randomSeed chooses a run's initial seed outside the tick; runtime runs
+      // below trap Math.random too, so it cannot silently enter seeded play.
+      const allowed = direct && (ALLOWED.has(parent.name.text) || (name === 'src/core/rng.ts' && parent.name.text === 'random'));
+      if (!allowed) hit(node, direct ? parent.getText(src) : 'unapproved Math reference');
+    } else if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression) && node.argumentExpression.text === 'Math') {
+      hit(node, 'unapproved Math reference');
     } else if (
       ts.isBinaryExpression(node) &&
       (node.operatorToken.kind === ts.SyntaxKind.AsteriskAsteriskToken ||
@@ -174,7 +183,47 @@ describe('deterministic math in the simulation', () => {
       'const h = Math.floor(Math.abs(t) * Math.PI);',
     ].join('\n');
     const hits = offenders(join(ROOT, 'src/sample.ts'), sample).map((h) => h.replace(/^src\/sample\.ts:/, ''));
-    expect(hits).toEqual(['2: Math.sin', '4: **', '5: **=', '6: Math.hypot', "7: Math['atan2']", '8: { pow } = Math']);
+    expect(hits).toEqual(['2: Math.sin', '4: **', '5: **=', '6: Math.hypot', '7: unapproved Math reference', '8: unapproved Math reference']);
+  });
+
+  it('rejects aliases, globals, destructuring, computed keys and orphan helpers', () => {
+    const sample = [
+      'const M = Math; M.sin(t);',
+      'globalThis.Math.sin(t); window.Math.cos(t); self.Math.exp(t);',
+      '({ sin: f } = Math);',
+      'Math[name](t);',
+      'const square = `${x ** 2}`;',
+      'globalThis["Math"].sin(t);',
+      'Math.random();',
+      'Math.newApproximation(t);',
+      'const allowed = Math.sqrt(Math.abs(t)) + Math.PI;',
+    ].join('\n');
+    const hits = offenders(join(ROOT, 'src/game/orphan.ts'), sample);
+    expect(hits.map((h) => Number(h.split(':')[1]))).toEqual([1, 2, 2, 2, 3, 4, 5, 6, 7, 8]);
+    expect(hits.every((h) => h.startsWith('src/game/orphan.ts:'))).toBe(true);
+    expect(offenders(join(ROOT, 'src/core/rng.ts'), 'Math.random(); Math.sin(1);')).toEqual(['src/core/rng.ts:1: Math.sin']);
+    for (const file of tsFiles(join(ROOT, 'src/game'))) expect(closure).toContain(rel(file));
+  });
+
+  it('seeded solo, co-op and daily runs never call approximated Math at runtime', () => {
+    const math = Math as unknown as Record<string, (...args: number[]) => number>;
+    const originals = new Map([...APPROXIMATED, 'random'].map((name) => [name, math[name]!]));
+    const calls = new Map<string, string>();
+    try {
+      for (const [name, original] of originals) {
+        math[name] = (...args) => {
+          if (!calls.has(name)) calls.set(name, new Error(`Math.${name}`).stack ?? name);
+          return original(...args);
+        };
+      }
+      simulateRun({ seed: 1000, rank: 1 }, 90);
+      simulateRun({ seed: 31337, rank: 8, players: ['spark', 'vanguard', 'bastion'] }, 90);
+      const daily = dailyInfo('2026-10-10');
+      simulateRun({ seed: daily.seed, rank: 8, daily: daily.modifier.id }, 90);
+    } finally {
+      for (const [name, original] of originals) math[name] = original;
+    }
+    expect([...calls.values()]).toEqual([]);
   });
 
   it('type-only imports are not part of the runtime closure', () => {

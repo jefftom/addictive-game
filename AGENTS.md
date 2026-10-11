@@ -44,7 +44,8 @@ Debug URL params: `?autoplay` (bot drives the title demo / runs), `?warp=N` (fas
 1. **The simulation is deterministic.** `tests/golden.solo.test.ts` replays fixed seeds and must stay
    bit-identical. Never edit or re-record it to make a change pass; re-capture only for a deliberate gameplay
    change, and say so in its header comment. Rendering/UI code may read sim state but must not mutate it or
-   draw from the sim RNG streams.
+   draw from the sim RNG streams. Sim code uses `src/core/dmath.ts` for approximated maths;
+   `tests/determinism.guard.test.ts` enforces this across game files and their runtime imports.
 2. **Co-op:** players live in `world.players[pid]`. `tests/no-p1-alias.test.ts` forbids new uses of the P1
    aliases (`world.player/stats/build/rerolls/pendingCaches`) outside its `PENDING_MIGRATION` list.
 3. Strict TypeScript must stay clean; keep `npm run build:single` working (workers inline via `?worker&inline`).

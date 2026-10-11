@@ -7,7 +7,7 @@ import { World } from '../src/game/world';
 
 /**
  * Solo golden master. Captured on commit 18b7adc, before the co-op refactor.
- * Re-captured after moving the sim to deterministic math (src/core/dmath.ts)
+ * Re-captured on commit 2980d33 after moving the sim to deterministic math (src/core/dmath.ts)
  * so runs are identical on every CPU architecture.
  * Solo play must stay bit-for-bit identical, so these values must never change
  * unless a deliberate gameplay change is made (and then re-captured on purpose,
