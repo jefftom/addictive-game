@@ -671,6 +671,10 @@ h3 {
   font-weight: 600;
 }
 
+.setting {
+  scroll-margin-block: 8px;
+}
+
 .setting small {
   display: block;
   color: var(--faint);

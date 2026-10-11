@@ -1,8 +1,8 @@
 # Task 4/5 verification
 
 Working checkout: `F:\addictive-game`, `wip/verify`, based on `95b6d05` after
-all task 3e remote gates passed. Date: 2026-10-11. This record is being completed
-before the final merge and push. Generated evidence is kept outside Git.
+all task 3e remote gates passed. Date: 2026-10-11. Merged at `467d047`, with the
+mobile focus recovery below on the PR branch. Generated evidence is kept outside Git.
 
 ## Balance method and constraints
 
@@ -193,7 +193,8 @@ Local gates: `npm ci`, `npm run check` (448 tests in 25 suites),
 `build:single`, achievements check, and 87 Playwright tests passed. The 13
 browser device exclusions are unchanged; no test needed a retry. Keyboard
 and controller-navigation handlers both reach the new graphics settings.
-Standalone size is 588,403 bytes / 240,819 gzip bytes, including bundled fonts.
+Standalone size after focus recovery is 588,528 bytes / 240,861 gzip bytes,
+including bundled fonts.
 The Windows Electron smoke passed 49 checks with post-FX active at q3 and
 the galaxy worker active. The final default-icon Windows package passed
 its smoke at `app://game`, isolated storage, Steam disabled, exit 0.
@@ -202,3 +203,19 @@ The PR receives the final remote CI links and actual Windows/macOS packaged
 smoke outcomes after the push. Readiness requires green web CI and all three
 desktop jobs, with no flaky browser retries. No merge, Pages deployment or
 Steam upload is part of this checkpoint.
+
+### Mobile focus recovery
+
+The first final web run, [38130274256](https://github.com/jefftom/addictive-game/actions/runs/38130274256),
+failed the new mobile settings-focus check on both attempts: the focused
+Enhanced graphics checkbox ended at CSS y=839.3125 in an 839-pixel viewport.
+86 other browser cases passed; the 13 device exclusions were unchanged.
+All desktop jobs and their actual packaged smokes passed at `467d047`.
+
+Settings focus now scrolls the whole labelled row into view, with an 8-pixel
+scroll margin. This keeps the control and its focus ring away from fractional
+scroll rounding at the viewport edge. The strict test bounds are unchanged.
+The debug/settings/title suite passed 18 repeated desktop/mobile cases locally;
+typecheck, all 448 unit tests, normal and standalone builds also passed again.
+The initial failed run and both traces remain in the evidence. The full remote
+suite must pass on the recovery commit before the PR is marked ready.
