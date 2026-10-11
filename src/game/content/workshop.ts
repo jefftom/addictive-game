@@ -1,3 +1,4 @@
+import { pow } from '../../core/dmath';
 import type { DailyModifierId, Stats } from '../types';
 
 export interface WorkshopDef {
@@ -38,7 +39,7 @@ export const WORKSHOP: WorkshopDef[] = [
   },
   {
     id: 'reflex', name: 'Reflex', icon: '⚡', text: '−6% dash cooldown', maxLevel: 3, baseCost: 70, growth: 1.8,
-    apply: (s, l) => { s.dashCooldown *= Math.pow(0.94, l); },
+    apply: (s, l) => { s.dashCooldown *= pow(0.94, l); },
   },
   {
     id: 'recovery', name: 'Recovery', icon: '✚', text: '+0.15 HP regenerated per second', maxLevel: 3, baseCost: 85, growth: 1.8,
@@ -59,7 +60,7 @@ export const WORKSHOP: WorkshopDef[] = [
 ];
 
 export function workshopCost(def: WorkshopDef, level: number): number {
-  return Math.round(def.baseCost * Math.pow(def.growth, level));
+  return Math.round(def.baseCost * pow(def.growth, level));
 }
 
 export interface DailyModifierDef {

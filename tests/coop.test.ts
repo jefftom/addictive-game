@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { pow } from '../src/core/dmath';
 import { Rng } from '../src/core/rng';
 import { botInput, botResolvePending } from '../src/game/bot';
 import { COOP_SCALING, REVIVE_HP, SPAWN_CLEARANCE, ZOOM_MAX } from '../src/game/content/coop';
@@ -506,8 +507,8 @@ describe('kill credit and relic scope', () => {
 
 describe('difficulty scaling', () => {
   const base = {
-    rate: (t: number) => 1.2 + 0.03 * t + 0.45 * Math.pow(t / 60, 2),
-    hp: (t: number) => 1 + t / 100 + Math.pow(t / 220, 2.4),
+    rate: (t: number) => 1.2 + 0.03 * t + 0.45 * pow(t / 60, 2),
+    hp: (t: number) => 1 + t / 100 + pow(t / 220, 2.4),
   };
 
   it('solo multipliers are exactly the old formulas', () => {

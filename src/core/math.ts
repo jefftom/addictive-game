@@ -1,3 +1,5 @@
+import { exp, pow, sin } from './dmath';
+
 export const TAU = Math.PI * 2;
 
 export function clamp(v: number, min: number, max: number): number {
@@ -14,7 +16,7 @@ export function invLerp(a: number, b: number, v: number): number {
 
 /** Frame-rate independent exponential smoothing factor. */
 export function damp(rate: number, dt: number): number {
-  return 1 - Math.exp(-rate * dt);
+  return 1 - exp(-rate * dt);
 }
 
 export function dist2(ax: number, ay: number, bx: number, by: number): number {
@@ -40,17 +42,17 @@ export function approach(v: number, target: number, step: number): number {
 }
 
 export const ease = {
-  outCubic: (t: number) => 1 - Math.pow(1 - t, 3),
+  outCubic: (t: number) => 1 - pow(1 - t, 3),
   inCubic: (t: number) => t * t * t,
   outQuad: (t: number) => 1 - (1 - t) * (1 - t),
   outBack: (t: number) => {
     const c1 = 1.70158;
     const c3 = c1 + 1;
-    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+    return 1 + c3 * pow(t - 1, 3) + c1 * pow(t - 1, 2);
   },
   outElastic: (t: number) => {
     if (t === 0 || t === 1) return t;
-    return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * ((2 * Math.PI) / 3)) + 1;
+    return pow(2, -10 * t) * sin((t * 10 - 0.75) * ((2 * Math.PI) / 3)) + 1;
   },
 };
 

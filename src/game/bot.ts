@@ -1,3 +1,4 @@
+import { cos, hypot, sin } from '../core/dmath';
 import type { Rng } from '../core/rng';
 import { REVIVE_RADIUS } from './content/coop';
 import type { ControlInput } from './types';
@@ -24,7 +25,7 @@ export function botInput(world: World, rng: Rng, opts: BotOptions = { skill: 0.6
     if (!q) return { mx: 0, my: 0, dash: false };
     const dx = q.x - p.x;
     const dy = q.y - p.y;
-    const d = Math.hypot(dx, dy);
+    const d = hypot(dx, dy);
     if (d < REVIVE_RADIUS * 0.5) return { mx: 0, my: 0, dash: false };
     return { mx: dx / d, my: dy / d, dash: false };
   }
@@ -37,7 +38,7 @@ export function botInput(world: World, rng: Rng, opts: BotOptions = { skill: 0.6
     if (e.dead) continue;
     const dx = p.x - e.x;
     const dy = p.y - e.y;
-    const d = Math.hypot(dx, dy) || 1;
+    const d = hypot(dx, dy) || 1;
     if (d > sense + e.r) continue;
     const w = ((e.boss ? 4 : e.elite ? 2 : 1) * 9000) / (d * d);
     fx += (dx / d) * w;
@@ -47,19 +48,19 @@ export function botInput(world: World, rng: Rng, opts: BotOptions = { skill: 0.6
   for (const b of world.bullets) {
     const dx = p.x - b.x;
     const dy = p.y - b.y;
-    const d = Math.hypot(dx, dy) || 1;
+    const d = hypot(dx, dy) || 1;
     if (d > 140) continue;
     // Only care about bullets heading toward us.
     const closing = -(dx * b.vx + dy * b.vy) / d;
     if (closing <= 0) continue;
     const w = (6000 * opts.skill) / (d * d);
     // Sidestep perpendicular to the bullet.
-    fx += (-b.vy / (Math.hypot(b.vx, b.vy) || 1)) * w;
-    fy += (b.vx / (Math.hypot(b.vx, b.vy) || 1)) * w;
+    fx += (-b.vy / (hypot(b.vx, b.vy) || 1)) * w;
+    fy += (b.vx / (hypot(b.vx, b.vy) || 1)) * w;
     if (d < 34) threat++;
   }
 
-  const pressure = Math.hypot(fx, fy);
+  const pressure = hypot(fx, fy);
   let reviving = false;
   if (world.coop) {
     // (a) Revive duty: go to the nearest downed teammate when it's not too hot.
@@ -68,7 +69,7 @@ export function botInput(world: World, rng: Rng, opts: BotOptions = { skill: 0.6
       let bestD = 900;
       for (const q of world.players) {
         if (q === p || !q.alive || !q.downed) continue;
-        const d = Math.hypot(q.x - p.x, q.y - p.y);
+        const d = hypot(q.x - p.x, q.y - p.y);
         if (d < bestD) {
           bestD = d;
           best = q;
@@ -85,7 +86,7 @@ export function botInput(world: World, rng: Rng, opts: BotOptions = { skill: 0.6
     }
     // (b) Cohesion: don't stray toward the leash.
     const c = world.teamCenter();
-    const dc = Math.hypot(c.x - p.x, c.y - p.y);
+    const dc = hypot(c.x - p.x, c.y - p.y);
     if (dc > 0.35 * world.maxSpan().x) {
       fx += ((c.x - p.x) / dc) * 0.8;
       fy += ((c.y - p.y) / dc) * 0.8;
@@ -98,7 +99,7 @@ export function botInput(world: World, rng: Rng, opts: BotOptions = { skill: 0.6
     let gy = 0;
     for (const pk of world.pickups) {
       if (pk.dead) continue;
-      const d = Math.hypot(pk.x - p.x, pk.y - p.y);
+      const d = hypot(pk.x - p.x, pk.y - p.y);
       const weight = pk.kind === 'xp' ? d : d * 0.5;
       if (weight < best && d < 420) {
         best = weight;
@@ -110,11 +111,11 @@ export function botInput(world: World, rng: Rng, opts: BotOptions = { skill: 0.6
     fy += gy * 1.2;
     // Gentle wander so the bot does not stand still.
     const t = world.time * 0.4;
-    fx += Math.cos(t * 1.3) * 0.25;
-    fy += Math.sin(t * 0.9) * 0.25;
+    fx += cos(t * 1.3) * 0.25;
+    fy += sin(t * 0.9) * 0.25;
   }
 
-  const m = Math.hypot(fx, fy);
+  const m = hypot(fx, fy);
   const mx = m > 0.05 ? fx / m : 0;
   const my = m > 0.05 ? fy / m : 0;
   const dash = threat > 0 && rng.chance(0.25 + 0.6 * opts.skill);
