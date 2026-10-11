@@ -147,7 +147,15 @@ try {
       if (shot.boss) {
         await bossPose(page, shot.boss);
       }
-      if (shot.coop) await spreadPilots(page);
+      if (shot.coop) {
+        await spreadPilots(page);
+        // Keep maximum zoom, but compose the captains inside the HUD bands.
+        // The QA matrix separately captures the actual maximum-leash edges.
+        await page.evaluate(() => {
+          const w = window.shardstorm.world, c = w.teamCenter();
+          for (const p of w.players) { p.x = c.x + (p.x - c.x) * .7; p.y = c.y + (p.y - c.y) * .7; }
+        });
+      }
       if (shot.storm) { await installStorm(page, 400, 60, true); await page.evaluate(() => window.__step(60)); }
       await redraw(page);
       await save(page, name, 1920, 1080, `${shot.label}; gameplay HUD; capture fixtures recorded in script`);

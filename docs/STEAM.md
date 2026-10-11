@@ -131,6 +131,20 @@ this, because outside a release it can try to exec `steam.sh`.
 
 ## 5. Store page and art
 
+Run `npm run store:assets` after installing Chromium (`npx playwright install chromium`).
+The local generator writes native-size capsules, a transparent library logo, nine gameplay
+screenshots, a background and community/app icons into the ignored `store-assets/` folder.
+Inspect `store-assets/index.html`; `captures.json` records every scenario and asserted dimension.
+It uses the game's own procedural art and bundled fonts, permits local requests only, and performs
+no upload. Optional achievement icons still require 46 files (23 unlocked + 23 locked).
+The generated `app_icon_1024.png` may be copied to `build/icon.png` before an owner release build.
+
+Sizes and text restrictions were checked against Valve's [standard assets](https://partner.steamgames.com/doc/store/assets/standard),
+[capsule rules](https://partner.steamgames.com/doc/store/assets/rules) and
+[library assets](https://partner.steamgames.com/doc/store/assets/libraryassets) on 2026-10-11.
+Re-check the upload UI before publishing. The hero contains no text; the library logo contains only
+the game name on transparency. No awards, reviews or discount claims are included.
+
 Fill in Steamworks > Store page: short and long description, tags, system requirements, price and
 the content survey. Tick these features **[check in Steamworks]**: Single-player, Shared/Split Screen
 Co-op, Remote Play Together (and Remote Play on TV / Phone / Tablet), Steam Achievements, Steam
