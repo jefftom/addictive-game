@@ -12,6 +12,8 @@ import { TAU, clamp, formatNumber, formatTime } from '../core/math';
 import { FONT_BODY, FONT_DISPLAY, FONT_MONO, PAL } from './palette';
 
 export interface HudState {
+  /** Small passive ranks remain legible at the Deck's 1280×800 resolution. */
+  minTextPx?: number;
   bestScore: number;
   touch: boolean;
   fps: number;
@@ -172,7 +174,7 @@ function soloStatus(ctx: CanvasRenderingContext2D, world: World, ui: number, st:
     ctx.font = `700 ${11 * ui}px ${FONT_BODY}`;
     ctx.fillStyle = def.color;
     ctx.fillText(def.icon, x + pbox / 2, y + pbox / 2);
-    ctx.font = `700 ${8 * ui}px ${FONT_MONO}`;
+    ctx.font = `700 ${Math.max(8 * ui, st.minTextPx ?? 0)}px ${FONT_MONO}`;
     ctx.fillStyle = '#ffffff';
     ctx.fillText(String(lvl), x + pbox - 3 * ui, y + pbox - 3 * ui);
     x += pbox + 4 * ui;
@@ -436,7 +438,7 @@ function coopPanels(ctx: CanvasRenderingContext2D, world: World, w: number, h: n
           ctx.fillStyle = 'rgba(10,8,30,0.7)'; ctx.fillRect(bx, y + 56 * ui, 13 * ui, 13 * ui);
           ctx.fillStyle = PASSIVES[id].color; ctx.font = `700 ${10 * ui}px ${FONT_BODY}`;
           ctx.fillText(PASSIVES[id].icon, bx + 6.5 * ui, y + 62.5 * ui);
-          ctx.fillStyle = '#ffffff'; ctx.font = `700 ${7 * ui}px ${FONT_MONO}`;
+          ctx.fillStyle = '#ffffff'; ctx.font = `700 ${Math.max(7 * ui, st.minTextPx ?? 0)}px ${FONT_MONO}`;
           ctx.fillText(String(p.build.passives[id]), bx + 11 * ui, y + 68 * ui); bx += 14 * ui;
         }
         if (p.build.relics.length) { ctx.fillStyle = PAL.gold; ctx.font = `700 ${10 * ui}px ${FONT_MONO}`; ctx.textAlign = 'left'; ctx.fillText(`◆${p.build.relics.length}`, bx, y + 63 * ui); }

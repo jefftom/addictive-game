@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { Rng } from '../src/core/rng';
 import { WORKSHOP } from '../src/game/content/workshop';
 import { checkAchievements } from '../src/meta/achievements';
@@ -70,6 +71,16 @@ class MemStore implements Storage {
 }
 
 describe('save', () => {
+  it('preserves the played pre-wave3 save and adds graphics defaults without changing the key or version', () => {
+    const old = JSON.parse(readFileSync(new URL('./fixtures/save-pre-wave3.json', import.meta.url), 'utf8'));
+    expect(migrate(old)).toEqual({ ...old, settings: { ...old.settings, postfx: true, gridMotion: old.settings.shake } });
+    const store = new MemStore();
+    store.setItem('shardstorm.save', JSON.stringify(old));
+    expect(loadSave(store)).toEqual(migrate(old));
+    store.setItem('shardstorm.save', '{corrupt');
+    expect(loadSave(store)).toEqual(defaultSave());
+  });
+
   it('round-trips through storage', () => {
     const store = new MemStore();
     const s = defaultSave();

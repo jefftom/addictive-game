@@ -979,6 +979,13 @@ export class PostFx {
   }
 }
 
+/** Reduced flashing keeps the low-health edge steady instead of pulsing. */
+export function lowHpPressure(hpFraction: number, time: number, flashes: boolean): number {
+  if (hpFraction >= 0.3) return 0;
+  const amount = (0.3 - hpFraction) * 1.6;
+  return flashes ? (Math.sin(time * 6) * 0.5 + 0.5) * amount : Math.min(0.15, amount);
+}
+
 /** Whole-screen flash allowance after the galaxy punch. */
 export function flashBudget(punchAlpha: number, flashes: boolean, postFx: boolean): number {
   const cap = flashes ? (postFx ? 0.35 : 0.45) : 0.15;
