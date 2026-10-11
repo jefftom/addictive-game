@@ -5,6 +5,7 @@ import { WEAPONS } from '../src/game/content/weapons';
 import { generateSectorSync, SECTORS } from '../src/render/galaxy';
 import { GEM_TIERS, PAL } from '../src/render/palette';
 import { anticipatedSector } from '../src/render/sectorwarp';
+import { FLEET_GLOW, FLEET_RIM } from '../src/render/vessels';
 import { STORY } from '../src/story/script';
 
 const linear = (c: number): number => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
@@ -21,7 +22,7 @@ function oklab(r8: number, g8: number, b8: number): number[] {
 const colors = [...new Set([
   ...Object.entries(PAL).filter(([key]) => key !== 'void' && key !== 'voidHi').flatMap(([, value]) => value),
   ...GEM_TIERS.map(x => x.color), ...Object.values(ENEMIES).map(x => x.color),
-  ...Object.values(WEAPONS).map(x => x.color), ...PLAYER_COLORS,
+  ...Object.values(WEAPONS).map(x => x.color), ...PLAYER_COLORS, FLEET_GLOW, FLEET_RIM,
 ].filter(c => /^#[\da-f]{6}$/i.test(c)))];
 const glows = colors.map(hex => {
   const n = parseInt(hex.slice(1), 16);

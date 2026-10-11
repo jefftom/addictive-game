@@ -1,8 +1,11 @@
 # Task 3a: galaxy integration evidence
 
 Local acceptance completed on 2026-10-11 (UTC). The WIP source `df7a114` was
-preserved by merge `2224fe9`, on top of task 1 follow-up `b29d9d1`. CI is pending
-on the finishing commit; the next task must wait for both workflows.
+preserved by merge `2224fe9`, on top of task 1 follow-up `b29d9d1`. Finishing
+commit `f003dc5` passed [CI](https://github.com/jefftom/addictive-game/actions/runs/38113327314)
+and all three [desktop jobs](https://github.com/jefftom/addictive-game/actions/runs/38113327313),
+including macOS arm64 tests/universal packaging and Linux Electron smoke.
+Deployment was skipped as configured. Both workflows completed before task 3b.
 
 ## Changes
 

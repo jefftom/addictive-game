@@ -1107,6 +1107,10 @@ export class World {
       score: points,
       dash: viaDash,
       pid: owner,
+      kind: e.kind,
+      angle: e.angle,
+      kx: e.kx,
+      ky: e.ky,
     });
   }
 

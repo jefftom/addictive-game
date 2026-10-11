@@ -144,6 +144,12 @@ This game is meant to be *compelling*, not *exploitative*:
 
 ### 5.1 Ships
 
+Every class has its own vessel silhouette in one fleet livery: dark alloy,
+white-cyan rims, lit canopies and running lights. Solo uses class-colour accents
+and the chosen trail cosmetic on exhaust; co-op uses each pilot's colour on
+accents, flames and exhaust. Engine thrust, banking, short ribbons and shields
+animate in play. The Hangar, lobby, Ship's Log and results use the same art.
+
 | Ship (code id) | Class · captain | Start weapon | Trait | Unlock |
 | --- | --- | --- | --- | --- |
 | **Glimmer of Hope** (`spark`) | Kindle-class light frigate · Capt. Starling | Pulse Blaster | balanced | default |
@@ -181,19 +187,20 @@ Prism Shield, Executioner, Fever, Twin Dash, Bounty Hunter.
 
 The Resplendent Lattice's crystal ships (display names; code ids in brackets):
 
-| Enemy | Shape | Behaviour | Appears |
+| Enemy | Crystal design | Behaviour | Appears |
 | --- | --- | --- | --- |
-| Drone (`drifter`) | triangle | slow chaser | 0:00 |
-| Swarm Dart (`swarmling`) | small dart | fast, packs of 6–10 | 0:30 |
-| Lancer (`dasher`) | diamond | telegraphs, then charges | 1:00 |
-| Cell (`splitter`) | circle | splits in two on death | 1:30 |
-| Gunship (`shooter`) | hexagon | keeps distance, fires slow bolts | 2:00 |
-| Bulwark Hauler (`brute`) | square | slow, tanky, heavy hitter | 2:30 |
+| Drone (`drifter`) | asymmetric jagged cluster | slow chaser | 0:00 |
+| Swarm Dart (`swarmling`) | small crystal dart | fast, packs of 6–10 | 0:30 |
+| Lancer (`dasher`) | long lance, squeezes then stretches into charge | telegraphs, then charges | 1:00 |
+| Cell / Cellet (`splitter` / `splitling`) | budding cell-ship and small offspring | splits in two on death | 1:30 |
+| Gunship (`shooter`) | aimed hull with counter-rotating hex and charging muzzles | keeps distance, fires slow bolts | 2:00 |
+| Bulwark Hauler (`brute`) | armoured hauler, plates shed at 75/50/25% HP | slow, tanky, heavy hitter | 2:30 |
 | *Elite* ("Employee of the Month") | any, gold rim | ×6 HP, drops a Cache | every ~50 s |
 
-Capital ships (bosses): **The Warden**, keeper of the First Gate (radial bursts
-+ minion rings), **The Hydra** (telegraphed charges + spirals), **The Void
-Heart**, the hive mothership and the overlord's mother (rotating spiral walls
+Capital ships (bosses): **The Warden**, a gate fortress with rotating rings
+(radial bursts + minion rings), **The Hydra**, a three-necked hunter-cruiser
+(telegraphed charges + spirals), **The Void
+Heart**, the spired hive mothership and the overlord's mother (rotating spiral walls
 + summons). Destroyed crystals leave **shards** (XP) and **cores** (Workshop
 currency). The galaxy backdrop moves through four sectors as each capital ship
 falls: the Turquoise Whorl, the Garnet Nebula, the Amethyst Abyss and the
@@ -271,11 +278,11 @@ toward 10:00).
 | Event | Visual | Audio |
 | --- | --- | --- |
 | Enemy hit | white flash 60 ms, knockback, damage number | soft tick (rate-limited) |
-| Kill | colored particle burst, score popup | pop, random pitch |
+| Kill | hull fragments flash hot, then cool into dim debris below enemies; score popups gated by crowd density | pop, random pitch |
 | Shard pickup | XP bar pulse | chime rising through a pentatonic scale |
 | Level-up | time freeze, radial burst, cards stagger in | rising arpeggio |
 | Combo tier | big call-out "×3" | whoosh + chord |
-| Dash | afterimages, speed lines | whoosh |
+| Dash | vessel afterimages, engine flames and exhaust ribbon | whoosh |
 | Perfect dash | 0.3 s slow-mo, ring, "PERFECT" | bright chime |
 | Player hurt | red vignette, strong shake | crunch |
 | Boss intro | darken, "WARNING" banner | siren |
@@ -289,6 +296,11 @@ fade in with intensity (enemy count, combo), shifting key for boss fights.
 Reduced flashing also freezes decorative galaxy motion and limits the warp
 punch to 0.09 alpha. Screen shake 0 disables warp shake. Warp and card clocks
 freeze under pause, level-up and victory dialogs, but continue through hitstop.
+
+Reduced flashing also keeps nav lights and invulnerability alpha steady, softens
+hit tints, dims shatter flashes and caps large blast discs at 0.15 alpha.
+Enemy plasma draws above ships and effects. Downed co-op pilots retain a dim
+grey-violet hull without engines, lights, shields or dash afterimages.
 
 ---
 
@@ -335,7 +347,10 @@ Enter is never a dash key, so no pilot's dash key can confirm a card (anti-mash)
   everyone on a given day.
 - **Spatial hash grid** rebuilt each tick (counting sort into typed arrays)
   for collisions with hundreds of entities.
-- **Canvas 2D renderer** with pre-rendered glow sprites and additive particles.
+- **Canvas 2D renderer** with baked vessel sprites, additive particles and a
+  structure-of-arrays shard pool capped at 1,400 pieces. Debris density and life
+  decrease in large kill storms. Shared drawing helpers keep menu and in-run
+  vessels consistent; glow and cost hooks allow later post-processing.
 - **Galaxy backdrops** generate in an inline worker, with a budgeted main-thread
   fallback. Only the current and prewarmed next sector remain cached; repeated
   tiles cover co-op zoom-out without changing the simulation.

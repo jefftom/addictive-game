@@ -3,6 +3,7 @@ import { PLAYER_COLORS, ZOOM_MAX } from '../src/game/content/coop';
 import { ENEMIES } from '../src/game/content/enemies';
 import { WEAPONS } from '../src/game/content/weapons';
 import { GEM_TIERS, PAL } from '../src/render/palette';
+import { FLEET_GLOW, FLEET_RIM } from '../src/render/vessels';
 import type { World } from '../src/game/world';
 import type { Renderer } from '../src/render/renderer';
 import { skipIntro } from './helpers';
@@ -58,7 +59,7 @@ test('full background pixels stay distinct from gameplay glows', async ({ page }
   const colors = [...new Set([
     ...Object.entries(PAL).filter(([key]) => key !== 'void' && key !== 'voidHi').flatMap(([, value]) => value),
     ...GEM_TIERS.map(x => x.color), ...Object.values(ENEMIES).map(x => x.color),
-    ...Object.values(WEAPONS).map(x => x.color), ...PLAYER_COLORS,
+    ...Object.values(WEAPONS).map(x => x.color), ...PLAYER_COLORS, FLEET_GLOW, FLEET_RIM,
   ].filter(c => /^#[\da-f]{6}$/i.test(c)))];
   await page.goto('/');
   await page.waitForFunction(() => !!(window as unknown as ProbeWindow).shardstorm);

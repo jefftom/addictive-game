@@ -57,6 +57,7 @@ test('a run starts, the world simulates and the canvas draws', async ({ page }) 
   const s = await snapshot(page);
   expect(s.time).toBeGreaterThan(1);
   expect(s.enemies).toBeGreaterThan(0);
+  expect(await page.evaluate(() => (window as unknown as { shardstorm: { renderer: { fx: { art: { size: number } } } } }).shardstorm.renderer.fx.art.size)).toBeGreaterThan(0);
   // The canvas should have drawn a non-uniform image.
   const distinct = await page.evaluate(() => {
     const c = document.getElementById('game') as HTMLCanvasElement;
@@ -105,6 +106,8 @@ test('pause, resume and ending a run show the results screen', async ({ page }) 
   await page.locator('#screen-pause [data-act="quit"]').click();
   await expect(page.locator('#screen-results')).toBeVisible();
   await expect(page.locator('#screen-results .reward-line').first()).toBeVisible();
+  await expect(page.locator('#screen-results .res-ship canvas')).toHaveCount(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   // Progress is saved.
   const runs = await page.evaluate(() => JSON.parse(localStorage.getItem('shardstorm.save') ?? '{}').stats?.runs);
   expect(runs).toBe(1);
@@ -121,6 +124,10 @@ test('menus open and close', async ({ page }) => {
   for (const screen of ['hangar', 'workshop', 'records', 'settings']) {
     await page.locator(`#screen-title [data-act="${screen}"]`).click();
     await expect(page.locator(`#screen-${screen}`)).toBeVisible();
+    if (screen === 'hangar') {
+      await expect(page.locator('#screen-hangar .ship-art canvas')).toHaveCount(5);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+    }
     await page.locator(`#screen-${screen} [data-act="back"]`).click();
     await expect(page.locator('#screen-title')).toBeVisible();
   }

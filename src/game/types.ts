@@ -288,7 +288,23 @@ export interface RunConfig {
 
 export type GameEvent =
   | { t: 'hit'; x: number; y: number; dmg: number; crit: boolean }
-  | { t: 'kill'; x: number; y: number; color: string; r: number; elite: boolean; boss: boolean; score: number; dash: boolean; pid: number }
+  | {
+      t: 'kill';
+      x: number;
+      y: number;
+      color: string;
+      r: number;
+      elite: boolean;
+      boss: boolean;
+      score: number;
+      dash: boolean;
+      pid: number;
+      /** Render-only (shatter fragments): which vessel died, its hull angle and knockback velocity at death. */
+      kind?: EnemyKind;
+      angle?: number;
+      kx?: number;
+      ky?: number;
+    }
   | { t: 'shoot'; weapon: WeaponId }
   | { t: 'pickup'; kind: PickupKind; value: number; pid: number }
   | { t: 'levelup'; level: number }
