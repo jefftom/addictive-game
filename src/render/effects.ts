@@ -92,7 +92,7 @@ export class Callouts {
     this.items = this.items.filter((c) => c.life > 0);
   }
 
-  draw(ctx: CanvasRenderingContext2D, w: number, h: number, ui: number): void {
+  draw(ctx: CanvasRenderingContext2D, w: number, h: number, ui: number, top = h * 0.3): void {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const c of this.items) {
@@ -100,7 +100,7 @@ export class Callouts {
       const inK = Math.min(1, age / 0.22);
       const outK = Math.min(1, c.life / 0.3);
       const s = ease.outBack(inK) * (1 + (1 - outK) * 0.15);
-      const y = h * 0.3 + c.slot * 56 * ui;
+      const y = top + c.slot * 56 * ui;
       const px = 40 * c.size * ui;
       ctx.save();
       ctx.globalAlpha = outK;
@@ -141,12 +141,17 @@ interface Card {
 /**
  * Sector title card after a galaxy warp, in the callout style: a small
  * kicker ("SECTOR TWO"), the sector name with a neon glow, and its subtitle.
- * Landscape: upper fifth, above the callout stack (the comms panel is at the
+ * Landscape: upper callout area, reserving space above the stack (comms is at the
  * bottom). Portrait: the comms panel docks at the top, so the card sits below
  * the ship instead.
  */
 export class SectorCard {
   private card: Card | null = null;
+
+  /** Leave room for the card's three lines and the boss callout's entrance. */
+  calloutTop(w: number, h: number, ui: number): number {
+    return h * 0.3 + (this.card && w >= h ? 80 * ui : 0);
+  }
 
   /** `subtitle` is the story's "Sector Two: past the First Gate" form; it splits into kicker and line. */
   show(title: string, subtitle: string, color: string, life = 2.8): void {
@@ -176,7 +181,7 @@ export class SectorCard {
     ctx.globalAlpha = Math.min(inK * 1.5, outK);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.translate(w / 2, h * (h > w ? 0.64 : 0.2));
+    ctx.translate(w / 2, h * (h > w ? 0.64 : 0.3));
     if (c.kicker) {
       ctx.font = `600 ${12 * ui}px ${FONT_MONO}`;
       ctx.fillStyle = 'rgba(234,242,255,0.75)';

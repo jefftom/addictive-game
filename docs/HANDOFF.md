@@ -9,7 +9,7 @@ Read `AGENTS.md` first (commands and hard rules). This file is the task list.
 | `claude/dazzling-faraday-2kxdhl` | **The game.** Draft PR #1 into `main` (`main` is an empty root commit, so the PR shows everything). Tasks 1 and 2 passed all CI jobs. A task 1 follow-up covers module-load calculations under the runtime trap, per the corrected spec. See `docs/verification/`. |
 | `wip/fix-dmath` | Merged with merge commit `c806d39`, preserving `2980d33`. Numerical review, guard hardening, e2e and single-file validation completed on the PR branch. |
 | `wip/wave3-platform` | Merged with `ec48096`, preserving `361c4c1`. Task 2 verification and the specified Deck/licence fixes are on the PR branch. |
-| `wip/wave3-gfx` | Task 3a in progress: galaxy backdrops integrated. Typecheck clean; one failing test (see 3a). |
+| `wip/wave3-gfx` | Merged at `2224fe9`, preserving `df7a114`. Task 3a local acceptance passed; awaiting CI on the finishing commit. |
 | `wip/prototypes` | Orphan branch, not code to merge: design docs (`design/coop.md`, `design/galaxy.md`, `design/steam.md`, story bible) and graphics prototypes with integration guides (`galaxy/`, `gfx/postfx/`, `gfx/grid/`, `gfx/entities/`). Read with `git show origin/wip/prototypes:<path>` or a separate worktree. |
 
 All `wip/*` branches are based on the PR branch at `3d3e601` (`wip/fix-dmath` on `ab45301`). Merge them into the PR branch (merge commits, no force-push) once each one passes every check.
@@ -63,7 +63,19 @@ in [`verification/02-platform.md`](verification/02-platform.md).
 
 The owner asked for noticeably more spectacular visuals while keeping 60 fps on a mid laptop. A 300-enemy fight must stay readable. Each prototype on `wip/prototypes` has a `NOTES.md` integration guide (API, exact renderer hook points, settings, fallbacks, timings) and before/after screenshots. Integrate them in this order, one commit (or a few) per step, with all checks green at each step.
 
-### 3a. Galaxy sector backdrops (WIP on `wip/wave3-gfx`)
+### 3a. Galaxy sector backdrops — local acceptance complete, CI pending
+
+Merged with worker permissions and the generation-field rename. Cards clear
+boss callouts on all four target viewports and freeze with warps under modals.
+361 unit tests, 46 browser tests and 49 Windows Electron checks pass. Contrast,
+coverage and frame budgets pass; details are in
+[`verification/03a-galaxy.md`](verification/03a-galaxy.md).
+
+Stable hooks for 3c/3d/3e: public `renderer.bg.galaxy`, `Background.draw` with
+explicit context/scale/target size, `galaxy.warpFx`, `onGalaxyEvent` then
+`renderer.onGalaxy`, `showSectorCard`, `genStats`/`memoryBytes`, and the pure
+`sectorwarp.ts` anticipation helper. Later draw refactors must preserve
+`opts.modal` clock freezing. The historical starting checklist follows.
 
 - **Design:** `design/galaxy.md` and `galaxy/`.
 - **Already on the branch:** `src/render/galaxy.ts`, `src/render/galaxy.worker.ts`, and hooks in the renderer, background, effects, audio and app.

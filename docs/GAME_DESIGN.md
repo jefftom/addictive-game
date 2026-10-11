@@ -134,7 +134,8 @@ This game is meant to be *compelling*, not *exploitative*:
 - No punishment for leaving (streaks only add bonuses and never take
   progress away).
 - An optional **break reminder** (default: every 60 minutes, non-blocking
-  toast) and a **reduced flashing** accessibility setting.
+  toast) and a **reduced flashing** accessibility setting, which also keeps
+  galaxy decoration static and softens the warp punch.
 - All progress is stored locally; nothing is collected about the player.
 
 ---
@@ -196,7 +197,11 @@ Heart**, the hive mothership and the overlord's mother (rotating spiral walls
 + summons). Destroyed crystals leave **shards** (XP) and **cores** (Workshop
 currency). The galaxy backdrop moves through four sectors as each capital ship
 falls: the Turquoise Whorl, the Garnet Nebula, the Amethyst Abyss and the
-Gilded Throne.
+Gilded Throne. Their turquoise spiral, crimson ringed giant, violet black hole
+and golden storm have distinct, dark colour palettes. Existing sector events
+trigger a 2.2-second visual warp and arrival card; the renderer anticipates
+forced boundaries (the next capital ship's arrival or 10:00) by 2.6 seconds. Spawning, bullets and simulation time do not
+change. The title and results backdrop returns to the Turquoise Whorl.
 
 ### 5.6 Story and presentation
 
@@ -275,11 +280,15 @@ toward 10:00).
 | Player hurt | red vignette, strong shake | crunch |
 | Boss intro | darken, "WARNING" banner | siren |
 | Boss death | hit-stop, slow-mo, huge burst | boom + fanfare |
+| Sector change | spool, tunnel, soft punch and arrival; sector card stays clear of boss callouts | rising warp tone, arrival boom |
 | Death | 1 s slow-mo, ship shatters | descending tone |
 | New best | gold stamp, confetti | fanfare |
 
 Music is procedural (WebAudio): a bass + arpeggio + drums loop whose layers
 fade in with intensity (enemy count, combo), shifting key for boss fights.
+Reduced flashing also freezes decorative galaxy motion and limits the warp
+punch to 0.09 alpha. Screen shake 0 disables warp shake. Warp and card clocks
+freeze under pause, level-up and victory dialogs, but continue through hitstop.
 
 ---
 
@@ -327,6 +336,9 @@ Enter is never a dash key, so no pilot's dash key can confirm a card (anti-mash)
 - **Spatial hash grid** rebuilt each tick (counting sort into typed arrays)
   for collisions with hundreds of entities.
 - **Canvas 2D renderer** with pre-rendered glow sprites and additive particles.
+- **Galaxy backdrops** generate in an inline worker, with a budgeted main-thread
+  fallback. Only the current and prewarmed next sector remain cached; repeated
+  tiles cover co-op zoom-out without changing the simulation.
 - **DOM overlay** for menus (crisp text, accessible focus, keyboard nav),
   the in-run comms panel and the opening crawl.
 - **Story layer** (`src/story/`): a deterministic `StoryDirector` on its own

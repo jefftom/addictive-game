@@ -1,12 +1,13 @@
 import { TAU, clamp, damp, formatNumber, lerp } from '../core/math';
 import { COMBO_TIERS } from '../game/combo';
-import { BOSS_SCHEDULE, ENEMIES, VICTORY_TIME } from '../game/content/enemies';
+import { ENEMIES } from '../game/content/enemies';
 import { WEAPONS } from '../game/content/weapons';
 import type { GameEvent } from '../game/types';
 import type { World } from '../game/world';
 import { Background, hexAlpha } from './background';
 import { Arcs, Callouts, FloatTexts, SectorCard, Shake } from './effects';
 import { SECTORS, type GalaxyEvent } from './galaxy';
+import { anticipatedSector } from './sectorwarp';
 import { drawHud, type HudState } from './hud';
 import { PAL, gemTier } from './palette';
 import { Particles } from './particles';
@@ -28,14 +29,6 @@ interface Blast {
   max: number;
   color: string;
 }
-
-/**
- * Sim seconds before a forced sector change (the next boss's entrance, or
- * victory) at which the renderer starts the warp itself, so the ~2.2 s
- * transition is over before the boss arrives. Purely visual: the sim's own
- * 'sector' event follows on schedule and finds the warp already done.
- */
-const WARP_LEAD = 2.6;
 
 const TARGET_AREA_DESKTOP = 1366 * 768;
 const TARGET_AREA_MOBILE = 470 * 980;
@@ -156,10 +149,9 @@ export class Renderer {
 
   /** Starts the warp a little before a forced sector change (render-side only; reads the clock). */
   private anticipateSector(world: World): void {
-    const s = world.sector;
-    if (s >= BOSS_SCHEDULE.length || world.gameOver) return;
-    const forcedAt = BOSS_SCHEDULE[s + 1]?.at ?? VICTORY_TIME;
-    if (world.time >= forcedAt - WARP_LEAD) this.bg.galaxy.setSector(s + 1, { warp: true });
+    if (world.gameOver) return;
+    const next = anticipatedSector(world.sector, world.time);
+    if (next !== null) this.bg.galaxy.setSector(next, { warp: true });
   }
 
   private addFlash(color: string, a: number): void {
@@ -321,19 +313,19 @@ export class Renderer {
     this.ctx.drawImage(s.canvas, -s.size / 2, -s.size / 2, s.size, s.size);
   }
 
-  draw(world: World, dt: number, opts: { attract: boolean; realDt: number }): void {
+  draw(world: World, dt: number, opts: { attract: boolean; realDt: number; modal?: boolean }): void {
     const ctx = this.ctx;
     const rdt = opts.realDt;
     // Reduced flashing also calms the backdrop (static, softer warp punch).
     this.bg.galaxy.animate = this.bg.galaxy.flashes = this.settings.flashes;
-    if (!opts.attract) this.anticipateSector(world);
+    if (!opts.attract && !opts.modal) this.anticipateSector(world);
     // Real time, so the warp and the resize debounce run through hitstop and slow-mo.
-    this.bg.galaxy.update(rdt);
+    this.bg.galaxy.update(opts.modal ? 0 : rdt);
     this.time += rdt;
     this.particles.update(dt);
     this.texts.update(dt);
     this.callouts.update(rdt);
-    this.sectorCard.update(rdt);
+    this.sectorCard.update(opts.modal ? 0 : rdt);
     this.arcs.update(dt);
     this.shake.update(rdt, this.settings.shake);
     this.flash.a = Math.max(0, this.flash.a - rdt * 2.2);
@@ -635,7 +627,7 @@ export class Renderer {
     if (!opts.attract) {
       this.hud.showFps = this.settings.showFps;
       drawHud(ctx, world, w, h, this.ui, this.hud);
-      this.callouts.draw(ctx, w, h, this.ui);
+      this.callouts.draw(ctx, w, h, this.ui, this.sectorCard.calloutTop(w, h, this.ui));
       this.sectorCard.draw(ctx, w, h, this.ui);
     }
   }

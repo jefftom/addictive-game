@@ -926,7 +926,10 @@ export class App {
     this.audio.music?.setIntensity(intensity);
     this.audio.music?.setBoss(!!w.boss);
 
-    this.renderer.draw(w, simDt, { attract: false, realDt });
+    this.renderer.draw(w, simDt, {
+      attract: false, realDt,
+      modal: this.state === 'paused' || this.state === 'levelup' || this.state === 'victory',
+    });
 
     if (this.debug.autoplay && this.state === 'levelup') {
       this.autoPickT += realDt;

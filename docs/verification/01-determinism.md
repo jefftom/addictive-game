@@ -174,3 +174,7 @@ of the same four rank-6 seeds gave minima **16.58 -> 14.12 us/tick (0.85x)**,
 within the 1.10x limit. These are shared-machine measurements, not a general
 speedup claim. The original balance evidence remains valid and no gameplay
 constants or golden values changed.
+
+The module-load follow-up at `b29d9d1` passed [CI](https://github.com/jefftom/addictive-game/actions/runs/38111218096)
+and [all desktop jobs](https://github.com/jefftom/addictive-game/actions/runs/38111218108),
+including macOS arm64, before task 3a started.

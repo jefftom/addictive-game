@@ -936,7 +936,7 @@ export const SECTORS: SectorDef[] = [
     seed: 0x7a1e,
     nebula: {
       void: '#030210', deep: '#0a0626', mid: '#1c1252', alt: '#300e4c', hi: '#3c2c8c', rim: '#b0a0ff',
-      style: 'fbm', cells: [3, 5], warp: 1.2, gain: 0.55, empty: 0.52, lanes: 0.5, rimAmt: 0.12, light: [-0.72, -0.7], satCap: 0.24, okMax: 0.2,
+      style: 'fbm', cells: [3, 5], warp: 1.2, gain: 0.55, empty: 0.52, lanes: 0.5, rimAmt: 0.12, light: [-0.72, -0.7], satCap: 0.24, okMax: 0.18,
     },
     wisps: { a: '#5a40d0', b: '#8a2ab0', amount: 0.11, sharp: 6, cover: 0.5 },
     stars: { count: 2400, tints: ['#e6e4ff', '#cfd8ff', '#ffffff', '#ecdfff'], brightness: 0.42 },

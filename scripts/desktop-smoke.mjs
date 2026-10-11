@@ -141,7 +141,8 @@ try {
     };
   });
   check('bundled fonts loaded', fonts.tektur && fonts.chakra && fonts.kode && ['Tektur', 'Chakra Petch', 'Kode Mono'].every((f) => fonts.loaded.includes(f)), JSON.stringify(fonts.loaded));
-  const remote = requests.filter((u) => !u.startsWith('app://game/') && !u.startsWith('data:'));
+  // Vite's inline worker uses a blob owned by the same local application origin.
+  const remote = requests.filter((u) => !u.startsWith('app://game/') && !u.startsWith('blob:app://game/') && !u.startsWith('data:'));
   check('no network requests outside app://game', remote.length === 0, remote.join(' '));
 
   const info = await page.evaluate(() => window.shardstormDesktop.getPlatform());
