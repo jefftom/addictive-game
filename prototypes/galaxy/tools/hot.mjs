@@ -1,0 +1,17 @@
+import { chromium } from '/home/user/addictive-game/node_modules/playwright/index.mjs';
+import { execFileSync } from 'node:child_process';
+import { createServer } from 'node:http';
+import { dirname, join, extname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { readFileSync, existsSync } from 'node:fs';
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const rd = '/home/user/addictive-game/node_modules/.bin/rolldown';
+execFileSync(rd, [join(root, 'harness.ts'), '--file', join(root, 'dist/harness.js'), '--format', 'iife', '--platform', 'browser'], { stdio: 'ignore' });
+const server = createServer((req, res) => { const f = join(root, new URL(req.url, 'http://x').pathname); if (!existsSync(f)) return res.writeHead(404), res.end(); res.writeHead(200, { 'content-type': extname(f) === '.html' ? 'text/html' : 'text/javascript' }); res.end(readFileSync(f)); }).listen(0);
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+await page.goto(`http://localhost:${server.address().port}/harness.html`);
+await page.waitForFunction(() => window.ready === true);
+await page.evaluate(() => window.api.setup(1920, 1080));
+for (let i = 0; i < 4; i++) console.log(i, JSON.stringify(await page.evaluate((i) => { window.api.render(i, { top: false, beat: 1 }); return window.api.hotSpots(0.55); }, i)));
+await browser.close(); server.close();

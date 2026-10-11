@@ -1,0 +1,53 @@
+--- a/src/render/renderer.ts
++++ b/src/render/renderer.ts
+@@ -5,6 +5,7 @@
+ import type { GameEvent } from '../game/types';
+ import type { World } from '../game/world';
+ import { Background, hexAlpha } from './background';
++import type { GalaxyEvent } from './galaxy';
+ import { Arcs, Callouts, FloatTexts, Shake } from './effects';
+ import { drawHud, type HudState } from './hud';
+ import { PAL, gemTier } from './palette';
+@@ -54,7 +55,11 @@
+   readonly callouts = new Callouts();
+   readonly arcs = new Arcs();
+   readonly shake = new Shake();
+-  private readonly bg = new Background();
++  /** Galaxy events (warp phases, sector ready) for audio / story cues. */
++  onGalaxy: ((e: GalaxyEvent) => void) | null = null;
++  readonly bg = new Background((e) => this.onGalaxy?.(e));
++  /** Debug (captures): draw only the backdrop layers this frame. */
++  debugBgOnly = false;
+   private blasts: Blast[] = [];
+   private flash = { color: '#ffffff', a: 0 };
+   private trail: { x: number; y: number }[] = [];
+@@ -140,6 +145,10 @@
+   consume(events: readonly GameEvent[], world: World): void {
+     const P = this.particles;
+     for (const ev of events) {
++      if (ev.t === 'sector') {
++        this.bg.galaxy.setSector(ev.index, { warp: true });
++        continue;
++      }
+       switch (ev.t) {
+         case 'hit':
+           P.spray(ev.x, ev.y, 0, -1, ev.crit ? '#ffd23f' : '#ffffff', ev.crit ? 4 : 1, 260, Math.PI);
+@@ -287,6 +296,7 @@
+   draw(world: World, dt: number, opts: { attract: boolean; realDt: number }): void {
+     const ctx = this.ctx;
+     const rdt = opts.realDt;
++    this.bg.galaxy.update(rdt);
+     this.time += rdt;
+     this.particles.update(dt);
+     this.texts.update(dt);
+@@ -322,6 +332,10 @@
+     const visible = (x: number, y: number, r: number) => x + r > minX && x - r < maxX && y + r > minY && y - r < maxY;
+ 
+     this.bg.draw(ctx, this.camX - this.shake.x / this.scale, this.camY - this.shake.y / this.scale, k, w, h, this.time, this.beat, this.intensity);
++    if (this.debugBgOnly) {
++      this.bg.drawVignette(ctx, w, h);
++      return;
++    }
+ 
+     const world2 = () => ctx.setTransform(k, 0, 0, k, ox, oy);
+     world2();

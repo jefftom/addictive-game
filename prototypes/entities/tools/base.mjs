@@ -1,0 +1,13 @@
+import { launch, serve, openGame, startRun, freezeWhen } from './lib.mjs';
+import { join } from 'node:path';
+const [dist, warp, out] = [process.argv[2], process.argv[3] ?? '200', process.argv[4] ?? 'base'];
+const { server, base } = await serve(dist);
+const browser = await launch();
+const page = await openGame(browser, base, `?autoplay&warp=${warp}`);
+await startRun(page);
+await page.waitForTimeout(2500);
+await page.waitForTimeout(1500); await page.evaluate(()=>{window.__freeze=true});
+const info = await page.evaluate(() => { const w = window.shardstorm.world; return { t: w.time, n: w.enemies.length, state: window.shardstorm.state, kinds: [...new Set(w.enemies.map(e=>e.kind))] }; });
+console.log(JSON.stringify(info));
+await page.screenshot({ path: join(process.cwd(), `${out}.png`) });
+await browser.close(); server.close();

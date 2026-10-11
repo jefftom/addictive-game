@@ -1,0 +1,106 @@
+{
+  "version": 2,
+  "cores": 1234,
+  "workshop": {
+    "hull": 3,
+    "might": 2
+  },
+  "ship": "vanguard",
+  "achievements": {
+    "warden": 1,
+    "survive3": 1
+  },
+  "missions": [
+    {
+      "def": "kills_run",
+      "tier": 1,
+      "target": 400,
+      "progress": 216,
+      "done": false
+    }
+  ],
+  "missionTiers": {
+    "kills_run": 1
+  },
+  "missionsCompleted": 4,
+  "rank": 8,
+  "rankXp": 47,
+  "stats": {
+    "runs": 8,
+    "kills": 1024,
+    "timePlayed": 0,
+    "bestScore": 12000,
+    "bestTime": 601,
+    "bestCombo": 0,
+    "bestLevel": 0,
+    "bossKills": 3,
+    "elites": 0,
+    "dashKills": 0,
+    "gems": 0,
+    "perfects": 0,
+    "evolutions": 0,
+    "victories": 0,
+    "coresEarned": 0,
+    "upgradesBought": 0
+  },
+  "daily": {
+    "last": "2026-10-01",
+    "streak": 3,
+    "best": {
+      "2026-10-01": 12345
+    }
+  },
+  "settings": {
+    "master": 0.8,
+    "music": 0.2,
+    "sfx": 0.8,
+    "shake": 0.4,
+    "flashes": false,
+    "damageNumbers": true,
+    "showFps": false,
+    "breakReminder": true,
+    "trail": "aurora",
+    "hardMode": false,
+    "chatter": "important"
+  },
+  "tutorialDone": true,
+  "history": [
+    {
+      "score": 12000,
+      "time": 200,
+      "date": "2026-10-01",
+      "daily": false
+    }
+  ],
+  "coop": {
+    "runs": 4,
+    "victories": 1,
+    "best": {
+      "2": 12345,
+      "4": 67890
+    },
+    "revives": 9,
+    "lastRoster": [
+      {
+        "device": "kbA",
+        "ship": "spark"
+      },
+      {
+        "device": "kbB",
+        "ship": "vanguard"
+      }
+    ]
+  },
+  "story": {
+    "introSeen": true,
+    "logUnlocked": [
+      "briefing"
+    ],
+    "logSeen": [
+      "briefing"
+    ],
+    "quipHistory": [
+      "quip-1"
+    ]
+  }
+}

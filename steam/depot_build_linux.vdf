@@ -1,0 +1,14 @@
+"DepotBuild"
+{
+	// Linux / SteamOS depot: electron-builder output release/linux-unpacked/ (shardstorm).
+	// Launch option in Steamworks: executable "shardstorm", arguments "--no-sandbox" (see docs/STEAM.md).
+	// Upload from Linux or macOS so the executable bits survive.
+	"DepotID" "1234563"
+	"FileMapping"
+	{
+		"LocalPath" "linux-unpacked/*"
+		"DepotPath" "."
+		"Recursive" "1"
+	}
+	"FileExclusion" "steam_appid.txt"
+}
