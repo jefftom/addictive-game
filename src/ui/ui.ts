@@ -142,6 +142,7 @@ export class UI {
   private pauseBtn: HTMLButtonElement;
   private topbar: HTMLElement;
   private toasts: HTMLElement;
+  private announcements: HTMLElement;
   private tutorialEl: HTMLElement;
   private resultTimers: number[] = [];
   private shownAt = 0;
@@ -178,6 +179,8 @@ export class UI {
     this.topbar = el('<div class="topbar" hidden></div>');
     document.body.appendChild(this.topbar);
     this.toasts = document.getElementById('toasts')!;
+    this.announcements = el('<div id="sr-announce" class="sr-only" role="status" aria-live="polite"></div>');
+    document.body.appendChild(this.announcements);
     this.tutorialEl = document.getElementById('tutorial')!;
 
     // Sound on hover/click for every button.
@@ -392,6 +395,13 @@ export class UI {
   private back(): void {
     if (this.settingsReturn === 'pause') this.show('pause');
     else this.cb.toTitle();
+  }
+
+  announce(text: string): void {
+    const line = document.createElement('p');
+    line.textContent = text;
+    this.announcements.appendChild(line);
+    while (this.announcements.children.length > 4) this.announcements.firstElementChild?.remove();
   }
 
   toast(text: string, icon = '◆', gold = false): void {

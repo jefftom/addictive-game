@@ -136,9 +136,10 @@ Stable hooks: `postfx`, `postFxActive`, `setPostFx`, `costTier`, `worldCanvas`,
   - An "Enhanced graphics" setting, with defaulting for old saves.
   - Point the e2e smoke test's canvas check at the world image.
 
-### 3d. WarpGrid spring-mesh grid
+### 3d. WarpGrid spring-mesh grid — complete
 
-Implemented on `wip/wave3-grid`; remote CI is the gate before 3e. See
+Merged with CI recovery at `b5ee3c3`; CI and all three desktop jobs passed
+before 3e began. CI ran 431 unit and 75 browser tests with no retries. See
 [`verification/03d-grid.md`](verification/03d-grid.md). Required grid mean
 budgets pass at 0.31–0.36 ms, including four pilots. The grid is capped at
 1,800 points; old saves inherit shake for the new Grid motion setting.
@@ -158,6 +159,27 @@ grid drawing, and co-op reserves `ZOOM_MAX` at reset; do not resize per zoom.
 - **Co-op:** the mesh must cover the view at any zoom.
 
 ### 3e. Co-op rendering and comms fade
+
+Implemented on `wip/wave3-coop-render`, after 3d's successful remote gates.
+The solo HUD call-log snapshot was committed first at `e9be690` and remains
+unchanged; desktop and Pixel 7 HUD comparisons have zero changed pixels.
+Local verification and performance caveats are in
+[`verification/03e-coop-render.md`](verification/03e-coop-render.md).
+Remote CI and all desktop jobs remain the gate before task 4 implementation.
+
+Stable interfaces: `renderer.worldToScreen` (CSS pixels, steady camera),
+`screenToWorld`, `viewZoom`, `viewOf`/`followCamera`/`CAM_INSET`,
+`coopPanelLayout`/`coopHudBand`, `PilotOverlay`/`drawPilotMark`/`leashEdges`/
+`edgeIndicator`, `EntityFx.pilotScale`, `UI.announce`/`#sr-announce`,
+`body.coop-run`, and `gameplayUnder`/`FadeGate`/`CommsPanel.updateFade`/
+`.comms.under`. The P1 migration allowlist is empty.
+
+Spec decisions S1–S5: input and DOM projection ignore shake and return CSS
+pixels (input converts to device pixels); render zoom applies the simulation's
+zoom exactly; ship/tag positioning and damage numbers use square-root zoom
+compensation while revive/magnet circles retain their world radius; the red
+low-HP edge is solo-only; the warning says **LAST CAPTAIN STANDING**.
+Dedicated co-op audio cues and a co-op attract mode remain follow-ups.
 
 - **Spec:** `design/coop.md` §3 (renderer/hud/background/app entries), §4 (consumer API), §5.4–5.5 (camera, grid coverage).
 - **Camera:** zoom-aware, following `world.teamCenter()` and `world.zoom`. Add a single `renderer.worldToScreen`, used by every layer.

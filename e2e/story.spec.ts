@@ -246,3 +246,37 @@ test('dying in Overtime after a victory never shows the boss "you lost" taunt', 
   await expect(results.locator('.res-quip')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+test('the comms panel fades while gameplay is under it, and never hides', async ({ page }) => {
+  const errors = trackErrors(page);
+  await skipIntro(page);
+  await page.goto('/');
+  await page.locator('#screen-title [data-act="play"]').click();
+  const comms = page.locator('#comms');
+  await expect(comms).toBeVisible({ timeout: 3000 });
+  await page.evaluate(() => {
+    type Harness = { world: import('../src/game/world').World; renderer: import('../src/render/renderer').Renderer };
+    const a = (window as unknown as { shardstorm: Harness }).shardstorm;
+    a.world.players[0]!.invuln = 1e9;
+    const enemy = a.world.spawnEnemy('drifter', 0, 0)!;
+    enemy.hp = enemy.maxHp = 1e9;
+    const state = window as unknown as { clearComms: boolean };
+    state.clearComms = false;
+    const pin = () => {
+      if (state.clearComms) { a.world.enemies.length = 0; a.world.bullets.length = 0; }
+      else {
+        const r = document.getElementById('comms')!.getBoundingClientRect();
+        [enemy.x, enemy.y] = a.renderer.screenToWorld(r.x + r.width / 2, r.y + r.height / 2);
+      }
+      requestAnimationFrame(pin);
+    };
+    pin();
+  });
+  await expect(comms).toHaveClass(/under/, { timeout: 1500 });
+  await expect(comms).toHaveCSS('filter', /opacity\(0\.3/, { timeout: 1500 });
+  await expect(comms).toBeVisible();
+  await page.evaluate(() => { (window as unknown as { clearComms: boolean }).clearComms = true; });
+  await expect(comms).not.toHaveClass(/under/, { timeout: 2000 });
+  await expect(comms).toBeVisible();
+  expect(errors).toEqual([]);
+});

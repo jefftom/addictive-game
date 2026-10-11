@@ -1,16 +1,18 @@
-import { TAU, clamp, damp, formatNumber, lerp } from '../core/math';
+import { TAU, clamp, formatNumber, lerp } from '../core/math';
 import { COMBO_TIERS } from '../game/combo';
-import { MAX_PLAYERS, ZOOM_MAX } from '../game/content/coop';
+import { MAX_PLAYERS, PLAYER_COLORS, PLAYER_MARKS, ZOOM_MAX } from '../game/content/coop';
 import { WEAPONS } from '../game/content/weapons';
 import type { GameEvent } from '../game/types';
 import type { World } from '../game/world';
 import { Background, hexAlpha } from './background';
 import { Arcs, Callouts, FloatTexts, SectorCard, Shake } from './effects';
-import { EntityFx } from './entityfx';
+import { followCamera, viewOf } from './camera';
+import { PilotOverlay } from './pilots';
+import { EntityFx, DOWNED_ACCENT } from './entityfx';
 import { SECTORS, type GalaxyEvent } from './galaxy';
 import { gridEvent, gridFrame } from './gridfx';
 import { anticipatedSector } from './sectorwarp';
-import { drawHud, type HudState } from './hud';
+import { coopHudBand, drawHud, type HudState } from './hud';
 import { PAL, gemTier } from './palette';
 import { Particles } from './particles';
 import { PostFx, flashBudget, type FxQuality } from './postfx';
@@ -78,6 +80,7 @@ export class Renderer {
   readonly sectorCard = new SectorCard();
   /** Starships, crystal enemies, shatter, explosions and trails. */
   readonly fx = new EntityFx();
+  private readonly pilots = new PilotOverlay();
   /** Galaxy events (warp phases, sector ready), forwarded for audio and the sector card. */
   onGalaxy: ((e: GalaxyEvent) => void) | null = null;
   readonly grid = new WarpGrid();
@@ -119,7 +122,7 @@ export class Renderer {
       showFps: false,
       fxLabel: '2D',
       xpFlash: 0,
-      hpFlash: 0,
+      hpFlash: Array<number>(MAX_PLAYERS).fill(0),
       comboBreak: null,
       dashButton: { x: 0, y: 0, r: 0 },
       stick: { active: false, ox: 0, oy: 0, x: 0, y: 0 },
@@ -180,10 +183,21 @@ export class Renderer {
   }
 
   private view(tw: number, th: number, s: number): { k: number; ox: number; oy: number } {
-    const k = this.scale * this.dpr * s / this.camZoom;
-    return { k, ox: tw / 2 - this.camX * k + this.shake.x * this.dpr * s,
-      oy: th / 2 - this.camY * k + this.shake.y * this.dpr * s };
+    return viewOf(this.camX, this.camY, this.camZoom, this.scale, this.dpr, tw, th, s, this.shake.x, this.shake.y);
   }
+
+  /** Steady camera, in CSS pixels: input and DOM overlays do not shake. */
+  worldToScreen(x: number, y: number): [number, number] {
+    const v = viewOf(this.camX, this.camY, this.camZoom, this.scale, this.dpr, this.w, this.h, 1, 0, 0);
+    return [(x * v.k + v.ox) / this.dpr, (y * v.k + v.oy) / this.dpr];
+  }
+
+  screenToWorld(cssX: number, cssY: number): [number, number] {
+    const v = viewOf(this.camX, this.camY, this.camZoom, this.scale, this.dpr, this.w, this.h, 1, 0, 0);
+    return [(cssX * this.dpr - v.ox) / v.k, (cssY * this.dpr - v.oy) / v.k];
+  }
+
+  get viewZoom(): number { return this.camZoom; }
 
   setPostFx(on: boolean): void {
     if (on && !this.fxWanted) this.postfx?.reenable();
@@ -251,8 +265,11 @@ export class Renderer {
     this.blasts = [];
     this.flash.a = 0;
     this.shake.trauma = 0;
-    this.camX = world.player.x;
-    this.camY = world.player.y;
+    const c = world.teamCenter();
+    this.camX = c.x; this.camY = c.y;
+    this.camZoom = world.coop ? clamp(world.zoom, 1, ZOOM_MAX) : 1;
+    this.pilots.reset();
+    this.hud.hpFlash.fill(0);
     this.hud.comboBreak = null;
     this.sectorCard.clear();
     // A new world (run start, a ?warp fast-forward, the attract mode) shows its sector without a warp.
@@ -292,6 +309,9 @@ export class Renderer {
   /** Turns simulation events into visual feedback. */
   consume(events: readonly GameEvent[], world: World): void {
     const P = this.particles;
+    const at = (pid: number) => world.players[pid] ?? world.players[0]!;
+    const coop = world.coop;
+    const center = world.teamCenter(), cx = center.x, cy = center.y;
     for (const ev of events) {
       gridEvent(this.grid, ev, world);
       this.fx.onEvent(ev, world, P);
@@ -323,23 +343,24 @@ export class Renderer {
         case 'pickup':
           if (ev.kind === 'xp') this.hud.xpFlash = Math.min(1, this.hud.xpFlash + 0.12);
           else if (ev.kind === 'heart') {
-            P.burst(world.player.x, world.player.y, '#6dff8a', 16, 160);
+            P.burst(at(ev.pid).x, at(ev.pid).y, '#6dff8a', 16, 160);
           } else if (ev.kind === 'core') {
-            this.texts.add(world.player.x, world.player.y - 20, `+${ev.value} ◈`, PAL.gold, 14, 0.9, true);
+            this.texts.add(at(ev.pid).x, at(ev.pid).y - 20, `+${ev.value} ◈`, PAL.gold, 14, 0.9, true);
           } else if (ev.kind === 'cache') {
-            P.burst(world.player.x, world.player.y, PAL.gold, 40, 300, 0.8, 3);
-            this.callouts.add('CACHE', PAL.gold, 0.8, 'Bonus upgrade');
+            P.burst(at(ev.pid).x, at(ev.pid).y, PAL.gold, 40, 300, 0.8, 3);
+            this.callouts.add('CACHE', PAL.gold, 0.8, coop ? `P${ev.pid + 1} · Bonus upgrade` : 'Bonus upgrade');
           }
           break;
         case 'levelup':
-          P.ring(world.player.x, world.player.y, 30, PAL.xp, 36);
+          if (coop) { for (const p of world.players) if (p.alive) P.ring(p.x, p.y, 30, PAL.xp, 36); }
+          else P.ring(at(0).x, at(0).y, 30, PAL.xp, 36);
           this.hud.xpFlash = 1;
           break;
         case 'dash':
           P.spray(ev.x, ev.y, -ev.dx, -ev.dy, '#c9b8ff', 14, 380, 0.45);
           break;
         case 'dashready':
-          P.ring(world.player.x, world.player.y, 18, '#c9b8ff', 12);
+          P.ring(at(ev.pid).x, at(ev.pid).y, 18, '#c9b8ff', 12);
           break;
         case 'perfect':
           this.wave(ev.x, ev.y, 170, 16, 0.45, 0.25, 22);
@@ -352,21 +373,31 @@ export class Renderer {
         case 'downed':
           this.wave(ev.x, ev.y, 420, 27, 0.9, 0.2, 50);
           this.hurtAberration();
+          P.burst(ev.x, ev.y, DOWNED_ACCENT, 40, 260, 0.8, 3);
+          this.shake.add(0.4);
+          this.callouts.add(`${PLAYER_MARKS[ev.pid % 4]} P${ev.pid + 1} DOWN`, PLAYER_COLORS[ev.pid % 4]!, 0.9, `Fly over P${ev.pid + 1} to revive`, 2);
+          break;
+        case 'revived':
+          P.ring(ev.x, ev.y, 34, PLAYER_COLORS[ev.pid % 4]!, 30);
+          this.callouts.add(`${PLAYER_MARKS[ev.pid % 4]} P${ev.pid + 1} BACK IN THE FIGHT`, PLAYER_COLORS[ev.pid % 4]!, 0.8, `Revived by P${ev.by + 1}`, 1.6);
+          break;
+        case 'laststand':
+          this.callouts.add('LAST CAPTAIN STANDING', '#ff6b8a', 0.9, `${PLAYER_MARKS[ev.pid % 4]} P${ev.pid + 1} · revive your squad`, 2.2);
           break;
         case 'hurt':
           this.hurtAberration();
           this.shake.add(0.45);
-          this.addFlash('#ff2d55', 0.35);
-          this.hud.hpFlash = 1;
+          this.addFlash('#ff2d55', coop ? 0.2 : 0.35);
+          this.hud.hpFlash[ev.pid] = 1;
           P.burst(ev.x, ev.y, '#ff4d6d', 14, 240, 0.4);
           break;
         case 'shieldbreak':
-          this.callouts.add('SHIELD', '#7ff9ff', 0.7, 'Blocked a hit', 0.8);
+          this.callouts.add('SHIELD', '#7ff9ff', 0.7, (coop ? `P${ev.pid + 1} · ` : '') + 'Blocked a hit', 0.8);
           P.ring(ev.x, ev.y, 24, '#7ff9ff', 30);
           this.shake.add(0.25);
           break;
         case 'heal':
-          if (ev.amount >= 3) this.texts.add(world.player.x, world.player.y - 18, `+${Math.round(ev.amount)}`, '#6dff8a', 13, 0.8, true);
+          if (ev.amount >= 3) this.texts.add(at(ev.pid).x, at(ev.pid).y - 18, `+${Math.round(ev.amount)}`, '#6dff8a', 13, 0.8, true);
           break;
         case 'combo':
           this.callouts.add(`×${ev.mult}`, PAL.combo[ev.tier] ?? '#fff', 1.15, `${COMBO_TIERS[ev.tier]} COMBO`, 1);
@@ -376,7 +407,7 @@ export class Renderer {
           break;
         case 'milestone':
           this.callouts.add(ev.name, PAL.gold, 0.9, `${ev.combo} COMBO`, 1.3);
-          P.ring(world.player.x, world.player.y, 40, PAL.gold, 40);
+          P.ring(cx, cy, 40, PAL.gold, 40);
           this.shake.add(0.2);
           break;
         case 'boss':
@@ -402,7 +433,7 @@ export class Renderer {
           this.addFlash('#ff2d55', 0.4);
           break;
         case 'revive':
-          this.callouts.add('SECOND WIND', '#ffffff', 1, 'Revived', 1.5);
+          this.callouts.add('SECOND WIND', '#ffffff', 1, (coop ? `P${ev.pid + 1} · ` : '') + 'Revived', 1.5);
           this.addFlash('#ffffff', 0.5);
           break;
         case 'ring':
@@ -434,15 +465,15 @@ export class Renderer {
           break;
         case 'magnet':
           this.callouts.add('MAGNET', PAL.xp, 0.7, '', 0.8);
-          P.ring(world.player.x, world.player.y, 40, PAL.xp, 30);
+          P.ring(cx, cy, 40, PAL.xp, 30);
           break;
         case 'newbest':
           this.callouts.add('NEW BEST!', PAL.gold, 1.1, 'Keep going', 1.6);
-          P.confetti(world.player.x, world.player.y - 40, PAL.combo, 70);
+          P.confetti(cx, cy - 40, PAL.combo, 70);
           break;
         case 'victory':
           this.callouts.add('10:00 SURVIVED', PAL.gold, 1.1, 'VICTORY', 2.5);
-          P.confetti(world.player.x, world.player.y - 40, PAL.combo, 120);
+          P.confetti(cx, cy - 40, PAL.combo, 120);
           break;
         case 'shoot':
         case 'enemyshoot':
@@ -478,18 +509,15 @@ export class Renderer {
     this.shake.update(rdt, this.settings.shake);
     this.flash.a = Math.max(0, this.flash.a - rdt * 2.2);
     this.hud.xpFlash = Math.max(0, this.hud.xpFlash - rdt * 3);
-    this.hud.hpFlash = Math.max(0, this.hud.hpFlash - rdt * 4);
+    for (let i = 0; i < MAX_PLAYERS; i++) this.hud.hpFlash[i] = Math.max(0, this.hud.hpFlash[i]! - rdt * 4);
     if (this.hud.comboBreak) this.hud.comboBreak.t -= rdt * 0.8;
     for (const b of this.blasts) b.life -= dt;
     this.blasts = this.blasts.filter((b) => b.life > 0);
 
-    const p = world.player;
-    // Camera with slight look-ahead.
-    const tx = p.x + p.vx * 0.12;
-    const ty = p.y + p.vy * 0.12;
-    const cd = damp(7, rdt);
-    this.camX += (tx - this.camX) * cd;
-    this.camY += (ty - this.camY) * cd;
+    const p = world.players[0]!;
+    this.camZoom = world.coop ? clamp(world.zoom, 1, ZOOM_MAX) : 1;
+    const pad = !opts.attract && world.coop ? coopHudBand(this.ui) * this.camZoom / (this.scale * this.dpr) : 0;
+    followCamera(this, world, rdt, this.cssW / 2 / this.scale * this.camZoom, this.cssH / 2 / this.scale * this.camZoom, pad);
 
     const fxMode = this.fxOn && this.postfx !== null;
     const w = fxMode ? this.worldCanvas.width : this.w;
@@ -521,7 +549,7 @@ export class Renderer {
     G.update(dt, this.camX, this.camY, flowing ? Math.max(dt, Math.min(rdt, 0.05)) : 0);
     const gridUpdateMs = performance.now() - gridStart;
 
-    this.bg.draw(ctx, this.camX - this.shake.x / this.scale, this.camY - this.shake.y / this.scale, k, w, h, this.time, this.beat, this.intensity);
+    this.bg.draw(ctx, (w / 2 - ox) / k, (h / 2 - oy) / k, k, w, h, this.time, this.beat, this.intensity);
 
     const gridDrawStart = performance.now();
     G.draw(ctx, (w / 2 - ox) / k, (h / 2 - oy) / k, k, w, h,
@@ -666,19 +694,17 @@ export class Renderer {
     ctx.globalCompositeOperation = 'source-over';
 
     // ── Player starships ──
+    const pilotScale = Math.sqrt(this.camZoom);
+    fx.pilotScale = pilotScale;
     fx.drawPlayers(ctx, world, dt, rdt, this.settings.trail);
     world2();
-    if (p.alive) {
-      // Magnet radius hint (very faint).
-      if (!opts.attract) {
-        ctx.globalAlpha = 0.04;
-        ctx.strokeStyle = PAL.xp;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, world.stats.magnet, 0, TAU);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-      }
+    // Magnet hints retain their true world radius.
+    if (!opts.attract) for (const pilot of world.players) {
+      if (world.coop ? !world.isUp(pilot) : !pilot.alive) continue;
+      ctx.globalAlpha = 0.04;
+      ctx.strokeStyle = PAL.xp; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(pilot.x, pilot.y, pilot.stats.magnet, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = 1;
     }
 
     // ── Enemy plasma LAST in the world: threats are never hidden by anything ──
@@ -695,14 +721,14 @@ export class Renderer {
     }
     const v = this.view(HW, HH, 1);
     hud.setTransform(v.k, 0, 0, v.k, v.ox, v.oy);
-    this.texts.draw(hud, 1);
+    this.texts.draw(hud, pilotScale);
     hud.setTransform(1, 0, 0, 1, 0, 0);
     hud.globalAlpha = 1;
 
     let lowHp = 0;
-    if (!opts.attract) for (const pilot of world.players) {
-      const hpK = pilot.hp / pilot.stats.maxHp;
-      if (world.isUp(pilot) && hpK < 0.3) lowHp = Math.max(lowHp, (Math.sin(this.time * 6) * 0.5 + 0.5) * (0.3 - hpK) * 1.6);
+    if (!opts.attract && !world.coop) {
+      const hpK = p.hp / p.stats.maxHp;
+      if (world.isUp(p) && hpK < 0.3) lowHp = (Math.sin(this.time * 6) * 0.5 + 0.5) * (0.3 - hpK) * 1.6;
     }
     const galaxy = this.bg.galaxy;
     const punchA = warpFx.punch * (this.settings.flashes ? 0.35 : 0.09) * galaxy.punchScale;
@@ -741,6 +767,8 @@ export class Renderer {
     if (!opts.attract) {
       this.hud.showFps = this.settings.showFps;
       this.hud.fxLabel = this.fxOn && this.postfx ? `FX q${this.postfx.quality}${this.worldScale < 1 ? ' ×' + this.worldScale : ''}` : this.fxWanted && this.postfx?.autoOff ? '2D (auto)' : '2D';
+      if (world.coop) this.pilots.draw(hud, world, v, HW, HH, this.ui, pilotScale, this.time, this.settings.flashes);
+      this.hud.view = v; this.hud.flashes = this.settings.flashes;
       drawHud(hud, world, HW, HH, this.ui, this.hud);
       this.callouts.draw(hud, HW, HH, this.ui, this.sectorCard.calloutTop(HW, HH, this.ui));
       this.sectorCard.draw(hud, HW, HH, this.ui);

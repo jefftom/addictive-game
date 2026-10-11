@@ -24,7 +24,7 @@ import { StoryDirector, bossIdFromName, pickBossVictoryTaunt, pickGameOverQuip, 
 import { checkLogbook, markIntroSeen, recordQuip } from './story/logbook';
 import { StoryRunLink } from './story/runlink';
 import type { BossId } from './story/script';
-import { CommsPanel, chatterAllows } from './ui/comms';
+import { CommsPanel, chatterAllows, gameplayUnder } from './ui/comms';
 import { CoopLobby, type RosterDevice, type RosterEntry } from './ui/lobby';
 import { UI, pilotLabel, type DesktopUi, type LobbyMouseAction, type ResultsStory } from './ui/ui';
 
@@ -34,11 +34,6 @@ const MAX_STEPS = 5;
 const BOT_PICK_DELAY = 0.6;
 
 type State = 'title' | 'lobby' | 'playing' | 'levelup' | 'paused' | 'victory' | 'dying' | 'results';
-
-/** Optional zoom-aware projection (the co-op renderer adds it in wave 3). */
-interface Projecting {
-  worldToScreen?: (x: number, y: number) => [number, number];
-}
 
 const isRosterDevice = (d: string): d is RosterDevice => d === 'bot' || (INPUT_SLOTS as readonly string[]).includes(d);
 
@@ -276,11 +271,8 @@ export class App {
 
   /** A pilot's on-screen position in device px (mouse steering). */
   private screenPos(p: Player): [number, number] {
-    const r = this.renderer as Renderer & Projecting;
-    if (typeof r.worldToScreen === 'function') return r.worldToScreen(p.x, p.y);
-    // Fallback for a renderer without zoom support (the solo camera): zoom 1.
-    const k = r.scale * r.dpr;
-    return [(p.x - r.camX) * k + r.w / 2, (p.y - r.camY) * k + r.h / 2];
+    const [x, y] = this.renderer.worldToScreen(p.x, p.y);
+    return [x * this.renderer.dpr, y * this.renderer.dpr];
   }
 
   /**
@@ -357,6 +349,7 @@ export class App {
     this.dailyRun = daily;
     this.dailyDate = info.date;
     this.coop = squad ? { roster: squad } : null;
+    document.body.classList.toggle('coop-run', !!squad);
     this.lobby = null;
     this.currentPick = null;
     this.clearLoss();
@@ -550,6 +543,7 @@ export class App {
   }
 
   private endRun(): void {
+    document.body.classList.remove('coop-run');
     const w = this.world;
     if (!w) return;
     const result = resultFromWorld(w);
@@ -618,6 +612,7 @@ export class App {
   }
 
   private toTitle(): void {
+    document.body.classList.remove('coop-run');
     this.storyLink.endRun();
     this.comms.clear();
     this.state = 'title';
@@ -788,12 +783,12 @@ export class App {
     this.startRun(false, roster);
   }
 
-  /** Co-op feedback the renderer does not show yet: downs, revives, last stand. */
-  private coopToasts(events: readonly GameEvent[]): void {
+  /** Visible feedback is in-world; keep every cue available to screen readers. */
+  private announceCoop(events: readonly GameEvent[]): void {
     for (const ev of events) {
-      if (ev.t === 'downed') this.ui.toast(`${pilotLabel(ev.pid)} is down! Fly over ${pilotLabel(ev.pid)} to revive.`, '✚');
-      else if (ev.t === 'revived') this.ui.toast(`${pilotLabel(ev.pid)} is back in the fight (thanks, ${pilotLabel(ev.by)})`, '✦', true);
-      else if (ev.t === 'laststand') this.ui.toast(`Last captain standing: ${pilotLabel(ev.pid)}`, '⚠');
+      if (ev.t === 'downed') this.ui.announce(`${pilotLabel(ev.pid)} is down. Fly over ${pilotLabel(ev.pid)} to revive.`);
+      else if (ev.t === 'revived') this.ui.announce(`${pilotLabel(ev.pid)} is back in the fight, thanks to ${pilotLabel(ev.by)}.`);
+      else if (ev.t === 'laststand') this.ui.announce(`Last captain standing: ${pilotLabel(ev.pid)}.`);
     }
   }
 
@@ -919,13 +914,18 @@ export class App {
     }
 
     // Feedback.
-    if (this.coop) this.coopToasts(w.events);
+    if (this.coop) this.announceCoop(w.events);
     this.renderer.consume(w.events, w);
     this.audio.consume(w.events);
     this.storyLink.frame(w, w.events);
     w.events.length = 0;
     if (this.state === 'playing' || this.state === 'dying') this.story.update(realDt);
     this.presentComms();
+    this.comms.updateFade(realDt, (r) => {
+      const [minX, minY] = this.renderer.screenToWorld(r.left, r.top);
+      const [maxX, maxY] = this.renderer.screenToWorld(r.right, r.bottom);
+      return gameplayUnder(w, minX, minY, maxX, maxY);
+    });
     const intensity = clamp(w.enemies.length / 220 + w.combo / 250 + (w.boss ? 0.3 : 0), 0, 1);
     this.renderer.intensity = intensity;
     this.audio.music?.setIntensity(intensity);

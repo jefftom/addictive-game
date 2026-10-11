@@ -2,7 +2,11 @@
 
 Based on `c3a1ca62a535de053830b1c6c549574860c39121`, after task 3c's CI
 and all desktop jobs passed. Work branch: `wip/wave3-grid`.
-Local verification: 2026-10-11. Remote CI remains the gate before 3e.
+Local verification: 2026-10-11. Merged with CI recovery at `b5ee3c3`.
+[CI](https://github.com/jefftom/addictive-game/actions/runs/38120705765)
+passed 431 unit and 75 browser tests (9 device exclusions, no retries).
+[Desktop](https://github.com/jefftom/addictive-game/actions/runs/38120705705)
+passed on Linux, Windows and macOS, including all 49 Linux smoke checks.
 
 ## Implementation and review
 

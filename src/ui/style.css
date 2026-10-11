@@ -1803,6 +1803,7 @@ select {
 /* ───────── Story: in-run comms ───────── */
 
 .comms {
+  transition: filter 0.18s ease-out;
   --cc: var(--ice);
   /* Scales with the canvas HUD on large screens (never below 1:1). */
   --cs: max(1px, var(--u));
@@ -1828,6 +1829,8 @@ select {
   clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
   text-shadow: 0 1px 2px rgba(4, 3, 12, 0.9);
 }
+
+.comms.under { filter: opacity(0.3); }
 
 .comms.in {
   animation: comms-in 0.3s cubic-bezier(0.2, 0.9, 0.25, 1.1) both;
@@ -2074,6 +2077,19 @@ body.comms-on #tutorial {
 
   body.comms-on #tutorial {
     bottom: max(110px, calc(env(safe-area-inset-bottom, 0px) + 110px));
+  }
+}
+
+body.coop-run #toasts {
+  bottom: calc(max(20px, env(safe-area-inset-bottom, 0px)) + 100 * var(--u));
+}
+
+@media (orientation: landscape) {
+  body.coop-run .comms {
+    bottom: calc(max(16px, env(safe-area-inset-bottom, 0px) + 8px) + 100 * var(--u));
+  }
+  body.coop-run.comms-on #toasts {
+    bottom: calc(max(132px, env(safe-area-inset-bottom, 0px) + 124px) + 100 * var(--u));
   }
 }
 
@@ -3041,6 +3057,7 @@ button.crawl-skip:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .comms { transition: none; }
   *,
   *::before,
   *::after {

@@ -166,10 +166,12 @@ test('two keyboard pilots join, fly independently, pick in turn, pause and finis
   await onWorld(page, 'const p = w.players[1]; p.invuln = 0; p.dashT = 0; p.shieldReady = false; p.revivesUsed = 99; w.hurtPlayer(1e9, p.x, p.y, 1);');
   await expect.poll(async () => (await snap(page)).pilots[1]!.downed).toBe(true);
   expect((await snap(page)).state).toBe('playing');
-  await expect(page.locator('#toasts')).toContainText('P2 is down');
+  await expect(page.locator('#sr-announce')).toContainText('P2 is down');
+  await expect.poll(() => page.evaluate(() => (window as unknown as { shardstorm: { renderer: { callouts: { items: { text: string }[] } } } }).shardstorm.renderer.callouts.items.map(c => c.text))).toContain('● P2 DOWN');
+  await expect(page.locator('#toasts')).not.toContainText('is down');
   await onWorld(page, 'const [p1, p2] = w.players; p1.x = p2.x + 10; p1.y = p2.y;');
   await expect.poll(async () => (await snap(page)).pilots[1]!.downed, { timeout: 8000 }).toBe(false);
-  await expect(page.locator('#toasts')).toContainText('back in the fight');
+  await expect(page.locator('#sr-announce')).toContainText('P2 is back in the fight');
 
   // End the run: co-op results, and the squad record is saved apart from solo.
   await onWorld(page, 'w.score = 2468;');

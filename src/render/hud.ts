@@ -1,4 +1,8 @@
 import { COMBO_MULTS, COMBO_TIERS, comboMult, comboTier } from '../game/combo';
+import { PLAYER_COLORS } from '../game/content/coop';
+import { SHIPS } from '../game/content/ships';
+import type { View } from './camera';
+import { drawPilotMark } from './pilots';
 import { ENEMIES } from '../game/content/enemies';
 import { PASSIVES } from '../game/content/passives';
 import { WEAPONS } from '../game/content/weapons';
@@ -14,7 +18,9 @@ export interface HudState {
   showFps: boolean;
   fxLabel: string;
   xpFlash: number;
-  hpFlash: number;
+  hpFlash: number[];
+  view?: View;
+  flashes?: boolean;
   comboBreak: { value: number; t: number } | null;
   dashButton: { x: number; y: number; r: number };
   stick: { active: boolean; ox: number; oy: number; x: number; y: number };
@@ -39,10 +45,20 @@ function bar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
 export function drawHud(ctx: CanvasRenderingContext2D, world: World, w: number, h: number, ui: number, st: HudState): void {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = 'source-over';
-  const m = 16 * ui;
-  const p = world.player;
-  const stats = world.stats;
+  if (world.coop) drawCoopHud(ctx, world, w, h, ui, st);
+  else drawSoloHud(ctx, world, w, h, ui, st);
+}
 
+function drawSoloHud(ctx: CanvasRenderingContext2D, world: World, w: number, h: number, ui: number, st: HudState): void {
+  xpBar(ctx, world, w, ui, st);
+  soloStatus(ctx, world, ui, st);
+  topCentre(ctx, world, w, ui);
+  topRight(ctx, world, w, ui, st);
+  touchControls(ctx, world, ui, st);
+  fpsLine(ctx, world, ui, st, h - 8 * ui);
+}
+
+function xpBar(ctx: CanvasRenderingContext2D, world: World, w: number, ui: number, st: HudState): void {
   // ── XP bar (full width, top) ──
   const xpH = 6 * ui;
   bar(ctx, 0, 0, w, xpH, world.xp / world.xpNext, PAL.xp, 'rgba(69,232,255,0.12)', 12 * ui);
@@ -51,6 +67,11 @@ export function drawHud(ctx: CanvasRenderingContext2D, world: World, w: number, 
     ctx.fillRect(0, 0, w, xpH);
   }
 
+}
+
+function soloStatus(ctx: CanvasRenderingContext2D, world: World, ui: number, st: HudState): void {
+  const m = 16 * ui, xpH = 6 * ui;
+  const p = world.players[0]!, stats = p.stats;
   // ── Top-left: level, HP, dash ──
   let y = xpH + 12 * ui;
   ctx.textBaseline = 'top';
@@ -65,8 +86,8 @@ export function drawHud(ctx: CanvasRenderingContext2D, world: World, w: number, 
   const hpK = p.hp / stats.maxHp;
   const low = hpK < 0.3;
   bar(ctx, m, y, hpW, hpH, hpK, low ? '#ff2d55' : PAL.hp, PAL.hpBack, 10 * ui);
-  if (st.hpFlash > 0) {
-    ctx.fillStyle = `rgba(255,255,255,${st.hpFlash})`;
+  if (st.hpFlash[0]! > 0) {
+    ctx.fillStyle = `rgba(255,255,255,${st.hpFlash[0]!})`;
     ctx.fillRect(m, y, hpW, hpH);
   }
   ctx.font = `700 ${10 * ui}px ${FONT_MONO}`;
@@ -109,7 +130,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, world: World, w: number, 
   ctx.font = `600 ${10 * ui}px ${FONT_BODY}`;
   ctx.fillStyle = PAL.textDim;
   ctx.fillText(st.touch ? 'DASH' : 'SPACE  DASH', m + stats.dashCharges * pip * 2.6 + 4 * ui, y + pip * 0.45);
-  if (world.hasRelic('shield')) {
+  if (world.hasRelic('shield', p.pid)) {
     ctx.fillStyle = p.shieldReady ? '#7ff9ff' : 'rgba(127,249,255,0.3)';
     ctx.fillText(p.shieldReady ? '⬡ SHIELD' : `⬡ ${Math.ceil(20 - p.shieldT)}s`, m + 110 * ui, y + pip * 0.45);
   }
@@ -118,7 +139,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, world: World, w: number, 
   // Build icons.
   const box = 26 * ui;
   let x = m;
-  for (const wpn of world.build.weapons) {
+  for (const wpn of p.build.weapons) {
     const def = WEAPONS[wpn.id];
     ctx.fillStyle = 'rgba(10,8,30,0.7)';
     ctx.fillRect(x, y, box, box);
@@ -140,9 +161,9 @@ export function drawHud(ctx: CanvasRenderingContext2D, world: World, w: number, 
   x = m;
   y += box + 9 * ui;
   const pbox = 19 * ui;
-  for (const id of Object.keys(world.build.passives) as PassiveId[]) {
+  for (const id of Object.keys(p.build.passives) as PassiveId[]) {
     const def = PASSIVES[id];
-    const lvl = world.build.passives[id] ?? 0;
+    const lvl = p.build.passives[id] ?? 0;
     ctx.fillStyle = 'rgba(10,8,30,0.7)';
     ctx.fillRect(x, y, pbox, pbox);
     ctx.strokeStyle = 'rgba(255,255,255,0.18)';
@@ -156,7 +177,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, world: World, w: number, 
     ctx.fillText(String(lvl), x + pbox - 3 * ui, y + pbox - 3 * ui);
     x += pbox + 4 * ui;
   }
-  for (const id of world.build.relics) {
+  for (const id of p.build.relics) {
     ctx.font = `700 ${12 * ui}px ${FONT_BODY}`;
     ctx.fillStyle = PAL.gold;
     ctx.fillText('◆', x + pbox / 2, y + pbox / 2);
@@ -164,6 +185,10 @@ export function drawHud(ctx: CanvasRenderingContext2D, world: World, w: number, 
     void id;
   }
 
+}
+
+function topCentre(ctx: CanvasRenderingContext2D, world: World, w: number, ui: number): void {
+  const xpH = 6 * ui;
   // ── Top-centre: timer / boss ──
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
@@ -188,6 +213,10 @@ export function drawHud(ctx: CanvasRenderingContext2D, world: World, w: number, 
     }
   }
 
+}
+
+function topRight(ctx: CanvasRenderingContext2D, world: World, w: number, ui: number, st: HudState): void {
+  const m = 16 * ui, xpH = 6 * ui;
   // ── Top-right: score, best, combo ──
   const rx = w - m - st.pauseInset;
   ctx.textAlign = 'right';
@@ -222,7 +251,7 @@ export function drawHud(ctx: CanvasRenderingContext2D, world: World, w: number, 
     ctx.font = `700 ${14 * ui}px ${FONT_MONO}`;
     ctx.fillStyle = '#ffffff';
     ctx.fillText(`${world.combo} COMBO`, rx, cy + 40 * ui);
-    bar(ctx, rx - 120 * ui, cy + 60 * ui, 120 * ui, 3 * ui, world.comboTimer / stats.comboWindow, color, 'rgba(255,255,255,0.1)');
+    bar(ctx, rx - 120 * ui, cy + 60 * ui, 120 * ui, 3 * ui, world.comboTimer / world.comboWindow(), color, 'rgba(255,255,255,0.1)');
     if (tier < COMBO_TIERS.length - 1) {
       ctx.font = `600 ${10 * ui}px ${FONT_MONO}`;
       ctx.fillStyle = PAL.textDim;
@@ -243,6 +272,10 @@ export function drawHud(ctx: CanvasRenderingContext2D, world: World, w: number, 
     ctx.fillText(`OVERDRIVE ${world.overdriveT.toFixed(1)}`, rx, cy + 104 * ui);
   }
 
+}
+
+function touchControls(ctx: CanvasRenderingContext2D, world: World, ui: number, st: HudState): void {
+  const p = world.players[0]!, stats = p.stats;
   // ── Touch controls ──
   if (st.touch) {
     const db = st.dashButton;
@@ -279,12 +312,137 @@ export function drawHud(ctx: CanvasRenderingContext2D, world: World, w: number, 
     }
   }
 
+}
+
+function fpsLine(ctx: CanvasRenderingContext2D, world: World, ui: number, st: HudState, bottom: number): void {
+  const m = 16 * ui;
   if (st.showFps) {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
     ctx.font = `600 ${10 * ui}px ${FONT_MONO}`;
     ctx.fillStyle = PAL.textDim;
-    ctx.fillText(`${Math.round(st.fps)} FPS · ${world.enemies.length} enemies · ${st.fxLabel}`, m, h - 8 * ui);
+    ctx.fillText(`${Math.round(st.fps)} FPS · ${world.enemies.length} enemies · ${st.fxLabel}`, m, bottom);
+  }}
+
+export interface CoopPanel { x: number; y: number; w: number; h: number; mode: 'full' | 'mid' | 'compact' }
+
+export function coopHudBand(ui: number): number { return 92 * ui; }
+
+export function coopPanelLayout(n: number, w: number, h: number, ui: number): CoopPanel[] {
+  const m = 16 * ui, gap = 12 * ui, ph = 76 * ui;
+  const pw = Math.min(250 * ui, (w - 2 * m - (n - 1) * gap) / n);
+  return Array.from({ length: n }, (_, i) => ({
+    x: n === 2 ? (i === 0 ? m : w - m - pw) : n === 3 ? (i === 0 ? m : i === 1 ? (w - pw) / 2 : w - m - pw) : m + i * (pw + gap),
+    y: h - m - ph, w: pw, h: ph, mode: pw >= 180 * ui ? 'full' : pw >= 120 * ui ? 'mid' : 'compact',
+  }));
+}
+
+function fitText(ctx: CanvasRenderingContext2D, text: string, width: number): string {
+  if (ctx.measureText(text).width <= width) return text;
+  while (text.length && ctx.measureText(text + '…').width > width) text = text.slice(0, -1);
+  return text + '…';
+}
+
+function drawCoopHud(ctx: CanvasRenderingContext2D, world: World, w: number, h: number, ui: number, st: HudState): void {
+  xpBar(ctx, world, w, ui, st);
+  ctx.textBaseline = 'top'; ctx.textAlign = 'left';
+  ctx.font = `800 ${13 * ui}px ${FONT_DISPLAY}`; ctx.fillStyle = PAL.xp;
+  const level = `LV ${world.level}`;
+  ctx.fillText(level, 16 * ui, 18 * ui);
+  const x = 24 * ui + ctx.measureText(level).width;
+  ctx.font = `600 ${10 * ui}px ${FONT_MONO}`; ctx.fillStyle = PAL.textDim;
+  ctx.fillText(`${world.players.length} CAPTAINS`, x, 20 * ui);
+  topCentre(ctx, world, w, ui);
+  topRight(ctx, world, w, ui, st);
+  coopPanels(ctx, world, w, h, ui, st);
+  fpsLine(ctx, world, ui, st, h - coopHudBand(ui) - 8 * ui);
+}
+
+function coopPanels(ctx: CanvasRenderingContext2D, world: World, w: number, h: number, ui: number, st: HudState): void {
+  const panels = coopPanelLayout(world.players.length, w, h, ui);
+  let up = 0, down = 0;
+  for (const p of world.players) { if (world.isUp(p)) up++; else if (p.alive && p.downed) down++; }
+  for (let i = 0; i < panels.length; i++) {
+    const p = world.players[i]!, panel = panels[i]!, color = PLAYER_COLORS[p.pid % 4]!;
+    const { x, y, w: pw, h: ph, mode } = panel;
+    let alpha = p.downed ? 0.5 : 1;
+    if (st.view) for (const pilot of world.players) if (pilot.alive) {
+      const sx = pilot.x * st.view.k + st.view.ox, sy = pilot.y * st.view.k + st.view.oy;
+      if (sx > x - 12 * ui && sx < x + pw + 12 * ui && sy > y - 12 * ui && sy < y + ph + 12 * ui) { alpha = Math.min(alpha, 0.45); break; }
+    }
+    ctx.save(); ctx.globalAlpha = alpha;
+    ctx.fillStyle = 'rgba(10,8,30,0.62)'; ctx.fillRect(x, y, pw, ph);
+    const last = up === 1 && down > 0 && world.isUp(p);
+    ctx.strokeStyle = last ? '#ff6b8a' : color; ctx.lineWidth = 1.5 * ui;
+    ctx.globalAlpha = alpha * (last ? st.flashes === false ? 0.75 : 0.65 + 0.25 * Math.sin(world.time * 5) : 0.5);
+    ctx.strokeRect(x, y, pw, ph); ctx.globalAlpha = alpha;
+    const left = x + 8 * ui, right = x + pw - 8 * ui;
+    drawPilotMark(ctx, p.pid, left + 4 * ui, y + 12 * ui, 4.5 * ui, color);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.font = `800 ${12 * ui}px ${FONT_DISPLAY}`; ctx.fillStyle = color;
+    ctx.fillText(`P${p.pid + 1}`, left + 13 * ui, y + 6 * ui);
+    let headerRight = right;
+    if (p.pendingCaches > 0) {
+      ctx.textAlign = 'right'; ctx.font = `700 ${10 * ui}px ${FONT_MONO}`; ctx.fillStyle = PAL.gold;
+      const cache = `◆${p.pendingCaches}`; ctx.fillText(cache, right, y + 8 * ui);
+      headerRight -= ctx.measureText(cache).width + 5 * ui;
+    }
+    ctx.textAlign = 'left';
+    if (p.downed) {
+      ctx.font = `800 ${10 * ui}px ${FONT_DISPLAY}`; ctx.fillStyle = '#ff6b8a';
+      ctx.fillText('DOWN', left + 38 * ui, y + 8 * ui);
+    } else if (mode === 'full') {
+      ctx.font = `600 ${10 * ui}px ${FONT_BODY}`; ctx.fillStyle = PAL.textDim;
+      ctx.fillText(fitText(ctx, SHIPS[p.ship].name.toUpperCase(), headerRight - left - 40 * ui), left + 40 * ui, y + 8 * ui);
+    }
+    const need = world.reviveNeed(p), ratio = p.hp / p.stats.maxHp;
+    bar(ctx, left, y + 25 * ui, pw - 16 * ui, 10 * ui, p.downed ? p.reviveT / need : ratio,
+      p.downed ? color : ratio < 0.3 ? PAL.danger : PAL.hp, PAL.hpBack);
+    if (!p.downed && (st.hpFlash[p.pid] ?? 0) > 0) {
+      ctx.fillStyle = `rgba(255,255,255,${st.hpFlash[p.pid]! * (st.flashes === false ? 0.35 : 1)})`;
+      ctx.fillRect(left, y + 25 * ui, pw - 16 * ui, 10 * ui);
+    }
+    ctx.textAlign = 'right'; ctx.font = `700 ${9 * ui}px ${FONT_MONO}`; ctx.fillStyle = '#ffffff';
+    ctx.fillText(p.downed ? `${p.reviveT > 0 ? 'REVIVING' : 'GET CLOSE'} · ${Math.max(0, need - p.reviveT).toFixed(1)}s`
+      : mode === 'compact' ? `${Math.ceil(p.hp)}` : `${Math.ceil(p.hp)}/${p.stats.maxHp}`, right - 2 * ui, y + 25 * ui);
+    for (let j = 0; j < p.stats.dashCharges; j++) {
+      const cx = left + 7 * ui + j * 18 * ui, cy = y + 44 * ui, pip = 7 * ui;
+      ctx.beginPath(); ctx.moveTo(cx, cy - pip); ctx.lineTo(cx + pip, cy); ctx.lineTo(cx, cy + pip); ctx.lineTo(cx - pip, cy); ctx.closePath();
+      ctx.strokeStyle = '#c9b8ff'; ctx.lineWidth = 1.5 * ui; ctx.stroke();
+      if (j < p.dashCharges) { ctx.fillStyle = '#e6deff'; ctx.fill(); }
+      else if (j === Math.floor(p.dashCharges) && p.stats.dashCooldown > 0) {
+        const k = 1 - Math.max(0, p.dashRecharge) / p.stats.dashCooldown;
+        ctx.save(); ctx.clip(); ctx.fillStyle = 'rgba(201,184,255,0.45)';
+        ctx.fillRect(cx - pip, cy + pip - pip * 2 * k, pip * 2, pip * 2 * k); ctx.restore();
+      }
+    }
+    if (mode !== 'compact' && world.hasRelic('shield', p.pid)) {
+      ctx.font = `600 ${10 * ui}px ${FONT_BODY}`; ctx.fillStyle = p.shieldReady ? '#7ff9ff' : 'rgba(127,249,255,0.3)';
+      ctx.fillText(p.shieldReady ? '⬡' : `⬡ ${Math.ceil(20 - p.shieldT)}s`, right, y + 39 * ui);
+    }
+    if (mode !== 'compact') {
+      let bx = left;
+      for (const weapon of p.build.weapons) {
+        const def = WEAPONS[weapon.id], ink = weapon.evolved ? PAL.gold : def.color;
+        ctx.fillStyle = 'rgba(10,8,30,0.7)'; ctx.fillRect(bx, y + 54 * ui, 18 * ui, 18 * ui);
+        ctx.strokeStyle = ink; ctx.lineWidth = ui; ctx.strokeRect(bx, y + 54 * ui, 18 * ui, 18 * ui);
+        ctx.font = `700 ${12 * ui}px ${FONT_BODY}`; ctx.fillStyle = ink; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(def.icon, bx + 9 * ui, y + 63 * ui);
+        for (let j = 0; j < 5; j++) { ctx.fillStyle = weapon.evolved || j < weapon.level ? ink : 'rgba(255,255,255,0.15)'; ctx.fillRect(bx + j * 3.6 * ui, y + 73 * ui, 2.6 * ui, 2 * ui); }
+        bx += 20 * ui;
+      }
+      if (mode === 'full') {
+        for (const id of Object.keys(p.build.passives) as PassiveId[]) {
+          ctx.fillStyle = 'rgba(10,8,30,0.7)'; ctx.fillRect(bx, y + 56 * ui, 13 * ui, 13 * ui);
+          ctx.fillStyle = PASSIVES[id].color; ctx.font = `700 ${10 * ui}px ${FONT_BODY}`;
+          ctx.fillText(PASSIVES[id].icon, bx + 6.5 * ui, y + 62.5 * ui);
+          ctx.fillStyle = '#ffffff'; ctx.font = `700 ${7 * ui}px ${FONT_MONO}`;
+          ctx.fillText(String(p.build.passives[id]), bx + 11 * ui, y + 68 * ui); bx += 14 * ui;
+        }
+        if (p.build.relics.length) { ctx.fillStyle = PAL.gold; ctx.font = `700 ${10 * ui}px ${FONT_MONO}`; ctx.textAlign = 'left'; ctx.fillText(`◆${p.build.relics.length}`, bx, y + 63 * ui); }
+      }
+    }
+    ctx.restore();
   }
 }
 

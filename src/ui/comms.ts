@@ -11,6 +11,7 @@
 import { PRIORITY, type CommsMessage } from '../story/director';
 import type { ChatterMode } from '../meta/save';
 import type { ShipId } from '../game/types';
+import type { World } from '../game/world';
 import { el, esc } from './dom';
 
 /** Speakers on the Lattice side (hostile styling). */
@@ -29,6 +30,35 @@ export function chatterAllows(mode: ChatterMode, msg: Pick<CommsMessage, 'priori
   if (mode === 'off') return false;
   if (mode === 'important') return msg.priority >= PRIORITY.rare;
   return true;
+}
+
+/** Threats and present ships overlapping the panel; friendly shots and loot do not count. */
+export function gameplayUnder(world: Pick<World, 'enemies' | 'bullets' | 'players'>, minX: number, minY: number, maxX: number, maxY: number): boolean {
+  for (const e of world.enemies) if (!e.dead && e.x + e.r > minX && e.x - e.r < maxX && e.y + e.r > minY && e.y - e.r < maxY) return true;
+  for (const b of world.bullets) if (!b.dead && b.x + b.r > minX && b.x - b.r < maxX && b.y + b.r > minY && b.y - b.r < maxY) return true;
+  for (const p of world.players) if (p.alive && p.x + p.r > minX && p.x - p.r < maxX && p.y + p.r > minY && p.y - p.r < maxY) return true;
+  return false;
+}
+
+/** Real-time probe throttle with a short hold after the last positive sample. */
+export class FadeGate {
+  under = false;
+  private untilProbe = 0;
+  private clearFor = 0;
+
+  reset(): void { this.under = false; this.untilProbe = 0; this.clearFor = 0; }
+
+  update(dt: number, probe: () => boolean): boolean {
+    const before = this.under;
+    this.clearFor += dt;
+    this.untilProbe -= dt;
+    if (this.untilProbe <= 1e-9) {
+      this.untilProbe = 0.125;
+      if (probe()) { this.under = true; this.clearFor = 0; }
+    }
+    if (this.clearFor >= 0.4) this.under = false;
+    return before !== this.under;
+  }
 }
 
 let reducedQuery: MediaQueryList | null | undefined;
@@ -60,6 +90,8 @@ export class CommsPanel {
   /** Number of pilots in the run (co-op tags the speaking captain with P1..P4). */
   private players = 1;
   private coop = false;
+  private readonly gate = new FadeGate();
+  private rect: DOMRect | null = null;
 
   constructor(parent: HTMLElement = document.body) {
     this.root = el('<div id="comms" class="comms" aria-hidden="true" hidden></div>');
@@ -67,6 +99,25 @@ export class CommsPanel {
     // Screen readers get each line once, in full (the typewriter would spam them).
     this.live = el('<div class="sr-only" role="status" aria-live="polite"></div>');
     parent.appendChild(this.live);
+    const invalidate = () => { this.rect = null; };
+    window.addEventListener('resize', invalidate);
+    window.addEventListener('orientationchange', invalidate);
+    this.root.addEventListener('animationend', invalidate);
+  }
+
+  private resetFade(): void {
+    this.rect = null;
+    this.gate.reset();
+    this.root.classList.remove('under');
+  }
+
+  updateFade(realDt: number, probe: (r: DOMRect) => boolean): void {
+    if (this.shownId === null) { this.root.classList.remove('under'); return; }
+    if (this.rect === null) {
+      const r = this.root.getBoundingClientRect();
+      this.rect = new DOMRect(r.x - 6, r.y - 6, r.width + 12, r.height + 12);
+    }
+    if (this.gate.update(realDt, () => probe(this.rect!))) this.root.classList.toggle('under', this.gate.under);
   }
 
   /** The pilots of the current run (call at run start). */
@@ -119,6 +170,7 @@ export class CommsPanel {
 
   /** Hides immediately (run ended, menus). */
   clear(): void {
+    this.resetFade();
     this.shownId = null;
     this.mountedId = null;
     window.clearTimeout(this.hideTimer);
@@ -129,6 +181,7 @@ export class CommsPanel {
 
   /** Brings back the line that was showing before a pause/level-up: a quick fade, no re-announce. */
   private resume(msg: CommsMessage): void {
+    this.resetFade();
     window.clearTimeout(this.hideTimer);
     this.shownId = msg.id;
     this.root.hidden = false;
@@ -139,6 +192,7 @@ export class CommsPanel {
   }
 
   private mount(msg: CommsMessage): void {
+    this.resetFade();
     window.clearTimeout(this.hideTimer);
     this.shownId = msg.id;
     this.mountedId = msg.id;
