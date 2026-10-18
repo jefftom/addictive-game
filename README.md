@@ -33,6 +33,22 @@ npm run build:single   # → dist-single/shardstorm.html
 
 **Tip:** dashing through an enemy or bullet is a **perfect dash**. It triggers slow motion, refunds half your dash cooldown and adds +3 combo.
 
+### Phone play
+
+Drag on the left to steer; tap the larger **DASH** control with your other thumb.
+The floating stick has a small dead zone and smooth speed control. Rotating or
+leaving the browser releases touch input. Portrait scores sit below the timer.
+
+Phones automatically use clearer ship/bullet outlines, calmer hit flashes and
+fewer decorative particles and damage numbers. Enhanced graphics retains its
+bloom/shader pipeline with a smaller world buffer; the HUD stays sharp. The
+plain 2D fallback also uses the phone effects budget. Reduced flashing and shake
+settings still apply. See [phone verification](docs/verification/05-phone-polish.md)
+for measured limits and the remaining physical-device playtest.
+
+To test on a phone on the same trusted Wi-Fi: run `npm run build`, then
+`npm run preview -- --host 0.0.0.0`, and open the displayed Network URL on the phone.
+
 ## What keeps you playing
 
 The full reasoning is in [docs/GAME_DESIGN.md](docs/GAME_DESIGN.md). In short, there are nested loops, so a goal is always seconds, minutes or runs away:
@@ -59,6 +75,7 @@ There are also guardrails: no real money, ads, loot boxes or energy timers; stre
 | `npm run e2e` | Playwright smoke and story tests on desktop and mobile viewports (set `E2E_PORT` if 4173 is taken) |
 | `npm run sim` | Headless balance report: a bot plays dozens of runs ([details](#balance-simulation)) |
 | `npm run qa:shots` | Composed visual matrix and `qa-shots/index.html` contact sheet |
+| `npm run qa:phone` | Phone scene captures and submission timings in `output/playwright/phone`; optional `PHONE_BASELINE` points to an older `dist` directory |
 | `npm run perf:bench` | Three alternating runs per scenario, layer timings and heap in `qa-shots/perf.json` |
 | `npm run store:assets` | Steam capsules, gameplay screenshots and icons at native sizes in `store-assets/` |
 | `npm run build` | Production build to `dist/` |

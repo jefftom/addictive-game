@@ -3,6 +3,7 @@ import { makeRunConfig } from '../src/game/runconfig';
 import type { Enemy } from '../src/game/types';
 import { World } from '../src/game/world';
 import { coopHudBand, coopPanelLayout, drawHud, type HudState } from '../src/render/hud';
+import { FONT_MONO } from '../src/render/palette';
 
 /** Canvas call log: independent of rasterizer, installed fonts and simulation ticks. */
 function recordingContext() {
@@ -48,6 +49,20 @@ function soloFixture() {
 }
 
 describe('solo HUD drawing contract', () => {
+  it('separates the portrait phone score from the timer without shrinking either', () => {
+    for (const width of [320, 393]) {
+      const world = soloFixture(), st = hudState();
+      world.score = 162645; st.touch = true; st.stickRadius = 104;
+      const { ctx, log } = recordingContext();
+      drawHud(ctx, world, width * 2, 568 * 2, 1.44, st);
+      const timer = log.find(row => row[0] === 'fillText' && row[1] === '01:37')!;
+      const score = log.find(row => row[0] === 'fillText' && row[1] === '162,645')!;
+      expect(Number(score[3])).toBeGreaterThan(Number(timer[3]) + 28 * 1.44);
+      expect(Number(timer[2]) - 5 * 28 * 1.44 * 0.6 / 2).toBeGreaterThan(206 * 1.44);
+      expect(log).toContainEqual(['set', 'font', `700 34.56px ${FONT_MONO}`]);
+    }
+  });
+
   it('preserves the original calls for plain, touch, danger/boss and FPS states', async () => {
     // Captured from the unmodified HUD before the co-op rendering pass.
     // Never re-record this snapshot to accommodate rendering changes.

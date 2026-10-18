@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "sim": "vitest run --config vitest.sim.config.ts",
     "qa:shots": "vite build && node scripts/qa-shots.mjs",
+    "qa:phone": "vite build && node scripts/phone-check.mjs",
     "perf:bench": "vite build && node scripts/perf-bench.mjs",
     "store:assets": "vite build && node scripts/store-assets.mjs",
     "e2e": "playwright test",

@@ -35,6 +35,18 @@ const wave = { radius: 200, strength: 20, duration: 10 };
 function frames(fx: PostFx, n: number, ms: number) { for (let i = 0; i < n; i++) fx.reportFrameTime(ms); }
 
 describe('post-processing pipeline', () => {
+  it('caps phone world pixels independently of quality and keeps the reviewed q3 draw count', () => {
+    const { fx, src, gl } = rig();
+    fx.settings.quality = 3;
+    fx.resolutionLimit = 0.625;
+    expect(fx.renderScale).toBe(0.625);
+    fx.render(src, 1 / 60);
+    expect(gl.drawArrays).toHaveBeenCalledTimes(12);
+    fx.settings.renderScale = 0.5;
+    expect(fx.renderScale).toBe(0.5);
+    fx.resolutionLimit = 1;
+    expect(fx.renderScale).toBe(0.5);
+  });
   it('falls back when WebGL2 is missing or cannot be created', () => {
     expect(PostFx.create({ getContext: () => null } as unknown as HTMLCanvasElement)).toBeNull();
     expect(PostFx.create({ getContext: () => { throw Error('driver'); } } as unknown as HTMLCanvasElement)).toBeNull();

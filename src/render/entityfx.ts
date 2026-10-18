@@ -302,6 +302,8 @@ class Booms {
 }
 
 export class EntityFx {
+  /** Small-screen contrast treatment; simulation geometry is unchanged. */
+  readability = false;
   readonly art = new VesselArt();
   readonly shards = new ShardFx();
   private readonly booms = new Booms();
@@ -821,7 +823,9 @@ export class EntityFx {
   drawEnemies(ctx: CanvasRenderingContext2D, world: World): void {
     const t = this.time;
     const P0 = world.players[0]!;
-    const flashes = this.flashes;
+    // Solid white hit silhouettes merge into a veil in dense phone combat.
+    // Keep coloured hulls, squash and the soft hit tint instead.
+    const flashes = this.flashes && !this.readability;
     const bosses = this.bossList;
     bosses.length = 0;
     // Pass 1: crystal hulls and solid sub-parts (source-over).
@@ -1359,6 +1363,21 @@ export class EntityFx {
    */
   drawBullets(ctx: CanvasRenderingContext2D, world: World, dot: HTMLCanvasElement): void {
     const prevOp = ctx.globalCompositeOperation;
+    if (this.readability) {
+      // Dark separation remains visible against both bright bloom and dark space.
+      this.world(ctx);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = '#120713';
+      ctx.beginPath();
+      for (const b of world.bullets) {
+        if (!this.vis(b.x, b.y, 20)) continue;
+        ctx.moveTo(b.x + b.r + 2.5, b.y);
+        ctx.arc(b.x, b.y, b.r + 2.5, 0, TAU);
+      }
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
     ctx.globalCompositeOperation = 'lighter';
     this.world(ctx);
     ctx.beginPath();
@@ -1509,9 +1528,10 @@ export class EntityFx {
         if (e.dead) continue;
         const dx = e.x - p.x;
         const dy = e.y - p.y;
-        if (dx * dx + dy * dy < R2 && ++near >= LOCATOR_CROWD) break;
+        if (dx * dx + dy * dy < R2 && ++near >= (this.readability ? 8 : LOCATOR_CROWD)) break;
       }
-      st.locator += ((near >= LOCATOR_CROWD ? 1 : 0) - st.locator) * damp(near >= LOCATOR_CROWD ? 6 : 2, Math.max(rdt, 1e-4));
+      const crowded = near >= (this.readability ? 8 : LOCATOR_CROWD);
+      st.locator += ((crowded ? 1 : 0) - st.locator) * damp(crowded ? 6 : 2, Math.max(rdt, 1e-4));
       const colors = pilotColors(world, p.pid, trailColor);
       this.pilotView.k = v.k * ps;
       this.pilotView.ox = v.ox + p.x * v.k * (1 - ps);
@@ -1564,8 +1584,8 @@ export class EntityFx {
     // vessel separates from a bright swarm. Drawn first, under everything of ours.
     if (!ghost) {
       ctx.globalCompositeOperation = 'source-over';
-      ctx.globalAlpha = 0.48;
-      this.blit(ctx, this.art.shadow(), p.x, p.y, 0, (p.r * 1.6) / 16);
+      ctx.globalAlpha = this.readability ? 0.7 : 0.48;
+      this.blit(ctx, this.art.shadow(), p.x, p.y, 0, (p.r * (this.readability ? 2.1 : 1.6)) / 16);
     }
 
     // Exhaust ribbon. History is the hull CENTRE (low-passed, so stick/bot jitter and
@@ -1718,8 +1738,8 @@ export class EntityFx {
       const a0 = t * 0.6;
       this.world(ctx);
       ctx.strokeStyle = FLEET_RIM;
-      ctx.lineWidth = 1.3;
-      ctx.globalAlpha = 0.42 * st.locator;
+      ctx.lineWidth = this.readability ? 2 : 1.3;
+      ctx.globalAlpha = (this.readability ? 0.75 : 0.42) * st.locator;
       ctx.beginPath();
       for (let i = 0; i < 4; i++) {
         const a = a0 + (i * Math.PI) / 2;

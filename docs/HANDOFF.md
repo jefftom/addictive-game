@@ -2,6 +2,17 @@
 
 Read `AGENTS.md` first (commands and hard rules). This file is the task list.
 
+## Latest checkpoint — solo phone polish (2026-10-18)
+
+The owner authorized a polished solo phone build on the same PR branch.
+Phone readability, native-resolution HUD layout, two-thumb controls and device
+render budgets are implemented; gameplay/balance and the approved q3 pipeline
+are preserved. See [phone verification](verification/05-phone-polish.md) for
+checks, evidence, reproducibility and physical-device acceptance still needed.
+Exact final SHA and remote CI gates are recorded on PR #1 and in the local
+`F:\addictive-game-handoff\2026-10-18-phone` receipt. Earlier task reports and
+their balance/hardware gaps remain applicable.
+
 ## Branches
 
 | Branch | State |

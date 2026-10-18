@@ -405,3 +405,29 @@ Enter is never a dash key, so no pilot's dash key can confirm a card (anti-mash)
   adds "Quit to desktop" on the title screen and a Fullscreen setting.
 - **Bundled fonts** (Tektur, Chakra Petch, Kode Mono; latin WOFF2, SIL OFL):
   no third-party requests, and the desktop and single-file builds work offline.
+
+### Solo phone presentation
+
+On a coarse primary pointer with a short viewport side at most 600 CSS pixels,
+the renderer uses a phone budget. It retains every enemy and hostile bullet,
+the original ship art and q3 shader pipeline (12 normal / 15 surge GL draws).
+The world buffer targets at most 1.25 pixels per CSS pixel under post-FX;
+the HUD/output retain the existing device-pixel ratio cap of 2. This budget does
+not overwrite saved graphics settings, and the auto-quality ladder can still
+reduce effects further. Plain 2D keeps native world resolution.
+
+Phone hit feedback keeps coloured hulls instead of solid white flashes. Dark
+bullet separation and a stronger pilot shadow/locator preserve silhouettes.
+Decorative particles use 45% density (27% with reduced flashing), shards at most
+half density, and the decorative grid integrates at 30 Hz. The game simulation
+still runs at 60 Hz. In solo, decorative particles and floating numbers clear the
+immediate pilot area; compact numbers are spatially spaced and limited to 24.
+At most two callouts are displayed, prioritizing boss and survival warnings.
+Portrait score/combo information sits below the timer; status text gets a dark
+gradient behind it. Co-op rules, balance and deterministic RNG are unchanged.
+
+The floating stick radius is 52 CSS pixels with an 18% radial dead zone and
+continuous strength above it. DASH is 76 CSS pixels across and respects the
+right/bottom safe area. A second finger can dash while steering; cancellation,
+blur and rotation clear queued touch actions. Physical-phone comfort, thermal
+behaviour and sustained frame rate remain player/device acceptance gates.

@@ -18,3 +18,4 @@ steam-output/
 # Locally generated QA and store art; their scripts are versioned.
 qa-shots/
 store-assets/
+output/playwright/

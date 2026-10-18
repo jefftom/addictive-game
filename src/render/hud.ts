@@ -25,6 +25,7 @@ export interface HudState {
   flashes?: boolean;
   comboBreak: { value: number; t: number } | null;
   dashButton: { x: number; y: number; r: number };
+  stickRadius?: number;
   stick: { active: boolean; ox: number; oy: number; x: number; y: number };
   /** Reserved space at the top-right for the DOM pause button (device px). */
   pauseInset: number;
@@ -54,8 +55,8 @@ export function drawHud(ctx: CanvasRenderingContext2D, world: World, w: number, 
 function drawSoloHud(ctx: CanvasRenderingContext2D, world: World, w: number, h: number, ui: number, st: HudState): void {
   xpBar(ctx, world, w, ui, st);
   soloStatus(ctx, world, ui, st);
-  topCentre(ctx, world, w, ui);
-  topRight(ctx, world, w, ui, st);
+  topCentre(ctx, world, w, ui, !!st.stickRadius && w < h);
+  topRight(ctx, world, w, ui, st, !!st.stickRadius && w < h);
   touchControls(ctx, world, ui, st);
   fpsLine(ctx, world, ui, st, h - 8 * ui);
 }
@@ -189,38 +190,40 @@ function soloStatus(ctx: CanvasRenderingContext2D, world: World, ui: number, st:
 
 }
 
-function topCentre(ctx: CanvasRenderingContext2D, world: World, w: number, ui: number): void {
+function topCentre(ctx: CanvasRenderingContext2D, world: World, w: number, ui: number, portrait = false): void {
   const xpH = 6 * ui;
+  const cx = portrait ? (w + 200 * ui) / 2 : w / 2;
   // ── Top-centre: timer / boss ──
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.font = `700 ${28 * ui}px ${FONT_MONO}`;
   ctx.fillStyle = world.victory ? PAL.gold : PAL.text;
-  ctx.fillText(formatTime(world.time), w / 2, xpH + 10 * ui);
+  ctx.fillText(formatTime(world.time), cx, xpH + 10 * ui);
   const boss = world.boss;
   if (boss && !boss.dead) {
-    const bw = Math.min(460 * ui, w * 0.5);
+    const bw = Math.min(460 * ui, portrait ? w - 232 * ui : w * 0.5);
     const by = xpH + 64 * ui;
     ctx.font = `800 ${12 * ui}px ${FONT_DISPLAY}`;
     ctx.fillStyle = '#ff6b8a';
-    ctx.fillText(nameOf(boss.kind).toUpperCase(), w / 2, by - 18 * ui);
-    bar(ctx, w / 2 - bw / 2, by, bw, 9 * ui, boss.hp / boss.maxHp, '#ff2d55', 'rgba(255,45,85,0.15)', 14 * ui);
+    ctx.fillText(nameOf(boss.kind).toUpperCase(), cx, by - 18 * ui);
+    bar(ctx, cx - bw / 2, by, bw, 9 * ui, boss.hp / boss.maxHp, '#ff2d55', 'rgba(255,45,85,0.15)', 14 * ui);
   } else {
     const next = world.nextBoss();
     if (next) {
       const left = next.at - world.time;
       ctx.font = `600 ${11 * ui}px ${FONT_MONO}`;
       ctx.fillStyle = left < 20 ? '#ff6b8a' : PAL.textDim;
-      ctx.fillText(`${next.name.replace('The ', '').toUpperCase()} IN ${formatTime(left)}`, w / 2, xpH + 44 * ui);
+      ctx.fillText(`${next.name.replace('The ', '').toUpperCase()} IN ${formatTime(left)}`, cx, xpH + 44 * ui);
     }
   }
 
 }
 
-function topRight(ctx: CanvasRenderingContext2D, world: World, w: number, ui: number, st: HudState): void {
-  const m = 16 * ui, xpH = 6 * ui;
+function topRight(ctx: CanvasRenderingContext2D, world: World, w: number, ui: number, st: HudState, stacked = false): void {
+  // Portrait phones put score below the timer and pause control, alongside the build.
+  const m = 16 * ui, xpH = (stacked ? 86 : 6) * ui;
   // ── Top-right: score, best, combo ──
-  const rx = w - m - st.pauseInset;
+  const rx = w - m - (stacked ? 0 : st.pauseInset);
   ctx.textAlign = 'right';
   ctx.font = `700 ${24 * ui}px ${FONT_MONO}`;
   const beating = st.bestScore > 0 && world.score > st.bestScore;
@@ -283,7 +286,7 @@ function touchControls(ctx: CanvasRenderingContext2D, world: World, ui: number, 
     const db = st.dashButton;
     ctx.beginPath();
     ctx.arc(db.x, db.y, db.r, 0, TAU);
-    ctx.fillStyle = p.dashCharges >= 1 ? 'rgba(201,184,255,0.22)' : 'rgba(201,184,255,0.06)';
+    ctx.fillStyle = st.stickRadius ? 'rgba(12,17,35,0.8)' : p.dashCharges >= 1 ? 'rgba(201,184,255,0.22)' : 'rgba(201,184,255,0.06)';
     ctx.fill();
     ctx.lineWidth = 2 * ui;
     ctx.strokeStyle = p.dashCharges >= 1 ? '#c9b8ff' : 'rgba(201,184,255,0.35)';
@@ -298,17 +301,24 @@ function touchControls(ctx: CanvasRenderingContext2D, world: World, ui: number, 
     }
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `800 ${13 * ui}px ${FONT_DISPLAY}`;
+    ctx.font = `800 ${st.stickRadius ? db.r * 0.34 : 13 * ui}px ${FONT_DISPLAY}`;
     ctx.fillStyle = '#ffffff';
     ctx.fillText('DASH', db.x, db.y);
     if (st.stick.active) {
       ctx.beginPath();
-      ctx.arc(st.stick.ox, st.stick.oy, 56 * ui, 0, TAU);
+      const radius = st.stickRadius ?? 56 * ui;
+      ctx.arc(st.stick.ox, st.stick.oy, radius, 0, TAU);
+      if (st.stickRadius) {
+        ctx.fillStyle = 'rgba(12,17,35,0.3)';
+        ctx.fill();
+      }
       ctx.strokeStyle = 'rgba(127,249,255,0.35)';
       ctx.lineWidth = 2 * ui;
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(st.stick.x, st.stick.y, 22 * ui, 0, TAU);
+      const dx = st.stick.x - st.stick.ox, dy = st.stick.y - st.stick.oy;
+      const clamp = Math.min(1, radius / Math.max(1, Math.hypot(dx, dy)));
+      ctx.arc(st.stick.ox + dx * clamp, st.stick.oy + dy * clamp, st.stickRadius ? radius * 0.38 : 22 * ui, 0, TAU);
       ctx.fillStyle = 'rgba(127,249,255,0.35)';
       ctx.fill();
     }

@@ -471,10 +471,13 @@ export class PostFx {
     return this.settings.quality === 'auto' ? this.q : this.settings.quality;
   }
 
-  /** Effective world render scale: min(settings.renderScale, auto ladder). */
+  /** Renderer-owned device budget; HUD and output remain at native resolution. */
+  resolutionLimit = 1;
+
+  /** Effective world render scale: min(user setting, auto ladder, device budget). */
   get renderScale(): number {
     const auto = this.settings.quality === 'auto' ? this.autoScale : 1;
-    return Math.max(0.5, Math.min(1, this.settings.renderScale, auto));
+    return Math.max(0.5, Math.min(1, this.settings.renderScale, auto, this.resolutionLimit));
   }
 
   stats(): PostFxStats {

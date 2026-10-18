@@ -297,7 +297,8 @@ export class App {
       w.viewHalfW = halfW;
       w.viewHalfH = halfH;
     }
-    this.input.stickRadius = 56 * this.renderer.ui;
+    this.input.stickRadius = this.renderer.hud.stickRadius ?? 56 * this.renderer.ui;
+    this.input.releaseAll();
   }
 
   private applySettings(s: Settings): void {

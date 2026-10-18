@@ -16,18 +16,20 @@ interface FloatText {
 export class FloatTexts {
   items: FloatText[] = [];
   private budget = 0;
+  compact = false;
 
   add(x: number, y: number, text: string, color: string, size: number, life = 0.7, force = false): void {
     if (!force) {
       if (this.budget <= 0) return;
+      if (this.compact && this.items.some(t => Math.abs(t.x - x) < 36 && Math.abs(t.y - y) < 24)) return;
       this.budget--;
     }
-    if (this.items.length > 90) this.items.shift();
+    if (this.items.length >= (this.compact ? 24 : 90)) this.items.shift();
     this.items.push({ x: x + (Math.random() - 0.5) * 10, y, vy: -60 - Math.random() * 30, text, color, size, life, maxLife: life });
   }
 
   update(dt: number): void {
-    this.budget = Math.min(12, this.budget + dt * 60);
+    this.budget = Math.min(this.compact ? 4 : 12, this.budget + dt * (this.compact ? 20 : 60));
     for (const t of this.items) {
       t.life -= dt;
       t.y += t.vy * dt;
@@ -36,10 +38,12 @@ export class FloatTexts {
     this.items = this.items.filter((t) => t.life > 0);
   }
 
-  draw(ctx: CanvasRenderingContext2D, scale: number): void {
+  draw(ctx: CanvasRenderingContext2D, scale: number, pilot?: { x: number; y: number }): void {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const t of this.items) {
+      // Keep the pilot's immediate dodge area free of floating numbers.
+      if (pilot && Math.abs(t.x - pilot.x) < 42 && Math.abs(t.y - pilot.y) < 34) continue;
       const k = t.life / t.maxLife;
       const pop = k > 0.8 ? ease.outBack((1 - k) / 0.2) : 1;
       ctx.globalAlpha = Math.min(1, k * 2.5);
@@ -72,6 +76,7 @@ interface Callout {
 /** Big screen-space announcements: combo tiers, PERFECT, LEVEL UP, warnings. */
 export class Callouts {
   items: Callout[] = [];
+  compact = false;
 
   add(text: string, color: string, size = 1, sub = '', life = 1.1): void {
     // Replace an identical callout instead of stacking duplicates.
@@ -95,12 +100,15 @@ export class Callouts {
   draw(ctx: CanvasRenderingContext2D, w: number, h: number, ui: number, top = h * 0.3): void {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    for (const c of this.items) {
+    // Boss/survival warnings take priority over score celebrations on a phone.
+    const major = (c: Callout) => /WARNING|BOSS|SURVIVED|LAST CAPTAIN|DOWN|SECOND WIND/.test(c.text) ? 1 : 0;
+    const visible = this.compact ? [...this.items].sort((a, b) => major(b) - major(a)).slice(0, 2) : this.items;
+    for (const [index, c] of visible.entries()) {
       const age = c.maxLife - c.life;
       const inK = Math.min(1, age / 0.22);
       const outK = Math.min(1, c.life / 0.3);
       const s = ease.outBack(inK) * (1 + (1 - outK) * 0.15);
-      const y = top + c.slot * 56 * ui;
+      const y = top + (this.compact ? index : c.slot) * 56 * ui;
       const px = 40 * c.size * ui;
       ctx.save();
       ctx.globalAlpha = outK;
@@ -110,15 +118,15 @@ export class Callouts {
       ctx.shadowColor = c.color;
       ctx.shadowBlur = 24 * ui;
       ctx.fillStyle = c.color;
-      ctx.fillText(c.text, 0, 0);
+      ctx.fillText(c.text, 0, 0, w * 0.88 / Math.max(1, s));
       ctx.shadowBlur = 0;
       ctx.lineWidth = 1.2 * ui;
       ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-      ctx.strokeText(c.text, 0, 0);
+      ctx.strokeText(c.text, 0, 0, w * 0.88 / Math.max(1, s));
       if (c.sub) {
         ctx.font = `600 ${15 * ui}px ${FONT_MONO}`;
         ctx.fillStyle = 'rgba(234,242,255,0.85)';
-        ctx.fillText(c.sub, 0, px * 0.72);
+        ctx.fillText(c.sub, 0, px * 0.72, w * 0.9 / Math.max(1, s));
       }
       ctx.restore();
     }

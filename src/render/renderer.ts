@@ -1,4 +1,5 @@
 import { TAU, clamp, formatNumber, lerp } from '../core/math';
+import { dashLayout, TOUCH_RADIUS } from '../core/touch';
 import { COMBO_TIERS } from '../game/combo';
 import { MAX_PLAYERS, PLAYER_COLORS, PLAYER_MARKS, ZOOM_MAX } from '../game/content/coop';
 import { WEAPONS } from '../game/content/weapons';
@@ -58,6 +59,8 @@ export class Renderer {
   private hurtCaT = 0;
   private camZoom = 1;
   dpr = 1;
+  /** Small coarse-pointer displays use a lighter world, with a native-resolution HUD. */
+  phone = false;
   /** CSS px size. */
   cssW = 0;
   cssH = 0;
@@ -139,6 +142,9 @@ export class Renderer {
     this.dpr = Math.min(2, window.devicePixelRatio || 1);
     this.cssW = cssW;
     this.cssH = cssH;
+    this.phone = Math.min(cssW, cssH) <= 600 && window.matchMedia('(pointer: coarse)').matches;
+    if (this.postfx) this.postfx.resolutionLimit = this.phone ? Math.min(1, 1.25 / this.dpr) : 1;
+    this.worldScale = this.fxOn && this.postfx ? this.postfx.renderScale : 1;
     this.w = Math.round(cssW * this.dpr);
     this.h = Math.round(cssH * this.dpr);
     if (this.canvas.width !== this.w || this.canvas.height !== this.h) {
@@ -156,6 +162,14 @@ export class Renderer {
     this.fx.setResolution(this.scale * this.dpr * this.worldScale);
     const ui = this.ui;
     this.hud.dashButton = { x: this.w - 74 * ui, y: this.h - 96 * ui, r: 44 * ui };
+    if (this.phone) {
+      const safe = getComputedStyle(document.documentElement);
+      this.hud.dashButton = dashLayout(cssW, cssH, this.dpr,
+        parseFloat(safe.getPropertyValue('--safe-right')) || 0, parseFloat(safe.getPropertyValue('--safe-bottom')) || 0);
+    }
+    this.hud.stickRadius = this.phone ? TOUCH_RADIUS * this.dpr : undefined;
+    this.applyEffectBudget();
+    this.applyGridTier();
     // The DOM pause button is 40px + 10px margin (CSS px).
     this.hud.pauseInset = 50 * this.dpr;
     this.resizeGrid();
@@ -170,7 +184,7 @@ export class Renderer {
 
   private applyGridTier(): void {
     this.grid.quality = this.postFxActive || (this.fxWanted && this.postfx?.autoOff) ? 0 : 1;
-    this.grid.setRate(this.costTier <= 1 ? 30 : 60);
+    this.grid.setRate(this.phone || this.costTier <= 1 ? 30 : 60);
   }
 
   private sizeWorldCanvas(): void {
@@ -222,15 +236,22 @@ export class Renderer {
   }
 
   private onFxQuality(_q: FxQuality, renderScale: number): void {
-    const px = this.postfx;
-    this.costTier = this.fxOn && px ? px.costTier : this.fxWanted && px?.autoOff ? 0 : 4;
-    this.fx.setCostTier(this.costTier);
+    this.applyEffectBudget();
     const ws = this.fxOn ? renderScale : 1;
     if (ws !== this.worldScale) {
       this.worldScale = ws;
       this.resize();
     }
     this.applyGridTier();
+  }
+
+  private applyEffectBudget(): void {
+    const px = this.postfx;
+    this.costTier = this.fxOn && px ? px.costTier : this.fxWanted && px?.autoOff ? 0 : 4;
+    this.fx.setCostTier(Math.min(this.costTier, this.phone ? 1 : 4));
+    this.fx.readability = this.phone;
+    this.particles.density = (this.settings.flashes ? 1 : 0.6) * (this.phone ? 0.45 : 1);
+    this.texts.compact = this.callouts.compact = this.phone;
   }
 
   private wave(x: number, y: number, radius: number, strength: number, duration: number, glow: number, thickness: number, major = false): void {
@@ -308,6 +329,7 @@ export class Renderer {
 
   /** Turns simulation events into visual feedback. */
   consume(events: readonly GameEvent[], world: World): void {
+    this.applyEffectBudget();
     const P = this.particles;
     const at = (pid: number) => world.players[pid] ?? world.players[0]!;
     const coop = world.coop;
@@ -673,7 +695,7 @@ export class Renderer {
       this.drawSprite('blade', '#a6ffef', bl.r, 'normal', bl.x, bl.y, this.time * 14, k, ox, oy);
     }
     world2();
-    this.particles.draw(ctx, minX, minY, maxX, maxY);
+    this.particles.draw(ctx, minX, minY, maxX, maxY, this.phone && !world.coop ? p : undefined);
     fx.drawShards(ctx);
     fx.drawLightning(ctx, this.arcs.items);
     // Reduced flashing: the big white discs (boss death, bomb) are capped at alpha 0.15.
@@ -721,7 +743,7 @@ export class Renderer {
     }
     const v = this.view(HW, HH, 1);
     hud.setTransform(v.k, 0, 0, v.k, v.ox, v.oy);
-    this.texts.draw(hud, pilotScale);
+    this.texts.draw(hud, pilotScale, this.phone && !world.coop ? p : undefined);
     hud.setTransform(1, 0, 0, 1, 0, 0);
     hud.globalAlpha = 1;
 
@@ -765,11 +787,18 @@ export class Renderer {
     }
 
     if (!opts.attract) {
+      if (this.phone) {
+        // Protect status text from bright enemies without hiding the playfield.
+        const height = Math.min(HH * 0.23, 118 * this.dpr);
+        const shade = hud.createLinearGradient(0, 0, 0, height);
+        shade.addColorStop(0, 'rgba(5,4,15,0.85)'); shade.addColorStop(1, 'rgba(5,4,15,0)');
+        hud.fillStyle = shade; hud.fillRect(0, 0, HW, height);
+      }
       this.hud.showFps = this.settings.showFps;
       this.hud.fxLabel = this.fxOn && this.postfx ? `FX q${this.postfx.quality}${this.worldScale < 1 ? ' ×' + this.worldScale : ''}` : this.fxWanted && this.postfx?.autoOff ? '2D (auto)' : '2D';
       if (world.coop) this.pilots.draw(hud, world, v, HW, HH, this.ui, pilotScale, this.time, this.settings.flashes);
       this.hud.view = v; this.hud.flashes = this.settings.flashes;
-      this.hud.minTextPx = this.cssW >= 1000 && this.cssH >= 800 ? 9 * this.dpr : 0;
+      this.hud.minTextPx = this.phone || (this.cssW >= 1000 && this.cssH >= 800) ? 9 * this.dpr : 0;
       drawHud(hud, world, HW, HH, this.ui, this.hud);
       this.callouts.draw(hud, HW, HH, this.ui, this.sectorCard.calloutTop(HW, HH, this.ui));
       this.sectorCard.draw(hud, HW, HH, this.ui);

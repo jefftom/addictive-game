@@ -104,7 +104,7 @@ export class Particles {
   }
 
   /** Draws in world space; caller sets the world transform and 'lighter' compositing. */
-  draw(ctx: CanvasRenderingContext2D, minX: number, minY: number, maxX: number, maxY: number): void {
+  draw(ctx: CanvasRenderingContext2D, minX: number, minY: number, maxX: number, maxY: number, pilot?: { x: number; y: number }): void {
     let lastColor = '';
     for (let i = 0; i < this.count; i++) {
       const x = this.x[i]!;
@@ -118,6 +118,10 @@ export class Particles {
         lastColor = c;
       }
       ctx.globalAlpha = Math.min(1, t * 1.6);
+      if (pilot) {
+        const dx = x - pilot.x, dy = y - pilot.y;
+        ctx.globalAlpha *= 0.2 + 0.8 * Math.min(1, (dx * dx + dy * dy) / 6400);
+      }
       const s = this.size[i]! * (0.4 + t * 0.6);
       const kind = this.kind[i]!;
       if (kind === 1) {

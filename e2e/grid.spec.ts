@@ -42,13 +42,15 @@ test('old saves inherit their screen shake value', async ({ page }) => {
   await expect(page.locator('#set-gridMotion')).toHaveValue('30');
 });
 
-test('grid quality follows active FX and a deliberate 2D choice', async ({ page }) => {
+test('grid quality follows active FX and a deliberate 2D choice', async ({ page }, info) => {
   await page.goto('/?fxq=0');
   const tiers = await page.evaluate(() => {
     const r = (window as unknown as Probe).shardstorm.renderer, g = r.grid, fx = r.postfx!;
     const probe = () => {
       g.reset(); g.update(1 / 60, 0, 0);
-      return { quality: g.quality, steps: g.stepsLast, cost: r.costTier };
+      const steps = g.stepsLast;
+      g.update(1 / 60, 0, 0);
+      return { quality: g.quality, steps, nextSteps: g.stepsLast, cost: r.costTier };
     };
     const q0 = probe();
     fx.settings.quality = 3; fx.onQualityChange?.(3, 1); const q3 = probe();
@@ -58,8 +60,9 @@ test('grid quality follows active FX and a deliberate 2D choice', async ({ page 
     r.setPostFx(false); const chosen = probe();
     return { q0, q3, automatic, chosen };
   });
-  expect(tiers).toEqual({q0:{quality:0,steps:0,cost:1},q3:{quality:0,steps:1,cost:4},
-    automatic:{quality:0,steps:0,cost:0},chosen:{quality:1,steps:1,cost:4}});
+  const phone = info.project.name === 'mobile';
+  expect(tiers).toEqual({q0:{quality:0,steps:0,nextSteps:1,cost:phone ? 0 : 1},q3:{quality:0,steps:phone ? 0 : 1,nextSteps:1,cost:phone ? 0 : 4},
+    automatic:{quality:0,steps:0,nextSteps:1,cost:0},chosen:{quality:1,steps:phone ? 0 : 1,nextSteps:1,cost:4}});
 });
 
 test('co-op mesh reserves zoom coverage and restores solo spacing at results', async ({ page }, info) => {

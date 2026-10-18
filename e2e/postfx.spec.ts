@@ -147,7 +147,7 @@ test('resolution changes preserve simulation extents and the native overlay clea
     const ctx = probe.getContext('2d')!; ctx.drawImage(r.canvas, 0, 0, 64, 36);
     const data = ctx.getImageData(0, 0, 64, 36).data;
     return { before, after: [w.viewHalfW, w.viewHalfH], worldSize,
-      expected: [Math.round(r.w * 0.75), Math.round(r.h * 0.75)],
+      expected: [Math.round(r.w * (r.phone ? 0.625 : 0.75)), Math.round(r.h * (r.phone ? 0.625 : 0.75))],
       alpha: data.filter((_, i) => i % 4 === 3).some(x => x > 0) };
   });
   expect(result.after).toEqual(result.before);

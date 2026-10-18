@@ -1,4 +1,5 @@
 import type { ControlInput } from '../game/types';
+import { touchVector } from './touch';
 import { INPUT_SLOTS, PAD, PAD_DASH_BUTTONS, isPadSlot, moveFor, padIndex, slotForKey, type InputSlot, type MenuAction, type MenuContext } from './bindings';
 
 export type Device = 'keyboard' | 'touch' | 'gamepad' | 'mouse';
@@ -99,7 +100,6 @@ export class Input {
   /** Whether the game is consuming movement (disables page-level key handling). */
   gameActive = false;
   private canvas: HTMLCanvasElement | null = null;
-  private dpr = () => Math.min(2, window.devicePixelRatio || 1);
   /** Hit test for the on-screen dash button (device px). */
   dashButtonHit: (x: number, y: number) => boolean = () => false;
   stickRadius = 56;
@@ -112,6 +112,7 @@ export class Input {
       this.keys.clear();
       this.stick.active = false;
       this.mouseSteer.active = false;
+      this.clearQueued();
     });
 
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -162,8 +163,8 @@ export class Input {
 
   private devicePos(e: PointerEvent): [number, number] {
     const rect = this.canvas!.getBoundingClientRect();
-    const d = this.dpr();
-    return [(e.clientX - rect.left) * d, (e.clientY - rect.top) * d];
+    return [(e.clientX - rect.left) * this.canvas!.width / Math.max(1, rect.width),
+      (e.clientY - rect.top) * this.canvas!.height / Math.max(1, rect.height)];
   }
 
   private pointerDown(e: PointerEvent): void {
@@ -217,7 +218,7 @@ export class Input {
       this.stick.x = x;
       this.stick.y = y;
       // Floating stick: drag the origin along when pulled far.
-      const r = this.stickRadius * 1.6;
+      const r = this.stickRadius;
       const dx = x - this.stick.ox;
       const dy = y - this.stick.oy;
       const d = Math.hypot(dx, dy);
@@ -357,13 +358,9 @@ export class Input {
     if (this.stick.active) {
       const dx = this.stick.x - this.stick.ox;
       const dy = this.stick.y - this.stick.oy;
-      const r = this.stickRadius;
-      const d = Math.hypot(dx, dy);
-      if (d > r * 0.12) {
-        const k = Math.min(1, d / r);
-        mx += (dx / d) * k;
-        my += (dy / d) * k;
-      }
+      const move = touchVector(dx, dy, this.stickRadius);
+      mx += move.mx;
+      my += move.my;
     } else if (this.mouseSteer.active) {
       const dx = this.mouseSteer.x - playerScreenX;
       const dy = this.mouseSteer.y - playerScreenY;
