@@ -416,6 +416,23 @@ goal for the current run. It changes neither offers nor RNG and resets on a new
 run. Co-op upgrade guidance uses the current picking pilot and their controller;
 pinning is solo-only. Combat HUD and simulation remain unchanged.
 
+### Results and next-run planning (task 6b)
+
+Results lead with outcome and an explicit retry mode, followed by the final solo
+build and one next-run goal. An unfinished pinned evolution takes priority;
+otherwise an active mission shows real best-run or cumulative progress. Builds
+start fresh and the guide never promises a particular random offer. Change Ship
+opens the hangar with an explicitly normal solo launch; Daily retry remains
+Daily and co-op retains its existing roster flow. Results keep the 900ms grace
+period and run settlement is guarded against repeated calls.
+
+Lethal-hit text comes from the final damaging collision: named enemy contact or
+a hostile projectile. Projectile shooter identity is not tracked. Co-op names
+the last pilot lost; shield breaks and self-revives do not count as defeat.
+Victory and retreat omit the panel, and unknown sources are labelled unavailable.
+Boss dialogue remains story flavour, separate from damage attribution. There is
+no environmental player-damage path in the current simulation.
+
 ### Solo phone presentation
 
 On a coarse primary pointer with a short viewport side at most 600 CSS pixels,

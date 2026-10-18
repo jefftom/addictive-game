@@ -4,7 +4,7 @@ import type { UI } from '../src/ui/ui';
 import type { Offer } from '../src/game/upgrades';
 import { skipIntro } from './helpers';
 
-type Probe = Window & { shardstorm: { world: World; ui: UI; state: string; offers: Offer[]; openLevelUp(): void; pause(): void; startRun(daily: boolean, roster?: { ship: 'spark' | 'tempest'; device: 'kbA' | 'kbB' }[]): void } };
+type Probe = Window & { shardstorm: { world: World; ui: UI; state: string; offers: Offer[]; openLevelUp(): void; pause(): void; endRun(): void; startRun(daily: boolean, roster?: { ship: 'spark' | 'tempest'; device: 'kbA' | 'kbB' }[]): void } };
 
 test('evolution goals explain the build without consuming picks or simulation state', async ({ page }) => {
   await skipIntro(page);
@@ -34,7 +34,7 @@ test('evolution goals explain the build without consuming picks or simulation st
   await pause.locator('[data-evolution-toggle]').focus();
   await page.keyboard.press('Enter');
   await expect(pause.locator('.evolution-body')).toBeVisible();
-  await page.evaluate(() => (window as unknown as Probe).shardstorm.startRun(false));
+  await page.evaluate(() => { const a = (window as unknown as Probe).shardstorm; a.endRun(); a.startRun(false); });
   expect(await page.evaluate(() => (window as unknown as Probe).shardstorm.ui.runGoal)).toBeNull();
 });
 

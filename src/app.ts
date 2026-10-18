@@ -26,6 +26,7 @@ import { StoryRunLink } from './story/runlink';
 import type { BossId } from './story/script';
 import { CommsPanel, chatterAllows, gameplayUnder } from './ui/comms';
 import { CoopLobby, type RosterDevice, type RosterEntry } from './ui/lobby';
+import { reviewRun } from './ui/runreview';
 import { UI, pilotLabel, type DesktopUi, type LobbyMouseAction, type ResultsStory } from './ui/ui';
 
 export const DT = 1 / 60;
@@ -130,7 +131,9 @@ export class App {
     this.input.allowCtrlDash = platform.kind === 'desktop';
 
     this.ui = new UI(uiRoot, {
-      play: (daily) => this.startRun(daily),
+      play: (daily) => {
+        if (this.state === 'title' || this.state === 'results') this.startRun(daily);
+      },
       again: () => this.again(),
       openCoop: () => this.openCoop(),
       lobbyMouse: (slot, action) => this.lobbyMouse(slot, action),
@@ -547,9 +550,9 @@ export class App {
   }
 
   private endRun(): void {
-    document.body.classList.remove('coop-run');
     const w = this.world;
-    if (!w) return;
+    if (!w || this.state === 'results' || this.state === 'title' || this.state === 'lobby') return;
+    document.body.classList.remove('coop-run');
     const result = resultFromWorld(w);
     if (!this.coop) {
       result.daily = this.dailyRun;
@@ -575,7 +578,7 @@ export class App {
     this.ui.tutorial(null);
     this.audio.music?.start('menu');
     this.attract = this.newAttractWorld();
-    this.ui.showResults(summary, this.save, this.isTouch(), story);
+    this.ui.showResults(summary, this.save, this.isTouch(), story, reviewRun(w, this.save, this.ui.runGoal));
     if (this.save.settings.breakReminder && this.sessionPlay >= this.nextBreak) {
       this.nextBreak = this.sessionPlay + 3600;
       this.ui.toast("You've played for over an hour. A short stretch keeps your reflexes sharp.", '☕');
@@ -691,6 +694,7 @@ export class App {
 
   /** Results "Play again": the same squad if every controller is still there, else the lobby. */
   private again(): void {
+    if (this.state !== 'results') return;
     const roster = this.lastCoopRoster;
     if (!roster) {
       this.startRun(this.dailyRun);

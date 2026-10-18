@@ -105,6 +105,9 @@ export interface WorldOptions {
   bestScore?: number;
 }
 
+/** Descriptive only; never used to calculate damage or control the simulation. */
+export type DamageCause = { kind: 'contact'; enemy: EnemyKind } | { kind: 'projectile' } | { kind: 'unknown' };
+
 export class World {
   readonly cfg: RunConfig;
   /** Spawn timeline stream (seeded; identical for everyone on a Daily Run). */
@@ -173,6 +176,7 @@ export class World {
    */
   sector = 0;
   gameOver = false;
+  defeat: { pid: number; cause: DamageCause } | null = null;
 
   /** Presentation requests (read and cleared by the app loop). */
   hitstop = 0;
@@ -700,13 +704,13 @@ export class World {
             this.damageEnemy(e, dmg, crit, p.dashDirX, p.dashDirY, 420, true, p.pid);
           }
         } else if (e.spawnT <= 0) {
-          this.hurtPlayer(e.damage, e.x, e.y, p.pid);
+          this.hurtPlayer(e.damage, e.x, e.y, p.pid, { kind: 'contact', enemy: e.kind });
         }
       }
     }
   }
 
-  hurtPlayer(raw: number, sx: number, sy: number, pid = 0): void {
+  hurtPlayer(raw: number, sx: number, sy: number, pid = 0, cause: DamageCause = { kind: 'unknown' }): void {
     const p = this.players[pid]!;
     if (!this.isUp(p) || this.isPlayerInvulnerable(pid)) return;
     if (p.shieldReady) {
@@ -747,6 +751,7 @@ export class World {
       } else if (this.coop && this.players.some((q) => q !== p && this.isUp(q))) {
         this.downPlayer(p);
       } else {
+        this.defeat = { pid, cause };
         this.teamWipe(p);
       }
     }
@@ -1505,7 +1510,7 @@ export class World {
             this.perfectDash(p);
           }
         } else if (p.invuln <= 0) {
-          this.hurtPlayer(b.damage, b.x, b.y, p.pid);
+          this.hurtPlayer(b.damage, b.x, b.y, p.pid, { kind: 'projectile' });
           b.dead = true;
           break;
         }

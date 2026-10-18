@@ -1089,6 +1089,12 @@ select {
 .result-actions .btn-primary {
   flex: 1 1 260px;
 }
+.result-actions small { display: block; font: 500 12px var(--font-mono); letter-spacing: 0; margin-top: 5px; }
+.res-review p { margin: 8px 0 0; line-height: 1.6; overflow-wrap: anywhere; }
+.res-goal { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.res-goal h3 { color: var(--ice); font-size: 18px; }
+.res-cause { margin: 0; color: #ffb2c2; }
+#screen-results .result-actions .btn { min-height: 48px; white-space: normal; }
 
 .history {
   display: flex;

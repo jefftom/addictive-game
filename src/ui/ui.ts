@@ -23,6 +23,7 @@ import { castRole, signatureLine } from './cast';
 import { OpeningCrawl } from './crawl';
 import { $, el, esc, focusables, moveFocus, pips } from './dom';
 import { evolutionPath } from './evolution';
+import type { RunReview } from './runreview';
 import { LOBBY_COUNTDOWN, MIN_COOP_PILOTS, type CoopLobby, type RosterDevice } from './lobby';
 
 export type ScreenId = 'title' | 'hangar' | 'workshop' | 'records' | 'settings' | 'log' | 'crawl' | 'lobby' | 'levelup' | 'pause' | 'victory' | 'results' | 'hud';
@@ -77,7 +78,7 @@ const pilotMark = (pid: number): string => PLAYER_MARKS[pid % PLAYER_MARKS.lengt
 export interface ResultsStory {
   /** Game-over quip under the score (absent on a victory). */
   quip?: ResolvedLine;
-  /** Boss victory taunt, used as the header line when a capital ship destroyed the player. */
+  /** Story taunt from a boss present at defeat; not lethal-hit attribution. */
   taunt?: ResolvedLine;
   /** Ship's Log entries unlocked by this run. */
   newLog: LogbookEntry[];
@@ -516,7 +517,7 @@ export class UI {
     return c;
   }
 
-  showHangar(save: SaveData): void {
+  showHangar(save: SaveData, launch = false): void {
     const s = this.screen('hangar');
     s.className = 'screen scrim-heavy';
     const cards = SHIP_IDS.map((id) => {
@@ -543,6 +544,7 @@ export class UI {
     }).join('');
     s.innerHTML = `<div class="sub">
       <div class="sub-head"><div><div class="eyebrow">Allied Beacon Fleet · Choose your ship</div><h2>Hangar</h2></div><button class="btn btn-sm" data-act="back">Back <span class="key">ESC</span></button></div>
+      ${launch ? '<button class="btn btn-primary" data-act="launch">Launch solo · Normal run</button>' : ''}
       <div class="grid-cards">${cards}</div>
     </div>`;
     s.querySelectorAll<HTMLElement>('[data-art]').forEach((n) => {
@@ -550,9 +552,10 @@ export class UI {
       n.appendChild(this.shipArt(id, isShipUnlocked(save, id) ? SHIPS[id].color : '#4a4a66', !isShipUnlocked(save, id)));
     });
     this.bind(s, '[data-act="back"]', () => this.cb.toTitle());
+    this.bind(s, '[data-act="launch"]', () => this.cb.play(false));
     this.bind(s, '[data-select]', (b) => {
       this.cb.selectShip(b.dataset.select as ShipId);
-      this.showHangar(save);
+      this.showHangar(save, launch);
     });
     this.show('hangar');
     this.focusFirst('hangar');
@@ -1088,13 +1091,14 @@ export class UI {
 
   // ───────────────────────── Results ─────────────────────────
 
-  showResults(sum: RunSummary, save: SaveData, touch: boolean, story: ResultsStory = { newLog: [] }): void {
+  showResults(sum: RunSummary, save: SaveData, touch: boolean, story: ResultsStory = { newLog: [] }, review?: RunReview): void {
     for (const t of this.resultTimers) window.clearTimeout(t);
     this.resultTimers = [];
     const r = sum.result;
     const s = this.screen('results');
     s.className = 'screen scrim-heavy';
     const coop = (r.players ?? 1) > 1 && !!r.team;
+    const mode = coop ? `Co-op · ${r.players} pilots` : r.daily ? 'Daily Run' : 'Solo · Normal run';
     this.coopMenus = coop;
     const killedBoss = r.bossesKilled.map((k) => ENEMIES[k].name).join(', ');
     const head = r.victory ? (coop ? 'Squad victory' : 'Victory') : story.retreat ? 'Retreated' : coop ? 'Squad down' : 'Ship lost';
@@ -1124,7 +1128,6 @@ export class UI {
     ].join('');
 
     s.innerHTML = `<div class="sub">
-      ${story.taunt ? `<div class="res-taunt" style="--cc:${story.taunt.speaker.color}">${portrait(story.taunt.speaker, 'md')}<div><div class="res-taunt-name">${esc(story.taunt.speaker.name)}</div><q>${esc(story.taunt.text)}</q></div></div>` : ''}
       <div class="results-head">
         ${coop ? '' : '<div class="res-ship" aria-hidden="true"></div>'}
         <div>
@@ -1142,13 +1145,17 @@ export class UI {
         </div>
         <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end">${stamps.map((t, i) => `<span class="stamp" style="animation-delay:${1.2 + i * 0.25}s">${t}</span>`).join('')}</div>
       </div>
+      ${review?.cause ? `<p class="res-cause">${esc(review.cause)}</p>` : ''}
+      <div class="result-actions">
+        <button class="btn btn-primary" data-act="again"><span>Play again<small>${mode}${r.hard ? ' · Nightmare' : ''}</small></span><span class="key">${touch ? 'TAP' : coop ? 'ENTER · E · Ⓐ' : 'ENTER'}</span></button>
+        ${!coop ? '<button class="btn" data-act="change-ship">Change ship · Normal run</button>' : ''}
+        <button class="btn btn-gold" data-act="workshop"><span>Workshop</span><span class="meta">${affordable > 0 ? `<span class="badge">${affordable} READY</span>` : goal ? `${formatNumber(goal.missing)} ◈ to go` : ''}</span></button>
+        <button class="btn" data-act="menu">Return to title</button>
+      </div>
+      ${review && !coop ? `<div class="panel res-review"><h3>Final build</h3><p>${review.weapons.map(esc).join(' · ')}</p>${review.equipment.length ? `<p class="dim">${review.equipment.map(esc).join(' · ')}</p>` : ''}${review.goal ? `<div class="res-goal"><h3>${esc(review.goal.title)}</h3><p>${esc(review.goal.detail)}</p></div>` : ''}</div>` : ''}
+      ${story.taunt ? `<div class="res-taunt" style="--cc:${story.taunt.speaker.color}">${portrait(story.taunt.speaker, 'md')}<div><div class="res-taunt-name">${esc(story.taunt.speaker.name)}</div><q>${esc(story.taunt.text)}</q></div></div>` : ''}
       ${!story.taunt && story.quip ? `<div class="res-quip" style="--cc:${story.quip.speaker.color}">${portrait(story.quip.speaker, 'sm')}<div><span class="res-quip-name">${esc(story.quip.speaker.name)}</span><q>${esc(story.quip.text)}</q></div></div>` : ''}
       ${sum.nearMiss ? `<div class="near-miss">${esc(sum.nearMiss)}</div>` : ''}
-      <div class="result-actions">
-        <button class="btn btn-primary" data-act="again">Play again <span class="key">${touch ? 'TAP' : coop ? 'ENTER · E · Ⓐ' : 'ENTER'}</span></button>
-        <button class="btn btn-gold" data-act="workshop"><span>Workshop</span><span class="meta">${affordable > 0 ? `<span class="badge">${affordable} READY</span>` : goal ? `${formatNumber(goal.missing)} ◈ to go` : ''}</span></button>
-        <button class="btn" data-act="menu">Menu</button>
-      </div>
       ${coop ? this.coopTable(r) : ''}
       <div class="results-grid">
         <div class="panel">
@@ -1190,6 +1197,7 @@ export class UI {
       else this.cb.play(r.daily);
     });
     this.bind(s, '[data-act="workshop"]', () => this.showWorkshop(save));
+    this.bind(s, '[data-act="change-ship"]', () => { if (!this.inGrace()) this.showHangar(save, true); });
     this.bind(s, '[data-act="menu"]', () => this.cb.toTitle());
     this.bind(s, '[data-log]', (b) => this.showLog(save, { entry: b.dataset.log }));
     this.renderTopbar(save);

@@ -7,9 +7,10 @@ Read `AGENTS.md` first (commands and hard rules). This file is the task list.
 The owner authorized the recommended follow-up work in
 [spec 06](specs/06-replayability-and-monetization.md). 6a adds read-only evolution
 previews and one solo run goal. See [verification](verification/06-replayability.md)
-for evidence. Continue with 6b results/retry only after this checkpoint passes
-web and all desktop CI, then prepare the 6c playtest kit and bounded optional
-6d transmission prototype. Commerce and balance experiments retain their gates.
+for evidence. 6a passed web and all desktop CI at `511f3db`. 6b results/retry and
+lethal-hit attribution are implemented. Wait for 6b web and all desktop CI before
+the 6c playtest kit and bounded optional 6d transmission prototype. Commerce and
+balance experiments retain their gates.
 
 ## Previous checkpoint — solo phone polish (2026-10-18)
 
