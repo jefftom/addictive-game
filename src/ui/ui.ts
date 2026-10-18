@@ -6,7 +6,7 @@ import { PASSIVES, RARITY_COLOR, RELICS } from '../game/content/passives';
 import { SHIPS, SHIP_IDS } from '../game/content/ships';
 import { WEAPONS } from '../game/content/weapons';
 import { WORKSHOP } from '../game/content/workshop';
-import type { PassiveId, ShipId } from '../game/types';
+import type { PassiveId, ShipId, WeaponId } from '../game/types';
 import { offerColor, offerIcon, offerRarity, offerText, offerTitle, type Offer } from '../game/upgrades';
 import type { World } from '../game/world';
 import { ACHIEVEMENTS, achievementDef } from '../meta/achievements';
@@ -22,6 +22,7 @@ import { STORY, type CharacterDef, type LogbookEntry } from '../story/script';
 import { castRole, signatureLine } from './cast';
 import { OpeningCrawl } from './crawl';
 import { $, el, esc, focusables, moveFocus, pips } from './dom';
+import { evolutionPath } from './evolution';
 import { LOBBY_COUNTDOWN, MIN_COOP_PILOTS, type CoopLobby, type RosterDevice } from './lobby';
 
 export type ScreenId = 'title' | 'hangar' | 'workshop' | 'records' | 'settings' | 'log' | 'crawl' | 'lobby' | 'levelup' | 'pause' | 'victory' | 'results' | 'hud';
@@ -156,6 +157,8 @@ export class UI {
   private pickSlots: readonly InputSlot[] = [];
   /** Pause/victory/results of a co-op run also accept WASD + E (kbA). */
   private coopMenus = false;
+  /** Cosmetic goal, scoped to one solo run; never part of simulation/save state. */
+  runGoal: WeaponId | null = null;
 
   private crawl: OpeningCrawl | null = null;
   private logTab: LogTab = 'entries';
@@ -365,6 +368,7 @@ export class UI {
       const i = a && s.contains(a) ? a.dataset.pick : undefined;
       if (i !== undefined) this.cb.pick(Number(i), slot);
       else if (a?.dataset.act === 'reroll') this.cb.reroll(slot);
+      else if (a?.hasAttribute('data-evolution-toggle')) a.click();
       else s.querySelector<HTMLElement>('[data-pick="0"]')?.focus({ preventScroll: true });
     }
   }
@@ -883,11 +887,6 @@ export class UI {
         } else if (o.kind === 'weapon') {
           tag = o.isNew ? 'NEW WEAPON' : 'WEAPON';
           foot = `${pips(o.level - 1, 5, o.level - 1)}<span>LV ${o.level}</span>`;
-          if (o.level === 5) {
-            const partner = WEAPONS[o.id].evolvesWith;
-            const owned = (opts.world.players[pid]!.build.passives[partner as PassiveId] ?? 0) > 0;
-            foot += `</div><div class="o-foot"><span>${owned ? 'Evolution ready next level' : `Evolves with ${esc(PASSIVES[partner].name)}`}</span>`;
-          }
         } else if (o.kind === 'passive') {
           tag = o.isNew ? 'NEW PASSIVE' : 'PASSIVE';
           foot = `${pips(o.level - 1, 5, o.level - 1)}<span>LV ${o.level}</span>`;
@@ -902,6 +901,7 @@ export class UI {
           <div class="o-top"><div class="glyph">${esc(offerIcon(o))}</div><span class="o-tag">${tag}</span></div>
           <div class="o-name">${esc(offerTitle(o))}</div>
           <div class="o-text">${esc(offerText(o))}</div>
+          ${o.kind === 'weapon' || o.kind === 'evolve' ? this.evolutionHint(opts.world, pid, o.id) : ''}
           <div class="o-foot">${foot}${pickKey(i)}</div>
         </button>`;
       })
@@ -923,7 +923,9 @@ export class UI {
       <div class="lu-actions">
         <button class="btn btn-sm btn-violet" data-act="reroll" ${opts.rerolls > 0 ? '' : 'disabled'}><span>Reroll (${opts.rerolls})</span>${co && !keys ? '' : `<span class="key">${rerollKey}</span>`}</button>
       </div>
-      ${hints}`;
+      ${hints}
+      ${this.evolutionGuide(opts.world, pid, !co)}`;
+    this.bindEvolution(s);
     s.querySelectorAll<HTMLElement>('[data-pick]').forEach((b) =>
       b.addEventListener('click', () => {
         if (!this.inGrace()) this.cb.pick(Number(b.dataset.pick));
@@ -967,6 +969,46 @@ export class UI {
 
   // ───────────────────────── Pause / victory ─────────────────────────
 
+  private evolutionHint(world: World, pid: number, id: WeaponId): string {
+    const path = evolutionPath(world.players[pid]!.build, id);
+    return `<div class="evolution-hint"><strong>→ ${esc(path.evolvedName)}</strong><span>Current ${path.level}/${path.maxLevel} · ${esc(path.partner)} ${path.partnerOwned ? '✓' : 'needed'}</span><span>${esc(path.state === 'building' ? path.description : path.requirements)}</span></div>`;
+  }
+
+  private evolutionGuide(world: World, pid: number, pinnable: boolean, context = 'levelup'): string {
+    const build = world.players[pid]!.build;
+    const region = `evolutions-${context}-${pid}`;
+    return `<section class="evolution-guide"><button class="btn" data-evolution-toggle aria-expanded="false" aria-controls="${region}">Evolution paths${pinnable && this.runGoal ? ` · Goal: ${esc(WEAPONS[this.runGoal].evolvedName)}` : ''}</button>
+      <div class="evolution-body" id="${region}" hidden>${build.weapons.map(w => {
+        const p = evolutionPath(build, w.id), pinned = pinnable && this.runGoal === w.id;
+        return `<article class="evolution-path" data-evolution="${w.id}"><h3>${esc(p.name)} → ${esc(p.evolvedName)}</h3>
+          <p>${esc(p.description)}</p><p class="num">Weapon ${p.level}/${p.maxLevel} · ${esc(p.partner)}: ${p.partnerOwned ? 'owned' : 'missing'}</p>
+          <p class="evolution-state" data-state="${p.state}">${esc(p.state === 'building' ? `Needs: ${p.requirements}` : p.requirements)}</p>
+          ${pinnable && p.state !== 'evolved' && p.state !== 'blocked' ? `<button class="btn btn-sm" data-pin="${w.id}" aria-pressed="${pinned}">${pinned ? 'Unpin' : 'Pin'} ${esc(p.evolvedName)}</button>` : ''}</article>`;
+      }).join('')}<p class="dim">A goal helps plan your picks; it does not change which cards appear.</p></div></section>`;
+  }
+
+  private bindEvolution(root: HTMLElement): void {
+    const toggle = root.querySelector<HTMLButtonElement>('[data-evolution-toggle]');
+    const body = root.querySelector<HTMLElement>('.evolution-body');
+    toggle?.addEventListener('click', () => {
+      if (!body) return;
+      body.hidden = !body.hidden;
+      toggle.setAttribute('aria-expanded', String(!body.hidden));
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-pin]').forEach(button => button.addEventListener('click', () => {
+      if (this.inGrace()) return;
+      const id = button.dataset.pin as WeaponId;
+      this.runGoal = this.runGoal === id ? null : id;
+      root.querySelectorAll<HTMLButtonElement>('[data-pin]').forEach(b => {
+        const key = b.dataset.pin as WeaponId, pinned = this.runGoal === key;
+        b.setAttribute('aria-pressed', String(pinned));
+        b.textContent = `${pinned ? 'Unpin' : 'Pin'} ${WEAPONS[key].evolvedName}`;
+      });
+      if (toggle) toggle.textContent = `Evolution paths${this.runGoal ? ` · Goal: ${WEAPONS[this.runGoal].evolvedName}` : ''}`;
+      this.announce(this.runGoal ? `Goal pinned: ${WEAPONS[this.runGoal].evolvedName}` : 'Evolution goal cleared');
+    }));
+  }
+
   /** One pilot's build as chips. */
   private buildChips(world: World, pid: number): string {
     const b = world.players[pid]!.build;
@@ -1001,12 +1043,14 @@ export class UI {
       <div><div class="eyebrow">${formatTime(world.time)} · Level ${world.level} · ${formatNumber(world.score)} pts${world.coop ? ` · ${world.players.length} captains` : ''}</div><h2>Paused</h2></div>
       ${note ? `<div class="pause-note${noteOk ? ' ok' : ''}" role="status">${esc(note)}</div>` : ''}
       ${build}
+      ${world.coop ? '' : this.evolutionGuide(world, 0, true, 'pause')}
       <div class="modal-actions">
         <button class="btn btn-primary" data-act="resume">Resume <span class="key">${world.coop ? 'ESC · START' : 'ESC'}</span></button>
         <button class="btn" data-act="settings">Settings</button>
         <button class="btn btn-rose" data-act="quit">End run</button>
       </div>
     </div>`;
+    this.bindEvolution(s);
     this.bind(s, '[data-act="resume"]', () => this.cb.resume());
     this.bind(s, '[data-act="settings"]', () => this.showSettings(save, 'pause'));
     // A pause the game opened by itself (a controller dropped) ignores mashed confirm presses for a moment.

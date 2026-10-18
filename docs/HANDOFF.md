@@ -2,7 +2,16 @@
 
 Read `AGENTS.md` first (commands and hard rules). This file is the task list.
 
-## Latest checkpoint — solo phone polish (2026-10-18)
+## Latest checkpoint — replayability (2026-10-18)
+
+The owner authorized the recommended follow-up work in
+[spec 06](specs/06-replayability-and-monetization.md). 6a adds read-only evolution
+previews and one solo run goal. See [verification](verification/06-replayability.md)
+for evidence. Continue with 6b results/retry only after this checkpoint passes
+web and all desktop CI, then prepare the 6c playtest kit and bounded optional
+6d transmission prototype. Commerce and balance experiments retain their gates.
+
+## Previous checkpoint — solo phone polish (2026-10-18)
 
 The owner authorized a polished solo phone build on the same PR branch.
 Phone readability, native-resolution HUD layout, two-thumb controls and device

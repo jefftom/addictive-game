@@ -356,6 +356,7 @@ export class App {
     this.currentPick = null;
     this.clearLoss();
     this.killedBy = null;
+    this.ui.runGoal = null;
     this.botRngs = cfg.players.map((_, pid) => new Rng(debugSeed === null ? randomSeed() : cfg.seed ^ 0xabcdef ^ Math.imul(pid + 1, 0x9e3779b1)));
     if (debugSeed !== null) this.botRng = new Rng(cfg.seed ^ 0xabcdef);
     const best = squad ? coopBest(this.save, squad.length) : daily ? this.save.daily.best[info.date] ?? 0 : this.save.stats.bestScore;

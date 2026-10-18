@@ -406,6 +406,16 @@ Enter is never a dash key, so no pilot's dash key can confirm a card (anti-mash)
 - **Bundled fonts** (Tektur, Chakra Petch, Kode Mono; latin WOFF2, SIL OFL):
   no third-party requests, and the desktop and single-file builds work offline.
 
+### Evolution planning (task 6a)
+
+Upgrade cards explain an offered weapon's evolution using the content table's
+name, description, current level and partner passive. A collapsible evolution
+guide on upgrades and solo pause lists all owned weapons, requirements, eligible
+and completed states, and full-passive-slot blockers. Solo players may pin one
+goal for the current run. It changes neither offers nor RNG and resets on a new
+run. Co-op upgrade guidance uses the current picking pilot and their controller;
+pinning is solo-only. Combat HUD and simulation remain unchanged.
+
 ### Solo phone presentation
 
 On a coarse primary pointer with a short viewport side at most 600 CSS pixels,
