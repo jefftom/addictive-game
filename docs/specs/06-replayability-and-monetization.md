@@ -106,7 +106,8 @@ backend, pricing publication or payment collection is authorized by this draft.
 ## 6d — One optional intercepted-transmission prototype
 
 After the action/UI milestones pass CI, provide one short, clue-based word
-puzzle outside combat. A completed normal solo run earns its signal fragment;
+puzzle outside combat. A completed normal solo run earns its signal fragment
+(defeat or victory, including Nightmare; not retreat, Daily or co-op);
 the player may decode it from results or the title menu, retry immediately,
 or return later. No timer, no combat interruption, no letter pickups, and no
 gameplay power reward. Solving reveals one original story transmission. Offer

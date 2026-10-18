@@ -433,6 +433,22 @@ Victory and retreat omit the panel, and unknown sources are labelled unavailable
 Boss dialogue remains story flavour, separate from damage attribution. There is
 no environmental player-damage path in the current simulation.
 
+### Optional intercepted transmission (task 6d prototype)
+
+One fragment unlocks after a normal solo defeat or victory, including Nightmare;
+retreat, Daily and co-op do not earn it. Results and the title offer an optional
+six-letter clue puzzle. Combat never opens it and has no letter pickups or
+puzzle-dependent upgrades. The player can retry immediately or return later.
+Touch tiles, letter keys, Undo/Clear, a hint and immediate reveal all work without
+a timer. Solving restores one original Relay Seven message and grants no cores,
+power, achievements or other gameplay rewards. This is a prototype, not a campaign.
+
+The additive optional `transmission` save block stores the draft, hint usage and
+solved/revealed states. Older saves receive locked defaults without changing the
+save key/version or other progress. Results can be revisited without reapplying
+run rewards. See `docs/PLAYTEST.md` for the action-only versus optional-puzzle
+comparison and physical-phone acceptance plan; no player outcomes are claimed.
+
 ### Solo phone presentation
 
 On a coarse primary pointer with a short viewport side at most 600 CSS pixels,

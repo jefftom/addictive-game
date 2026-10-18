@@ -6,7 +6,7 @@ You captain one small starship of the **Allied Beacon Fleet** against **the Shar
 
 - **Runs:** 2–10 minutes; restart in under a second
 - **Platforms:** any modern browser on desktop or mobile, with keyboard, mouse, touch or gamepad
-- **Web size:** about 235 KiB gzipped (588,623 bytes uncompressed / 240,884 gzip bytes for the verified standalone HTML), including bundled fonts; all art and audio are generated in code
+- **Web size:** about 240 KiB gzipped (604,572 bytes uncompressed / 246,144 gzip bytes for the verified standalone HTML), including bundled fonts; all art and audio are generated in code
 
 ## Play
 
@@ -48,6 +48,21 @@ for measured limits and the remaining physical-device playtest.
 
 To test on a phone on the same trusted Wi-Fi: run `npm run build`, then
 `npm run preview -- --host 0.0.0.0`, and open the displayed Network URL on the phone.
+
+### Build goals and the optional transmission
+
+Open **Evolution paths** during an upgrade or solo pause to see requirements
+and pin one goal for the run. Results show your final build, a next-run goal and
+the lethal-hit category when known. Play Again keeps the run mode; Change Ship
+opens the solo hangar.
+
+Finish a normal solo run with a defeat or victory to earn one signal fragment.
+Choose **Transmission** from results or the title to try a short word puzzle.
+It is optional: use touch tiles or letter keys, use Hint/Reveal, or play again.
+Progress is saved and the reward is a story message. Daily, co-op and retreat
+do not earn the fragment. [The playtest kit](docs/PLAYTEST.md) compares this
+prototype with the preserved action-only checkpoint; player preference and
+physical-phone acceptance are still unverified.
 
 ## What keeps you playing
 

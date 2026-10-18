@@ -59,3 +59,34 @@ and last-pilot co-op death; goal snapshots preserve the source build/save/RNG.
 Browser and remote receipts are kept with this checkpoint in the evidence folder.
 UI screenshots use synthetic end-of-run fixtures; they demonstrate layout,
 not human survival or replay preference.
+
+6b passed web CI [39123858790](https://github.com/jefftom/addictive-game/actions/runs/39123858790)
+and all desktop jobs [39123858808](https://github.com/jefftom/addictive-game/actions/runs/39123858808)
+at `9d50fe0`: 105 browser cases, 13 existing exclusions, no retries. All three
+packaged launch checks passed and Linux passed 49 Electron checks. Four extra
+local repeats of the previously flaky co-op scenario passed without retries.
+
+## 6c / 6d: playtest kit and one optional transmission
+
+[Playtest instructions](../PLAYTEST.md) and a blank CSV scorecard cover first-run
+understanding, voluntary retry, optional-puzzle preference and physical phones.
+No outside player, retention or physical-device results are fabricated. The
+action-only `6b-shardstorm.html` is preserved for comparison with this prototype.
+
+One completed normal solo run earns a story fragment. An additive normalized
+save block preserves edits, hint use and solved/revealed state. Keyboard and
+touch can decode the original six-letter clue, reveal it, leave, return or retry
+without gameplay rewards. No timer, analytics, ads, billing or combat changes.
+
+Strict types, 462 unit tests (29 suites) and six targeted browser cases passed.
+The frozen old-save fixture is unchanged; its exact migration expectation now
+explicitly includes the new locked transmission block. The initial expected
+shape failure is retained in `6d-unit.log`. All prior parsed fields retain exact
+equality; the golden and HUD snapshot are unchanged.
+Full-suite, build, visual and remote receipts accompany the final checkpoint.
+The local full browser run passed 111 cases (13 unchanged exclusions). The
+final keyboard shortcut/layout adjustment passed the six transmission cases
+against a rebuilt artifact; remote CI runs the full final suite. Twelve
+synthetic puzzle/message/title captures cover 320px, Pixel 7, 720p and direct
+standalone loading. Reviewed phone and desktop layouts fit and remain scrollable;
+standalone reveal progress persisted across reload without page errors.

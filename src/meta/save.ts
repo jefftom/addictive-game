@@ -1,6 +1,7 @@
 import { SHIPS } from '../game/content/ships';
 import type { ShipId } from '../game/types';
 import { platform } from '../platform/platform';
+import { defaultTransmission, normalizeTransmission, type TransmissionState } from './transmission';
 
 export type TrailId = 'default' | 'ember' | 'aurora' | 'prism';
 /** In-run comms: every line, only story/rare lines, or none. */
@@ -157,6 +158,8 @@ export interface SaveData {
   history: RunRecord[];
   /** Story/narrative state. Optional so older saves stay valid; migrate() always fills it. */
   story?: StoryState;
+  /** Optional between-run story puzzle; additive to v2 saves. */
+  transmission?: TransmissionState;
   /** Local co-op records (added in save v2). */
   coop: CoopStats;
 }
@@ -218,6 +221,7 @@ export function defaultSave(): SaveData {
     tutorialDone: false,
     history: [],
     coop: defaultCoopStats(),
+    transmission: defaultTransmission(),
   };
 }
 
@@ -254,6 +258,7 @@ export function migrate(raw: unknown): SaveData {
   if (!CHATTER_MODES.includes(out.settings.chatter)) out.settings.chatter = 'all';
   out.story = normalizeStoryState(r.story);
   out.coop = normalizeCoopStats(r.coop);
+  out.transmission = normalizeTransmission(r.transmission);
   return out;
 }
 

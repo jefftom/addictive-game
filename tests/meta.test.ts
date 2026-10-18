@@ -71,9 +71,10 @@ class MemStore implements Storage {
 }
 
 describe('save', () => {
-  it('preserves the played pre-wave3 save and adds graphics defaults without changing the key or version', () => {
+  it('preserves the played pre-wave3 save and adds graphics and transmission defaults without changing the key or version', () => {
     const old = JSON.parse(readFileSync(new URL('./fixtures/save-pre-wave3.json', import.meta.url), 'utf8'));
-    expect(migrate(old)).toEqual({ ...old, settings: { ...old.settings, postfx: true, gridMotion: old.settings.shake } });
+    expect(migrate(old)).toEqual({ ...old, settings: { ...old.settings, postfx: true, gridMotion: old.settings.shake },
+      transmission: { unlocked: false, letters: '', hinted: false, solved: false, revealed: false } });
     const store = new MemStore();
     store.setItem('shardstorm.save', JSON.stringify(old));
     expect(loadSave(store)).toEqual(migrate(old));

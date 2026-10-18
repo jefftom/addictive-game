@@ -15,6 +15,7 @@ import { missionDef, missionReward, missionText } from '../meta/missions';
 import { affordableUpgrades, coopBest, isShipUnlocked, nextCost, nextWorkshopGoal, workshopLevel, type RunSummary } from '../meta/progression';
 import { HARD_MODE_RANK, TRAILS, rankXpNeeded } from '../meta/rank';
 import type { ChatterMode, SaveData, Settings, TrailId } from '../meta/save';
+import { decodeTransmission, SIGNAL_LETTERS, SIGNAL_MESSAGE } from '../meta/transmission';
 import { VesselArt, vesselIcon } from '../render/vessels';
 import { characterById, type ResolvedLine } from '../story/director';
 import { logbookFraction, logbookHint, logbookView, markLogSeen, unseenLogCount } from '../story/logbook';
@@ -26,7 +27,7 @@ import { evolutionPath } from './evolution';
 import type { RunReview } from './runreview';
 import { LOBBY_COUNTDOWN, MIN_COOP_PILOTS, type CoopLobby, type RosterDevice } from './lobby';
 
-export type ScreenId = 'title' | 'hangar' | 'workshop' | 'records' | 'settings' | 'log' | 'crawl' | 'lobby' | 'levelup' | 'pause' | 'victory' | 'results' | 'hud';
+export type ScreenId = 'title' | 'hangar' | 'workshop' | 'records' | 'settings' | 'log' | 'transmission' | 'crawl' | 'lobby' | 'levelup' | 'pause' | 'victory' | 'results' | 'hud';
 
 /** Mouse/touch actions on a lobby slot card. */
 export type LobbyMouseAction = 'left' | 'right' | 'ready' | 'leave';
@@ -119,7 +120,7 @@ export interface UiCallbacks {
   resetSave(): void;
   toTitle(): void;
   pause(): void;
-  /** Story state in the save changed (log entry read, intro seen): persist it. */
+  /** Story state in the save changed (log, intro or transmission): persist it. */
   storyChanged(): void;
   sfx: {
     hover(): void;
@@ -164,6 +165,7 @@ export class UI {
   private crawl: OpeningCrawl | null = null;
   private logTab: LogTab = 'entries';
   private logEntry: string | null = null;
+  private transmissionReturn: 'title' | 'results' = 'title';
   /** Desktop build extras (Quit to desktop, the fullscreen setting); null on the web. */
   private readonly desktop: DesktopUi | null;
 
@@ -171,7 +173,7 @@ export class UI {
     this.vessels.setResolution(4);
     this.cb = cb;
     this.desktop = desktop;
-    const ids: ScreenId[] = ['title', 'hangar', 'workshop', 'records', 'settings', 'log', 'crawl', 'lobby', 'levelup', 'pause', 'victory', 'results'];
+    const ids: ScreenId[] = ['title', 'hangar', 'workshop', 'records', 'settings', 'log', 'transmission', 'crawl', 'lobby', 'levelup', 'pause', 'victory', 'results'];
     for (const id of ids) {
       const s = el(`<section class="screen" id="screen-${id}" hidden></section>`);
       this.screens.set(id, s);
@@ -273,6 +275,14 @@ export class UI {
     }
     if (id === 'levelup' && this.pickDevice !== null) return;
     const s = this.screen(id as ScreenId);
+    if (id === 'transmission' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.isComposing && (/^[a-z]$/i.test(e.key) || e.code === 'Backspace')) {
+      e.preventDefault();
+      if (!e.repeat) {
+        const selector = e.code === 'Backspace' ? '[data-signal="undo"]' : `[data-letter="${e.key.toUpperCase()}"]`;
+        s.querySelector<HTMLButtonElement>(selector)?.click();
+      }
+      return;
+    }
     const activates = e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space';
     if ((id === 'levelup' || id === 'results') && (e.code === 'Space' || (activates && (e.repeat || this.inGrace())))) {
       e.preventDefault();
@@ -327,6 +337,7 @@ export class UI {
       return;
     }
     if (e.code === 'Escape' || (e.code === 'KeyP' && id === 'pause')) {
+      if (id === 'transmission') { e.preventDefault(); this.closeTransmission(); return; }
       if (id === 'pause') this.cb.resume();
       else if (id === 'settings') this.back();
       else if (id === 'log' && this.closeLogReader()) return;
@@ -394,6 +405,7 @@ export class UI {
     }
     if (nav.alt && id === 'levelup') this.cb.reroll();
     if (nav.back && !this.inGrace()) {
+      if (id === 'transmission') { this.closeTransmission(); return; }
       if (id === 'pause') this.cb.resume();
       else if (id === 'settings') this.back();
       else if (id === 'log' && this.closeLogReader()) return;
@@ -485,6 +497,7 @@ export class UI {
         <p class="hint">${touch ? 'Drag to move · tap DASH or a second finger to dash' : 'WASD / arrows to move · SPACE to dash · ESC to pause'}</p>
       </div>
       <div class="title-right">
+        ${save.transmission?.unlocked ? `<button class="btn" data-act="transmission">Transmission <span class="meta">${save.transmission.solved || save.transmission.revealed ? 'READ' : 'DECODE · OPTIONAL'}</span></button>` : ''}
         <div class="panel">
           <div class="rank-row"><span class="eyebrow">Rank</span><span class="dim num">${formatNumber(save.rankXp)} / ${formatNumber(need)} XP</span></div>
           <div class="rank-row"><span class="rank-num">${save.rank}</span><span class="dim">${best > 0 ? `Best score <b class="num">${formatNumber(best)}</b>` : 'No runs yet'}</span></div>
@@ -502,6 +515,7 @@ export class UI {
     this.bind(s, '[data-act="workshop"]', () => this.showWorkshop(save));
     this.bind(s, '[data-act="records"]', () => this.showRecords(save));
     this.bind(s, '[data-act="log"]', () => this.showLog(save));
+    this.bind(s, '[data-act="transmission"]', () => this.showTransmission(save));
     this.bind(s, '[data-act="settings"]', () => this.showSettings(save, 'title'));
     this.bind(s, '[data-act="quit"]', () => this.desktop?.quit());
     this.renderTopbar(save);
@@ -1089,6 +1103,77 @@ export class UI {
     this.focusFirst('victory', '[data-act="continue"]');
   }
 
+  // ───────────────────────── Optional transmission ─────────────────────────
+
+  showTransmission(save: SaveData): void {
+    const progress = save.transmission;
+    if (!progress?.unlocked || (this.current !== 'title' && this.current !== 'results')) return;
+    this.transmissionReturn = this.current;
+    this.coopMenus = false;
+    const s = this.screen('transmission');
+    s.className = 'screen scrim-heavy';
+    s.innerHTML = `<div class="sub signal-sub">
+      <div class="sub-head"><div><div class="eyebrow">Optional · Signal 01</div><h2>Lost signal</h2></div><button class="btn btn-sm" data-signal="back">Back to ${this.transmissionReturn}</button></div>
+      <div class="panel signal-puzzle">
+        <h3>Restore the missing word</h3>
+        <p>A light that guides lost ships home. Six letters.</p>
+        <p class="dim">Use each letter once. Tap the tiles or type letters, then choose Decode. No timer — your progress is saved.</p>
+        <div class="signal-answer" role="group" aria-label="Your answer"></div>
+        <div class="signal-letters">${[...SIGNAL_LETTERS].map(c => `<button class="btn" data-letter="${c}" aria-label="Add ${c}">${c}</button>`).join('')}</div>
+        <div class="signal-actions"><button class="btn btn-primary" data-signal="decode">Decode</button><button class="btn" data-signal="undo">Undo</button><button class="btn" data-signal="clear">Clear</button></div>
+        <p class="signal-feedback" role="status" aria-live="polite"></p>
+        <p class="signal-hint" hidden>Hint: it begins with BE.</p>
+        <div class="signal-actions"><button class="btn" data-signal="hint">Show hint</button><button class="btn" data-signal="reveal">Reveal answer</button></div>
+      </div>
+      <div class="panel signal-message" tabindex="-1" hidden><h3>Relay Seven · Message restored</h3><p>${esc(SIGNAL_MESSAGE)}</p><p class="dim">Story only — no gameplay rewards.</p></div>
+      <button class="btn btn-primary" data-signal="play">Play a solo run</button>
+    </div>`;
+    const complete = () => progress.solved || progress.revealed;
+    const button = (key: string) => s.querySelector<HTMLButtonElement>(`[data-signal="${key}"]`)!;
+    const update = (feedback = '') => {
+      const done = complete(), answer = s.querySelector<HTMLElement>('.signal-answer')!;
+      answer.innerHTML = Array.from({ length: 6 }, (_, i) => `<span>${progress.letters[i] ?? '·'}</span>`).join('');
+      answer.setAttribute('aria-label', `Your answer: ${progress.letters.split('').join(' ') || 'empty'}, ${progress.letters.length} of 6 letters`);
+      s.querySelectorAll<HTMLButtonElement>('[data-letter]').forEach(b => { b.disabled = done || progress.letters.includes(b.dataset.letter!); });
+      button('decode').disabled = done || progress.letters.length !== 6;
+      button('undo').disabled = button('clear').disabled = done || !progress.letters.length;
+      button('hint').disabled = done || progress.hinted;
+      button('reveal').disabled = done;
+      s.querySelector<HTMLElement>('.signal-hint')!.hidden = !progress.hinted;
+      s.querySelector<HTMLElement>('.signal-message')!.hidden = !done;
+      s.querySelector<HTMLElement>('.signal-feedback')!.textContent = done ? `${progress.solved ? 'Decoded' : 'Answer revealed'}: BEACON. Message restored.` : feedback || 'Choose six letters to restore the signal.';
+    };
+    const persist = () => this.cb.storyChanged();
+    const focusNext = () => {
+      if (progress.letters.length === 6) button('decode').focus();
+      else s.querySelector<HTMLButtonElement>('[data-letter]:not([disabled])')?.focus({ preventScroll: true });
+    };
+    this.bind(s, '[data-letter]', b => {
+      if (complete() || progress.letters.includes(b.dataset.letter!)) return;
+      progress.letters += b.dataset.letter!; persist(); update(); focusNext();
+    });
+    this.bind(s, '[data-signal="undo"], [data-signal="clear"]', b => {
+      if (complete()) return;
+      progress.letters = b.dataset.signal === 'undo' ? progress.letters.slice(0, -1) : '';
+      persist(); update(); focusNext();
+    });
+    this.bind(s, '[data-signal="hint"]', () => { progress.hinted = true; persist(); update('Hint shown below.'); focusNext(); });
+    this.bind(s, '[data-signal="decode"], [data-signal="reveal"]', b => {
+      const result = decodeTransmission(progress, b.dataset.signal === 'reveal');
+      persist(); update(result === 'incorrect' ? 'Signal does not match. Rearrange the letters, or use a hint.' : 'Choose all six letters first.');
+      if (complete()) s.querySelector<HTMLElement>('.signal-message')!.focus();
+    });
+    this.bind(s, '[data-signal="back"]', () => this.closeTransmission());
+    this.bind(s, '[data-signal="play"]', () => this.cb.play(false));
+    update(); this.show('transmission'); this.focusFirst('transmission');
+  }
+
+  private closeTransmission(): void {
+    if (this.transmissionReturn === 'results') {
+      this.show('results'); this.focusFirst('results', '[data-act="transmission"]');
+    } else this.cb.toTitle();
+  }
+
   // ───────────────────────── Results ─────────────────────────
 
   showResults(sum: RunSummary, save: SaveData, touch: boolean, story: ResultsStory = { newLog: [] }, review?: RunReview): void {
@@ -1153,6 +1238,7 @@ export class UI {
         <button class="btn" data-act="menu">Return to title</button>
       </div>
       ${review && !coop ? `<div class="panel res-review"><h3>Final build</h3><p>${review.weapons.map(esc).join(' · ')}</p>${review.equipment.length ? `<p class="dim">${review.equipment.map(esc).join(' · ')}</p>` : ''}${review.goal ? `<div class="res-goal"><h3>${esc(review.goal.title)}</h3><p>${esc(review.goal.detail)}</p></div>` : ''}</div>` : ''}
+      ${!coop && !r.daily && save.transmission?.unlocked ? '<div class="panel signal-invite"><span>A transmission is available. Decode it now or come back from the title screen.</span><button class="btn" data-act="transmission">Transmission · Optional</button></div>' : ''}
       ${story.taunt ? `<div class="res-taunt" style="--cc:${story.taunt.speaker.color}">${portrait(story.taunt.speaker, 'md')}<div><div class="res-taunt-name">${esc(story.taunt.speaker.name)}</div><q>${esc(story.taunt.text)}</q></div></div>` : ''}
       ${!story.taunt && story.quip ? `<div class="res-quip" style="--cc:${story.quip.speaker.color}">${portrait(story.quip.speaker, 'sm')}<div><span class="res-quip-name">${esc(story.quip.speaker.name)}</span><q>${esc(story.quip.text)}</q></div></div>` : ''}
       ${sum.nearMiss ? `<div class="near-miss">${esc(sum.nearMiss)}</div>` : ''}
@@ -1198,6 +1284,7 @@ export class UI {
     });
     this.bind(s, '[data-act="workshop"]', () => this.showWorkshop(save));
     this.bind(s, '[data-act="change-ship"]', () => { if (!this.inGrace()) this.showHangar(save, true); });
+    this.bind(s, '[data-act="transmission"]', () => { if (!this.inGrace()) this.showTransmission(save); });
     this.bind(s, '[data-act="menu"]', () => this.cb.toTitle());
     this.bind(s, '[data-log]', (b) => this.showLog(save, { entry: b.dataset.log }));
     this.renderTopbar(save);

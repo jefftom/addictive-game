@@ -7,10 +7,14 @@ Read `AGENTS.md` first (commands and hard rules). This file is the task list.
 The owner authorized the recommended follow-up work in
 [spec 06](specs/06-replayability-and-monetization.md). 6a adds read-only evolution
 previews and one solo run goal. See [verification](verification/06-replayability.md)
-for evidence. 6a passed web and all desktop CI at `511f3db`. 6b results/retry and
-lethal-hit attribution are implemented. Wait for 6b web and all desktop CI before
-the 6c playtest kit and bounded optional 6d transmission prototype. Commerce and
-balance experiments retain their gates.
+for evidence. 6a passed web and all desktop CI at `511f3db`; 6b results/retry and
+lethal-hit attribution passed at `9d50fe0` (105 browser cases, no retries).
+The [6c playtest kit](PLAYTEST.md) and blank scorecard are ready; no outside-player
+or physical-phone outcomes have been collected. 6d adds one optional between-run
+transmission with compatible saves, touch/keyboard controls and hint/reveal.
+Its final remote gates and playable hashes are recorded on PR #1 and in the local
+`F:\addictive-game-handoff\2026-10-18-replayability` receipt. Commerce, a puzzle
+campaign and balance experiments retain their player/platform decision gates.
 
 ## Previous checkpoint — solo phone polish (2026-10-18)
 

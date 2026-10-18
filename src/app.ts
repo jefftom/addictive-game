@@ -27,6 +27,7 @@ import type { BossId } from './story/script';
 import { CommsPanel, chatterAllows, gameplayUnder } from './ui/comms';
 import { CoopLobby, type RosterDevice, type RosterEntry } from './ui/lobby';
 import { reviewRun } from './ui/runreview';
+import { earnTransmission } from './meta/transmission';
 import { UI, pilotLabel, type DesktopUi, type LobbyMouseAction, type ResultsStory } from './ui/ui';
 
 export const DT = 1 / 60;
@@ -559,6 +560,7 @@ export class App {
       if (this.dailyRun) result.dailyDate = this.dailyDate;
     }
     const summary = applyRun(this.save, result, this.metaRng);
+    earnTransmission(this.save, result, w.gameOver || result.victory);
     const story = this.resultsStory(w, result.victory, !w.gameOver && !result.victory);
     writeSave(this.save);
     this.link.unlocked(summary.achievements);

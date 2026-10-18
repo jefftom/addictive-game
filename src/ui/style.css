@@ -1095,6 +1095,23 @@ select {
 .res-goal h3 { color: var(--ice); font-size: 18px; }
 .res-cause { margin: 0; color: #ffb2c2; }
 #screen-results .result-actions .btn { min-height: 48px; white-space: normal; }
+.signal-invite { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.signal-invite span { flex: 1 1 220px; }
+.signal-sub { max-width: 700px; }
+.signal-puzzle p, .signal-message p { line-height: 1.6; margin: 12px 0; }
+.signal-answer { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; margin: 22px 0 16px; }
+.signal-answer span { text-align: center; border-bottom: 2px solid var(--ice); padding: 6px 0; font: 700 24px var(--font-mono); }
+.signal-letters { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.signal-letters .btn { justify-content: center; padding: 12px 0; }
+.signal-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+#screen-transmission .btn { min-height: 44px; white-space: normal; }
+.signal-feedback { color: var(--ice); min-height: 26px; }
+.signal-hint { color: var(--gold); }
+.signal-message:focus { outline: 2px solid var(--ice); outline-offset: 4px; }
+@media (max-width: 420px) {
+  .signal-letters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .signal-sub .sub-head { align-items: flex-start; }
+}
 
 .history {
   display: flex;
