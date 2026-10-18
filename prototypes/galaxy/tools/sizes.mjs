@@ -1,0 +1,12 @@
+import { chromium } from '/home/user/addictive-game/node_modules/playwright/index.mjs';
+import { execFileSync } from 'node:child_process';
+const root = '/tmp/claude-0/-home-user-addictive-game/1abae5b2-c201-57a9-8979-0317e8f22528/scratchpad/plan/galaxy';
+execFileSync('/home/user/addictive-game/node_modules/.bin/rolldown', [root + '/harness.ts', '--file', root + '/dist/harness.js', '--format', 'iife', '--platform', 'browser'], { stdio: 'ignore' });
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+await page.goto('file://' + root + '/harness.html');
+await page.waitForFunction(() => window.ready === true);
+await page.evaluate(() => window.api.setup(1280, 720));
+console.log(JSON.stringify(await page.evaluate(() => window.sizes())));
+for (let i = 0; i < 4; i++) console.log(i, 'center', (await page.evaluate((i) => window.api.bench(i, 60, 'galaxy', 4), i)).toFixed(2), 'base', (await page.evaluate((i) => window.api.bench(i, 60, 'galaxy', 1), i)).toFixed(2));
+await browser.close();

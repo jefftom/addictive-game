@@ -1,0 +1,106 @@
+--- a/src/game/director.ts
++++ b/src/game/director.ts
+@@ -6,6 +6,8 @@
+ import type { World } from './world';
+ 
+ const OVERTIME_BOSS_INTERVAL = 120;
++/** Run times at which sectors 1..3 are forced (Hydra, Void Heart, victory). */
++const SECTOR_FORCE_AT = [360, 540, 600];
+ 
+ /**
+  * Decides what spawns and when. Spawn *timing and composition* come only from
+@@ -19,6 +21,10 @@
+   private pendingKind: EnemyKind | null = null;
+   private packSize = 6;
+   private surgeT = 40;
++  /** Galaxy sector (boss phase): bosses defeated, or forced 3 s before the next boss is due. */
++  sector = 0;
++  /** Seconds of calm after a sector change (no continuous spawns, surge clock paused). */
++  holdT = 0;
+   private eliteT = 45;
+   private bossIdx = 0;
+   private overtimeCycle = 0;
+@@ -74,6 +80,19 @@
+     const t = world.time;
+     const rng = world.spawnRng;
+ 
++    // Sector warps: deterministic (bosses defeated / time), with a 3 s calm and a bullet clear.
++    let target = world.runStats.bossesKilled.length;
++    for (const at of SECTOR_FORCE_AT) if (t >= at - 3) target = Math.max(target, SECTOR_FORCE_AT.indexOf(at) + 1);
++    target = Math.min(3, target);
++    if (target > this.sector) {
++      this.sector = target;
++      this.holdT = 3;
++      for (const b of world.bullets) b.dead = true;
++      world.events.push({ t: 'sector', index: target });
++    }
++    const hold = this.holdT > 0;
++    if (hold) this.holdT -= dt;
++
+     // Opening wave: a loose ring just off the team so the first kills (and level-up) come fast.
+     if (!this.openingDone && t >= 0.6) {
+       this.openingDone = true;
+@@ -102,10 +121,10 @@
+ 
+     // Continuous budget.
+     const bossFactor = world.boss ? 0.4 : 1;
+-    this.budget = Math.min(60 * this.scale.spawn, this.budget + this.rate(t) * bossFactor * dt);
++    if (!hold) this.budget = Math.min(60 * this.scale.spawn, this.budget + this.rate(t) * bossFactor * dt);
+     if (this.pendingKind === null) this.pendingKind = this.chooseKind(t, rng);
+     let guard = 0;
+-    while (this.pendingKind !== null && guard++ < 40) {
++    while (!hold && this.pendingKind !== null && guard++ < 40) {
+       const kind: EnemyKind = this.pendingKind;
+       const def = ENEMIES[kind];
+       const pack = kind === 'swarmling' ? this.packSize : 1;
+@@ -114,9 +133,7 @@
+       this.budget -= cost;
+       if (pack > 1) {
+         const pt = world.spawnPoint(80);
+-        const px = pt.x;
+-        const py = pt.y;
+-        for (let i = 0; i < pack; i++) world.spawnEnemy(kind, px + rng.range(-40, 40), py + rng.range(-40, 40));
++        for (let i = 0; i < pack; i++) world.spawnEnemy(kind, pt.x + rng.range(-40, 40), pt.y + rng.range(-40, 40));
+       } else {
+         const pt = world.spawnPoint(70);
+         world.spawnEnemy(kind, pt.x, pt.y);
+@@ -125,7 +142,7 @@
+     }
+ 
+     // Surges: a ring of enemies closing in from every side.
+-    this.surgeT -= dt;
++    if (!hold) this.surgeT -= dt;
+     if (this.surgeT <= 0) {
+       this.surgeT = 45;
+       // Draw from the seeded stream unconditionally so the sequence never depends on play.
+@@ -135,13 +152,10 @@
+         const n = Math.round((12 + t / 10) * (this.cfg.daily === 'giants' ? 0.5 : 1) * this.scale.surge);
+         const radius = Math.max(world.effHalfW(), world.effHalfH()) * 0.95 + 40;
+         const c = world.teamCenter();
+-        const cx = c.x;
+-        const cy = c.y;
++        const p = { x: c.x, y: c.y };
+         for (let i = 0; i < n; i++) {
+           const a = offset + (i / n) * TAU;
+-          // Co-op: points that would land on an edge pilot are pushed outward.
+-          const r = world.clearRadius(cx, cy, a, radius);
+-          world.spawnEnemy(kind, cx + Math.cos(a) * r, cy + Math.sin(a) * r);
++          world.spawnEnemy(kind, p.x + Math.cos(a) * radius, p.y + Math.sin(a) * radius);
+         }
+         world.events.push({ t: 'surge' });
+       }
+@@ -179,11 +193,10 @@
+ 
+   private spawnBoss(world: World, kind: EnemyKind, title: string): void {
+     const c = world.teamCenter();
+-    const cx = c.x;
+-    const cy = c.y;
++    const p = { x: c.x, y: c.y };
+     const a = world.spawnRng.next() * TAU;
+-    const d = world.clearRadius(cx, cy, a, Math.min(world.effHalfW(), world.effHalfH()) * 0.9 + 120);
+-    const e = world.spawnEnemy(kind, cx + Math.cos(a) * d, cy + Math.sin(a) * d);
++    const d = Math.min(world.effHalfW(), world.effHalfH()) * 0.9 + 120;
++    const e = world.spawnEnemy(kind, p.x + Math.cos(a) * d, p.y + Math.sin(a) * d);
+     if (e) {
+       e.fireT = 2;
+       e.summonT = 5;

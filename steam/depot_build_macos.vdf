@@ -1,0 +1,13 @@
+"DepotBuild"
+{
+	// macOS depot: electron-builder output release/mac-universal/ (SHARDSTORM.app, x64 + arm64).
+	// Upload from macOS or Linux so the executable bits survive.
+	"DepotID" "1234562"
+	"FileMapping"
+	{
+		"LocalPath" "mac-universal/*"
+		"DepotPath" "."
+		"Recursive" "1"
+	}
+	"FileExclusion" "steam_appid.txt"
+}
